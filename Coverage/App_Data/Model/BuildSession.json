@@ -113,6 +113,21 @@
         "rules": []
       },
       {
+        "id": "88021ff7-e093-44a7-b9f8-d3b43a9b06d2",
+        "name": "RootDir",
+        "label": {
+          "en": "Root Dir"
+        },
+        "dataType": "string",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 8,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
         "id": "df0396ff-d019-43a6-8dd6-415d2fd31a86",
         "name": "FilesCount",
         "label": {

@@ -146,6 +146,7 @@
       ],
       "renderMode": "Pagination",
       "useProjection": false,
+      "entityType": "Commit",
       "isStreamingQuery": false
     }
   ]

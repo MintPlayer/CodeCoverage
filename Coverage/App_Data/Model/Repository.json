@@ -160,6 +160,7 @@
       ],
       "renderMode": "Pagination",
       "useProjection": false,
+      "entityType": "Repository",
       "isStreamingQuery": false
     }
   ]

@@ -1,6 +1,10 @@
 using System.Text.RegularExpressions;
+using System.Threading.RateLimiting;
 using Coverage;
+using Coverage.ApiTokens;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using MintPlayer.AspNetCore.SpaServices.Extensions;
 using MintPlayer.Spark;
 using MintPlayer.Spark.Authorization.Extensions;
@@ -53,6 +57,7 @@ builder.Services.AddSpark(builder.Configuration, spark =>
     });
     spark.AddMessaging();
     spark.AddRecipients();
+    spark.AddCronJobs();
     spark.AddGithubWebhooks(options =>
     {
         options.WebhookSecret = builder.Configuration["GitHub:WebhookSecret"] ?? string.Empty;
@@ -73,6 +78,28 @@ builder.Services.AddSpark(builder.Configuration, spark =>
     });
 });
 
+// CI upload credential — see Coverage/ApiTokens. Registered as an extra scheme
+// beside the Identity cookie; endpoints opt in via AuthenticationSchemes.
+builder.Services.AddAuthentication()
+    .AddScheme<AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>(ApiTokenAuthenticationHandler.SchemeName, null);
+
+// Spark's built-in rate limiter only covers /spark/* — our ingest endpoints
+// need their own, partitioned per token (falling back to client IP).
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("uploads", context => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: context.User.FindFirst(ApiTokenAuthenticationHandler.TokenHashClaim)?.Value
+            ?? context.Connection.RemoteIpAddress?.ToString()
+            ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 60,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+});
+
 builder.Services.AddSpaStaticFilesImproved(configuration =>
 {
     configuration.RootPath = "ClientApp/dist/ClientApp/browser";
@@ -87,6 +114,7 @@ app.UseStaticFiles();
 app.UseSpaStaticFilesImproved();
 
 app.UseRouting();
+app.UseRateLimiter();
 app.UseSpark(o => o.SynchronizeModelsIfRequested<CoverageSparkContext>(args));
 
 app.UseEndpoints(endpoints =>

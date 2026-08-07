@@ -98,6 +98,7 @@
       ],
       "renderMode": "Pagination",
       "useProjection": false,
+      "entityType": "Account",
       "isStreamingQuery": false
     }
   ]

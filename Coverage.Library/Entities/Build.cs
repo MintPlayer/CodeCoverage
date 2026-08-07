@@ -35,6 +35,12 @@ public class Build
     /// <summary>"Explicit" | "Debounce" | "Timeout"</summary>
     public string? FinalizeReason { get; set; }
 
+    /// <summary>
+    /// An explicit finish call arrived while sessions were still parsing; the
+    /// build finalizes as soon as the last session lands.
+    /// </summary>
+    public bool FinishRequested { get; set; }
+
     public List<BuildSession> Sessions { get; set; } = [];
 
     public CoverageSummary? Coverage { get; set; }

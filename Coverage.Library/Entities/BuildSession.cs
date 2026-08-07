@@ -19,5 +19,8 @@ public class BuildSession
     /// <summary>Attachment names on the Build document holding this session's raw report files.</summary>
     public string[] RawFileNames { get; set; } = [];
 
+    /// <summary>The CI workspace root (GITHUB_WORKSPACE), for stripping absolute report paths.</summary>
+    public string? RootDir { get; set; }
+
     public int FilesCount { get; set; }
 }

@@ -16,3 +16,6 @@ ClientApp/coverage/
 # Environment
 .env
 *.pem
+
+# Local smoke-test logs
+boot-*.log

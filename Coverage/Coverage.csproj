@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<IsPackable>false</IsPackable>
+		<UserSecretsId>coverage-app-7f4a24c3</UserSecretsId>
+		<SpaRoot>ClientApp\</SpaRoot>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="MintPlayer.AspNetCore.SpaServices" Version="10.5.0" />
+		<PackageReference Include="MintPlayer.SourceGenerators" Version="10.19.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="MintPlayer.SourceGenerators.Attributes" Version="10.19.0" GeneratePathProperty="true" />
+		<PackageReference Include="MintPlayer.Spark" Version="10.0.0-preview.41" />
+		<PackageReference Include="MintPlayer.Spark.Authorization" Version="10.0.0-preview.41" />
+		<PackageReference Include="MintPlayer.Spark.Messaging" Version="10.0.0-preview.41" />
+		<PackageReference Include="MintPlayer.Spark.Webhooks.GitHub" Version="10.0.0-preview.41" />
+		<PackageReference Include="MintPlayer.Spark.Webhooks.GitHub.DevTunnel" Version="10.0.0-preview.41" />
+		<PackageReference Include="MintPlayer.Spark.SourceGenerators" Version="10.0.0-preview.41">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\Coverage.Library\Coverage.Library.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<AdditionalFiles Include="App_Data\translations.json" />
+		<AdditionalFiles Include="App_Data\Model\*.json" />
+	</ItemGroup>
+
+</Project>

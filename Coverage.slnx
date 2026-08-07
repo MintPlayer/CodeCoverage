@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Coverage.Library/Coverage.Library.csproj" />
+  <Project Path="Coverage/Coverage.csproj" />
+</Solution>

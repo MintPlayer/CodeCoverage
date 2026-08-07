@@ -9,7 +9,9 @@ node_modules/
 dist/
 .angular/
 .nx/
-coverage/
+out-tsc/
+# Test-coverage output only — never the Coverage/ project folder (git ignores case on Windows)
+ClientApp/coverage/
 
 # Environment
 .env

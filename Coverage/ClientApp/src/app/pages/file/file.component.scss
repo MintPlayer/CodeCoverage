@@ -1,0 +1,60 @@
+.code-view {
+  font-family: var(--bs-font-monospace);
+  font-size: 0.8125rem;
+  overflow-x: auto;
+  background: #fff;
+}
+
+.code-line {
+  display: flex;
+  line-height: 1.45;
+  white-space: pre;
+
+  &.line-covered {
+    background: rgba(25, 135, 84, 0.12);
+  }
+
+  &.line-partial {
+    background: rgba(255, 193, 7, 0.18);
+  }
+
+  &.line-uncovered {
+    background: rgba(220, 53, 69, 0.14);
+  }
+
+  &.line-target {
+    outline: 2px solid var(--bs-primary);
+    outline-offset: -2px;
+  }
+}
+
+.line-number {
+  flex: 0 0 3.5rem;
+  text-align: right;
+  padding-right: 0.75rem;
+  color: var(--bs-secondary-color);
+  text-decoration: none;
+  user-select: none;
+
+  &:hover {
+    color: var(--bs-primary);
+  }
+}
+
+.line-hits {
+  flex: 0 0 4.5rem;
+  text-align: right;
+  padding-right: 0.75rem;
+  color: var(--bs-secondary-color);
+  user-select: none;
+
+  .branch-info {
+    color: var(--bs-warning-text-emphasis);
+    margin-left: 0.25rem;
+  }
+}
+
+.line-text {
+  flex: 1 1 auto;
+  padding-right: 1rem;
+}

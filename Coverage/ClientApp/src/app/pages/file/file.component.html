@@ -1,0 +1,43 @@
+<bs-card>
+  <bs-card-header>
+    <a [routerLink]="['/a', owner()]">{{ owner() }}</a> /
+    <a [routerLink]="['/r', owner(), name()]">{{ name() }}</a> /
+    <a [routerLink]="['/r', owner(), name(), 'c', sha()]" class="font-monospace">{{ sha().substring(0, 7) }}</a> /
+    <strong>{{ path() }}</strong>
+  </bs-card-header>
+
+  @if (loading()) {
+    <bs-spinner />
+  } @else if (detail(); as d) {
+    @if (stats(); as s) {
+      <div class="mb-2 d-flex align-items-center gap-2">
+        <bs-badge [class]="s.coverable > 0 && s.covered / s.coverable >= 0.8 ? 'text-bg-success' : 'text-bg-warning'">
+          {{ s.covered }}/{{ s.coverable }} lines covered
+        </bs-badge>
+        @if (d.source === null) {
+          <span class="small text-muted">Source unavailable (private repo without App access, or file missing at this commit) — showing coverage data only.</span>
+        }
+      </div>
+    }
+
+    <div class="code-view border rounded">
+      @for (line of renderedLines(); track line.number) {
+        <div class="code-line" [class]="'line-' + line.status" [id]="'L' + line.number"
+             [class.line-target]="line.number === targetLine()">
+          <a class="line-number" [routerLink]="[]" [queryParams]="{ path: path() }" [fragment]="'L' + line.number">{{ line.number }}</a>
+          <span class="line-hits" [title]="line.branchInfo ? 'Branches: ' + line.branchInfo : ''">
+            @if (line.hits !== undefined) {
+              {{ line.hits }}×
+            }
+            @if (line.branchInfo) {
+              <span class="branch-info">{{ line.branchInfo }}</span>
+            }
+          </span>
+          <span class="line-text">{{ line.text }}</span>
+        </div>
+      }
+    </div>
+  } @else {
+    <p class="text-muted mb-0">No coverage data for this file.</p>
+  }
+</bs-card>

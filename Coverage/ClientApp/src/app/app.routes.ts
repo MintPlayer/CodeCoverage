@@ -14,6 +14,7 @@ export const routes: Routes = [
       { path: 'a/:login', loadComponent: () => import('./pages/account/account.component') },
       { path: 'r/:owner/:repo', loadComponent: () => import('./pages/repo/repo.component') },
       { path: 'r/:owner/:repo/c/:sha', loadComponent: () => import('./pages/commit/commit.component') },
+      { path: 'r/:owner/:repo/c/:sha/f', loadComponent: () => import('./pages/file/file.component') },
       ...sparkRoutes()
     ]
   }

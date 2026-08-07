@@ -70,6 +70,26 @@ export interface TreeResponse {
   unmatchedFiles: string[];
 }
 
+export interface LineCoverageInfo {
+  number: number;
+  hits?: number;
+  status: 'NotCovered' | 'PartiallyCovered' | 'Covered';
+}
+
+export interface BranchCoverageInfo {
+  line: number;
+  blockId: string;
+  branchId: string;
+  taken?: number;
+}
+
+export interface FileDetail {
+  path: string;
+  source: string | null;
+  lines: LineCoverageInfo[];
+  branches: BranchCoverageInfo[];
+}
+
 export function coveragePercent(summary?: CoverageSummary | null): number | null {
   if (!summary || summary.linesCoverable === 0) return null;
   return (summary.linesCovered / summary.linesCoverable) * 100;
@@ -104,6 +124,12 @@ export class BrowseService {
     if (path) params = params.set('path', path);
     return firstValueFrom(this.http.get<TreeResponse>(
       `/api/browse/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/commits/${encodeURIComponent(sha)}/tree`, { params }));
+  }
+
+  getFile(owner: string, name: string, sha: string, path: string): Promise<FileDetail> {
+    const params = new HttpParams().set('path', path);
+    return firstValueFrom(this.http.get<FileDetail>(
+      `/api/browse/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/commits/${encodeURIComponent(sha)}/file`, { params }));
   }
 
   rotateBadgeToken(owner: string, name: string): Promise<{ badgeToken: string }> {

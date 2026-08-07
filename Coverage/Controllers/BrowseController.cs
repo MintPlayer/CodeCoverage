@@ -20,6 +20,7 @@ public partial class BrowseController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;
     [Inject] private readonly IGitHubAccessService gitHubAccess;
+    [Inject] private readonly IGitHubContentService gitHubContent;
 
     public sealed record RepoInfo(string Owner, string Name, string FullName, bool IsPrivate, string? DefaultBranch,
         CoverageSummary? LatestCoverage, string? LatestCoverageSha, bool CanManage, string? BadgeToken);
@@ -159,6 +160,43 @@ public partial class BrowseController : ControllerBase
             : Enumerable.Empty<string>();
 
         return Ok(new TreeResponse(commit.LatestBuildId, result, unmatched));
+    }
+
+    /// <summary>
+    /// One file's line coverage plus its source at that commit (fetched from
+    /// GitHub live — never stored). Source may be null (uninstalled private
+    /// repo, deleted history, binary); the UI then shows coverage-only rows.
+    /// </summary>
+    [HttpGet("repos/{owner}/{name}/commits/{sha}/file")]
+    public async Task<ActionResult<object>> GetFile(
+        string owner, string name, string sha, [FromQuery] string path, CancellationToken cancellationToken)
+    {
+        var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
+        if (repository is null) return NotFound();
+
+        var commit = await session.LoadAsync<Commit>(Commit.DocumentId(repository.GitHubId, sha), cancellationToken);
+        if (commit?.LatestBuildId is null) return NotFound();
+
+        var fileCoverage = await session.LoadAsync<FileCoverage>(
+            FileCoverage.DocumentId(commit.LatestBuildId, path), cancellationToken);
+        if (fileCoverage is null) return NotFound();
+
+        long? installationId = null;
+        if (repository.Account is not null)
+        {
+            var account = await session.LoadAsync<Account>(repository.Account, cancellationToken);
+            installationId = account?.InstallationId;
+        }
+
+        var source = await gitHubContent.GetFileContentAsync(repository, installationId, sha, path, cancellationToken);
+
+        return Ok(new
+        {
+            fileCoverage.Path,
+            Source = source,
+            Lines = fileCoverage.Lines,
+            Branches = fileCoverage.Branches,
+        });
     }
 
     private async Task<List<FileCoverage>> LoadBuildFiles(string buildId, CancellationToken cancellationToken)

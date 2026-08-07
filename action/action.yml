@@ -10,8 +10,12 @@ inputs:
     description: 'Base URL of the Coverage server, e.g. https://coverage.example.com'
     required: true
   token:
-    description: 'Upload token (covt_…). Store it as a repository/organization secret.'
-    required: true
+    description: 'Upload token (covt_…). Optional when OIDC is available (see use-oidc).'
+    required: false
+  use-oidc:
+    description: 'Authenticate with GitHub Actions OIDC instead of a token (requires `permissions: id-token: write`; unavailable to fork PRs). Defaults to on whenever no token is given and OIDC is available.'
+    required: false
+    default: 'false'
   files:
     description: 'Explicit report files or globs (comma- or newline-separated). When omitted, well-known coverage files are auto-detected.'
     required: false

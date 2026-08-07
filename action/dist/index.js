@@ -64156,7 +64156,7 @@ async function run() {
     const failCiIfError = getBool('fail-ci-if-error');
     try {
         const url = core.getInput('url', { required: true }).replace(/\/+$/, '');
-        const token = core.getInput('token', { required: true });
+        const token = await resolveCredential(url);
         const ctx = (0, context_1.collectContext)();
         const files = await (0, files_1.findCoverageFiles)(core.getInput('files') || undefined, core.getInput('directory') || undefined, ctx.rootDir, getBool('disable-search'));
         if (files.length === 0) {
@@ -64216,6 +64216,26 @@ async function run() {
             core.warning(`Coverage upload failed (not failing CI): ${message}`);
         }
     }
+}
+/**
+ * Prefers OIDC when asked (use-oidc) or when no token is configured and the
+ * runtime offers it. The id-token's audience must equal the server's base URL —
+ * that's what the server validates.
+ */
+async function resolveCredential(url) {
+    const token = core.getInput('token');
+    const oidcAvailable = !!process.env['ACTIONS_ID_TOKEN_REQUEST_URL'];
+    if (getBool('use-oidc') || (!token && oidcAvailable)) {
+        if (!oidcAvailable) {
+            throw new Error('use-oidc requires `permissions: id-token: write` (and OIDC is never available to pull requests from forks).');
+        }
+        core.info('Authenticating with GitHub Actions OIDC.');
+        return core.getIDToken(url);
+    }
+    if (!token) {
+        throw new Error('No `token` given and OIDC is unavailable. Pass an upload token, or grant `permissions: id-token: write` for tokenless uploads.');
+    }
+    return token;
 }
 async function gitLsFiles(cwd) {
     try {

@@ -78,10 +78,25 @@ builder.Services.AddSpark(builder.Configuration, spark =>
     });
 });
 
-// CI upload credential — see Coverage/ApiTokens. Registered as an extra scheme
+// CI upload credentials — see Coverage/ApiTokens. Registered as extra schemes
 // beside the Identity cookie; endpoints opt in via AuthenticationSchemes.
+// 1. ApiToken: covt_… bearer values (returns NoResult for anything else).
+// 2. GitHubOidc: GitHub-signed workflow JWTs, validated against GitHub's JWKS;
+//    the audience must be this deployment's public base URL and the action
+//    must request exactly that audience.
 builder.Services.AddAuthentication()
-    .AddScheme<AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>(ApiTokenAuthenticationHandler.SchemeName, null);
+    .AddScheme<AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>(ApiTokenAuthenticationHandler.SchemeName, null)
+    .AddJwtBearer(GitHubOidc.SchemeName, options =>
+    {
+        options.Authority = GitHubOidc.Issuer;
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+        {
+            ValidIssuer = GitHubOidc.Issuer,
+            ValidAudience = builder.Configuration["Coverage:BaseUrl"] ?? "https://localhost:5200",
+            ValidateLifetime = true,
+        };
+    });
 
 // Spark's built-in rate limiter only covers /spark/* — our ingest endpoints
 // need their own, partitioned per token (falling back to client IP).

@@ -29,6 +29,8 @@ services:
     environment:
       - Spark__RavenDb__Urls__0=http://coverage-raven:8080
       - Spark__RavenDb__EnsureDatabaseCreated=true
+      # OIDC audience: workflows must request an id-token with this audience
+      - Coverage__BaseUrl=https://${TRAEFIK_HOST}
       - GitHub__WebhookSecret=${GITHUB_WEBHOOK_SECRET}
       - GitHub__Production__AppId=${GITHUB_PRODUCTION_APP_ID}
       - GitHub__Production__ClientId=${GITHUB_APP_CLIENT_ID}

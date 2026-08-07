@@ -20,7 +20,7 @@ namespace Coverage.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/uploads")]
-[Authorize(AuthenticationSchemes = ApiTokenAuthenticationHandler.SchemeName)]
+[Authorize(AuthenticationSchemes = $"{ApiTokenAuthenticationHandler.SchemeName},{GitHubOidc.SchemeName}")]
 [EnableRateLimiting("uploads")]
 public partial class UploadsController : ControllerBase
 {
@@ -46,6 +46,15 @@ public partial class UploadsController : ControllerBase
         var repository = await ResolveAuthorizedRepository(form.Repository, cancellationToken);
         if (repository is null)
             return NotFound(new { error = $"Repository '{form.Repository}' is unknown here (is the GitHub App installed?) or the token doesn't grant it." });
+
+        // OIDC claims are GitHub-signed and unforgeable — they override the
+        // body's copies so a workflow can't attach its coverage to someone
+        // else's run. The `sha` claim is NOT used: on pull_request events it
+        // is the ephemeral merge commit, while the body carries the PR head.
+        if (long.TryParse(User.FindFirst(GitHubOidc.RunIdClaim)?.Value, out var claimRunId))
+            form.RunId = claimRunId;
+        if (int.TryParse(User.FindFirst(GitHubOidc.RunAttemptClaim)?.Value, out var claimRunAttempt))
+            form.RunAttempt = claimRunAttempt;
 
         var commitId = Entities.Commit.DocumentId(repository.GitHubId, form.CommitSha);
         var commit = await session.LoadAsync<Commit>(commitId, cancellationToken);
@@ -161,6 +170,16 @@ public partial class UploadsController : ControllerBase
 
     private async Task<Repository?> ResolveAuthorizedRepository(string fullName, CancellationToken cancellationToken)
     {
+        // OIDC path: the GitHub-signed `repository` claim IS the authorization —
+        // a workflow can only ever upload for the repository it runs in.
+        var oidcRepository = User.FindFirst(GitHubOidc.RepositoryClaim)?.Value;
+        if (oidcRepository is not null)
+        {
+            if (!string.Equals(oidcRepository, fullName, StringComparison.OrdinalIgnoreCase))
+                return null;
+            return await ResolveOidcRepository(cancellationToken);
+        }
+
         var repository = await session.Query<Repository>()
             .Where(r => r.FullName == fullName)
             .FirstOrDefaultAsync(cancellationToken);
@@ -180,5 +199,50 @@ public partial class UploadsController : ControllerBase
 
         // Unknown and unauthorized look identical to the caller (no existence leak).
         return authorized ? repository : null;
+    }
+
+    /// <summary>
+    /// Loads the OIDC caller's repository; public repositories auto-provision on
+    /// first upload (no App installation needed), private ones must already be
+    /// known via the GitHub App.
+    /// </summary>
+    private async Task<Repository?> ResolveOidcRepository(CancellationToken cancellationToken)
+    {
+        if (!long.TryParse(User.FindFirst(GitHubOidc.RepositoryIdClaim)?.Value, out var gitHubRepoId))
+            return null;
+
+        var repository = await session.LoadAsync<Repository>(Repository.DocumentId(gitHubRepoId), cancellationToken);
+        if (repository is not null)
+            return repository;
+
+        if (User.FindFirst(GitHubOidc.RepositoryVisibilityClaim)?.Value != "public")
+            return null;
+
+        var fullName = User.FindFirst(GitHubOidc.RepositoryClaim)!.Value;
+        var ownerLogin = User.FindFirst(GitHubOidc.RepositoryOwnerClaim)?.Value ?? fullName.Split('/')[0];
+
+        Account? account = null;
+        if (long.TryParse(User.FindFirst(GitHubOidc.RepositoryOwnerIdClaim)?.Value, out var ownerId))
+        {
+            account = await session.LoadAsync<Account>(Account.DocumentId(ownerId), cancellationToken);
+            if (account is null)
+            {
+                account = new Account { GitHubId = ownerId, Login = ownerLogin };
+                await session.StoreAsync(account, Account.DocumentId(ownerId), cancellationToken);
+            }
+        }
+
+        repository = new Repository
+        {
+            GitHubId = gitHubRepoId,
+            Account = account?.Id,
+            Name = fullName.Split('/')[1],
+            FullName = fullName,
+            OwnerLogin = ownerLogin,
+            IsPrivate = false,
+        };
+        await session.StoreAsync(repository, Repository.DocumentId(gitHubRepoId), cancellationToken);
+        logger.LogInformation("Auto-provisioned public repository {FullName} from OIDC upload", fullName);
+        return repository;
     }
 }

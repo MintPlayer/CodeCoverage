@@ -91,11 +91,6 @@ public partial class ParseSessionRecipient : IRecipient<ParseSessionMessage>
             // sessions touched but this one didn't).
             await session.SaveChangesAsync(cancellationToken);
             await RecomputeBuildSummary(build, cancellationToken);
-
-            if (build.FinishRequested && build.Sessions.All(s => s.ParseStatus != "Pending"))
-            {
-                await BuildFinalizer.Finalize(session, build, "Explicit", cancellationToken);
-            }
         }
         catch (Exception ex)
         {

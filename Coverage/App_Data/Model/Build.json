@@ -160,21 +160,6 @@
         "rules": []
       },
       {
-        "id": "d992d89a-b3aa-4926-a223-760b2800a006",
-        "name": "FinishRequested",
-        "label": {
-          "en": "Finish Requested"
-        },
-        "dataType": "boolean",
-        "isRequired": true,
-        "isVisible": true,
-        "isReadOnly": false,
-        "order": 11,
-        "isArray": false,
-        "showedOn": "Query, PersistentObject",
-        "rules": []
-      },
-      {
         "id": "a8c2e25f-432a-4e5b-b46c-2d5b3f90213c",
         "name": "Sessions",
         "label": {

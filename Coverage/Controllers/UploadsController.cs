@@ -80,7 +80,6 @@ public partial class UploadsController : ControllerBase
             build.Status = "Open";
             build.FinalizedAtUtc = null;
             build.FinalizeReason = null;
-            build.FinishRequested = false;
         }
 
         var sessionId = Guid.NewGuid().ToString("N")[..12];
@@ -133,18 +132,11 @@ public partial class UploadsController : ControllerBase
         if (build is null)
             return NotFound();
 
-        // Finalizing before every session is parsed would promote a stale
-        // summary onto the commit — defer to the moment the last session lands.
-        if (build.Sessions.Any(s => s.ParseStatus == "Pending"))
-        {
-            build.FinishRequested = true;
-            await session.SaveChangesAsync(cancellationToken);
-            return Accepted(new { status = "PendingParse" });
-        }
-
-        await BuildFinalizer.Finalize(session, build, "Explicit", cancellationToken);
-        await session.SaveChangesAsync(cancellationToken);
-        return Ok();
+        // Finalization rides the parse queue (FIFO): it runs after every parse
+        // enqueued before this call, so it can never promote a stale summary or
+        // race a parse's save.
+        await messageBus.BroadcastAsync(new FinalizeBuildMessage { BuildId = buildId }, cancellationToken);
+        return Accepted(new { status = "Finalizing" });
     }
 
     public sealed class UploadForm

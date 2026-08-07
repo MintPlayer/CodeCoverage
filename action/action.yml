@@ -1,0 +1,42 @@
+name: 'Coverage Upload'
+description: 'Upload coverage reports (lcov, cobertura, …) to a self-hosted Coverage instance'
+author: 'MintPlayer'
+branding:
+  icon: 'umbrella'
+  color: 'green'
+
+inputs:
+  url:
+    description: 'Base URL of the Coverage server, e.g. https://coverage.example.com'
+    required: true
+  token:
+    description: 'Upload token (covt_…). Store it as a repository/organization secret.'
+    required: true
+  files:
+    description: 'Explicit report files or globs (comma- or newline-separated). When omitted, well-known coverage files are auto-detected.'
+    required: false
+  directory:
+    description: 'Root directory for auto-detection (default: workspace).'
+    required: false
+  flags:
+    description: 'Comma-separated flags labelling this upload (e.g. unit,linux).'
+    required: false
+  name:
+    description: 'Session name; defaults to the job name.'
+    required: false
+  finish:
+    description: 'Finalize the build after uploading (set true on the last upload job, or run a dedicated finish job).'
+    required: false
+    default: 'false'
+  fail-ci-if-error:
+    description: 'Fail the step when the upload fails (default: false — coverage upload should not break CI).'
+    required: false
+    default: 'false'
+  disable-search:
+    description: 'Only upload the explicitly listed files.'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

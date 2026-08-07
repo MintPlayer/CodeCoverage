@@ -35,5 +35,15 @@ public class Repository
     /// </summary>
     public string? BadgeToken { get; set; }
 
+    /// <summary>
+    /// Denormalized from the newest finalized default-branch build, so repo
+    /// lists and badges are point-loads.
+    /// </summary>
+    public CoverageSummary? LatestCoverage { get; set; }
+
+    public string? LatestCoverageSha { get; set; }
+
+    public DateTime? LatestCoverageAtUtc { get; set; }
+
     public static string DocumentId(long gitHubId) => $"Repositories/{gitHubId}";
 }

@@ -29,7 +29,7 @@
                     } @else {
                       <i class="bi" [class.bi-person]="account.type === 'User'" [class.bi-people]="account.type !== 'User'"></i>
                     }
-                    <span class="me-auto">{{ account.login }}</span>
+                    <a [routerLink]="['/a', account.login]" class="me-auto">{{ account.login }}</a>
                     @if (account.installed) {
                       <bs-badge class="text-bg-success">{{ 'app.appInstalled' | t }}</bs-badge>
                     } @else {

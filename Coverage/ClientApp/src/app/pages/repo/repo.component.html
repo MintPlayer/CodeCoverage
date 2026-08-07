@@ -1,0 +1,66 @@
+<bs-card>
+  <bs-card-header>
+    <a [routerLink]="['/a', owner()]">{{ owner() }}</a> / <strong>{{ name() }}</strong>
+    @if (repo()?.isPrivate) {
+      <bs-badge class="text-bg-secondary ms-2">private</bs-badge>
+    }
+  </bs-card-header>
+
+  @if (repo(); as r) {
+    <div class="d-flex align-items-center gap-3 mb-3">
+      <span class="text-muted">Latest coverage ({{ r.defaultBranch ?? 'default branch' }}):</span>
+      <app-coverage-bar [summary]="r.latestCoverage" />
+    </div>
+  }
+
+  @if (commits(); as list) {
+    @if (list.length === 0) {
+      <p class="text-muted mb-0">No commits with coverage yet — upload a report from your workflow first.</p>
+    } @else {
+      <bs-table>
+        <thead>
+          <tr>
+            <th>Commit</th>
+            <th>Branch</th>
+            <th>Coverage</th>
+            <th>Δ</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (commit of list; track commit.sha; let i = $index) {
+            <tr>
+              <td>
+                <a [routerLink]="['/r', owner(), name(), 'c', commit.sha]" class="font-monospace">
+                  {{ commit.sha.substring(0, 7) }}
+                </a>
+                @if (commit.message) {
+                  <span class="text-muted small ms-2">{{ commit.message.substring(0, 72) }}</span>
+                }
+              </td>
+              <td>
+                @if (commit.branch) {
+                  <bs-badge class="text-bg-light">{{ commit.branch }}</bs-badge>
+                }
+                @if (commit.pullRequestNumber) {
+                  <bs-badge class="text-bg-info ms-1">#{{ commit.pullRequestNumber }}</bs-badge>
+                }
+              </td>
+              <td><app-coverage-bar [summary]="commit.coverage" /></td>
+              <td>
+                @if (delta(i); as d) {
+                  <span class="small" [class.text-success]="d > 0" [class.text-danger]="d < 0">
+                    {{ d > 0 ? '+' : '' }}{{ d.toFixed(1) }}
+                  </span>
+                }
+              </td>
+              <td class="small text-muted">{{ commit.authoredAt | date:'medium' }}</td>
+            </tr>
+          }
+        </tbody>
+      </bs-table>
+    }
+  } @else {
+    <bs-spinner />
+  }
+</bs-card>

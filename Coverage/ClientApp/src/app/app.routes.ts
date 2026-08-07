@@ -11,6 +11,9 @@ export const routes: Routes = [
       ...sparkAuthRoutes(),
       { path: '', redirectTo: 'home', pathMatch: 'full' },
       { path: 'home', loadComponent: () => import('./pages/home/home.component') },
+      { path: 'a/:login', loadComponent: () => import('./pages/account/account.component') },
+      { path: 'r/:owner/:repo', loadComponent: () => import('./pages/repo/repo.component') },
+      { path: 'r/:owner/:repo/c/:sha', loadComponent: () => import('./pages/commit/commit.component') },
       ...sparkRoutes()
     ]
   }

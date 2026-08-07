@@ -143,6 +143,52 @@
         "isArray": false,
         "showedOn": "Query, PersistentObject",
         "rules": []
+      },
+      {
+        "id": "a5dab619-07dd-4a7a-ba95-d7966cee3f30",
+        "name": "LatestCoverage",
+        "label": {
+          "en": "Latest Coverage"
+        },
+        "dataType": "AsDetail",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 10,
+        "asDetailType": "Coverage.Entities.CoverageSummary",
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "86daca14-2fef-4f3a-a098-8efcbb2806aa",
+        "name": "LatestCoverageSha",
+        "label": {
+          "en": "Latest Coverage Sha"
+        },
+        "dataType": "string",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 11,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "89a49e24-b5c9-45f9-9cff-86713ab647cd",
+        "name": "LatestCoverageAtUtc",
+        "label": {
+          "en": "Latest Coverage At Utc"
+        },
+        "dataType": "datetime",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 12,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
       }
     ],
     "queries": []

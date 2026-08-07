@@ -24,6 +24,23 @@ public static class BuildFinalizer
             if (commit is not null)
             {
                 commit.Coverage = build.Coverage;
+                commit.LatestBuildId = build.Id;
+
+                if (commit.Repository is not null)
+                {
+                    var repository = await session.LoadAsync<Repository>(commit.Repository, cancellationToken);
+                    // Repo-level coverage tracks the default branch; a repo that
+                    // never had data accepts any branch rather than showing nothing.
+                    if (repository is not null
+                        && (repository.LatestCoverage is null
+                            || repository.DefaultBranch is null
+                            || string.Equals(commit.Branch, repository.DefaultBranch, StringComparison.Ordinal)))
+                    {
+                        repository.LatestCoverage = build.Coverage;
+                        repository.LatestCoverageSha = commit.Sha;
+                        repository.LatestCoverageAtUtc = DateTime.UtcNow;
+                    }
+                }
             }
         }
     }

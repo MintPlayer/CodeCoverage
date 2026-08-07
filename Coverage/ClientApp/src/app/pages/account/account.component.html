@@ -1,0 +1,43 @@
+<bs-card>
+  <bs-card-header>
+    <i class="bi bi-person-circle"></i> {{ login() }}
+  </bs-card-header>
+
+  @if (repos(); as list) {
+    @if (list.length === 0) {
+      <p class="text-muted mb-0">No repositories with coverage data yet.</p>
+    } @else {
+      <bs-table>
+        <thead>
+          <tr>
+            <th>Repository</th>
+            <th>Coverage</th>
+            <th>Latest commit</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (repo of list; track repo.fullName) {
+            <tr>
+              <td>
+                <a [routerLink]="['/r', repo.owner, repo.name]">{{ repo.name }}</a>
+                @if (repo.isPrivate) {
+                  <bs-badge class="text-bg-secondary ms-2">private</bs-badge>
+                }
+              </td>
+              <td><app-coverage-bar [summary]="repo.latestCoverage" /></td>
+              <td>
+                @if (repo.latestCoverageSha) {
+                  <a [routerLink]="['/r', repo.owner, repo.name, 'c', repo.latestCoverageSha]" class="font-monospace small">
+                    {{ repo.latestCoverageSha.substring(0, 7) }}
+                  </a>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </bs-table>
+    }
+  } @else {
+    <bs-spinner />
+  }
+</bs-card>

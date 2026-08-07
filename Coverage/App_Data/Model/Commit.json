@@ -129,6 +129,21 @@
         "isArray": false,
         "showedOn": "Query, PersistentObject",
         "rules": []
+      },
+      {
+        "id": "c1b18792-3a93-4b1b-a590-802beb91ba99",
+        "name": "LatestBuildId",
+        "label": {
+          "en": "Latest Build Id"
+        },
+        "dataType": "string",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 9,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
       }
     ],
     "queries": []

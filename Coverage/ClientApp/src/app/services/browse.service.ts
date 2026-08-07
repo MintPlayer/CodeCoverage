@@ -18,6 +18,8 @@ export interface RepoInfo {
   defaultBranch?: string;
   latestCoverage?: CoverageSummary;
   latestCoverageSha?: string;
+  canManage: boolean;
+  badgeToken?: string;
 }
 
 export interface CommitInfo {
@@ -102,5 +104,10 @@ export class BrowseService {
     if (path) params = params.set('path', path);
     return firstValueFrom(this.http.get<TreeResponse>(
       `/api/browse/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/commits/${encodeURIComponent(sha)}/tree`, { params }));
+  }
+
+  rotateBadgeToken(owner: string, name: string): Promise<{ badgeToken: string }> {
+    return firstValueFrom(this.http.post<{ badgeToken: string }>(
+      `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/settings/badge-token`, {}));
   }
 }

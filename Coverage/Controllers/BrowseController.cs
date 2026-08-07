@@ -22,7 +22,7 @@ public partial class BrowseController : ControllerBase
     [Inject] private readonly IGitHubAccessService gitHubAccess;
 
     public sealed record RepoInfo(string Owner, string Name, string FullName, bool IsPrivate, string? DefaultBranch,
-        CoverageSummary? LatestCoverage, string? LatestCoverageSha);
+        CoverageSummary? LatestCoverage, string? LatestCoverageSha, bool CanManage, string? BadgeToken);
     public sealed record CommitInfo(string Sha, string? Branch, int? PullRequestNumber, string? Message,
         DateTimeOffset? AuthoredAt, CoverageSummary? Coverage);
     public sealed record BuildInfo(long RunId, int RunAttempt, string Status, string? FinalizeReason,
@@ -44,7 +44,7 @@ public partial class BrowseController : ControllerBase
         return Ok(repos
             .Where(r => includePrivate || !r.IsPrivate)
             .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(ToRepoInfo));
+            .Select(r => ToRepoInfo(r, includePrivate)));
     }
 
     [HttpGet("repos/{owner}/{name}")]
@@ -52,7 +52,8 @@ public partial class BrowseController : ControllerBase
     {
         var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
         if (repository is null) return NotFound();
-        return Ok(ToRepoInfo(repository));
+        var canManage = await gitHubAccess.IsOwnerAllowedAsync(repository.OwnerLogin, cancellationToken);
+        return Ok(ToRepoInfo(repository, canManage));
     }
 
     [HttpGet("repos/{owner}/{name}/commits")]
@@ -180,6 +181,7 @@ public partial class BrowseController : ControllerBase
         return await gitHubAccess.IsOwnerAllowedAsync(repository.OwnerLogin, cancellationToken) ? repository : null;
     }
 
-    private static RepoInfo ToRepoInfo(Repository r)
-        => new(r.OwnerLogin, r.Name, r.FullName, r.IsPrivate, r.DefaultBranch, r.LatestCoverage, r.LatestCoverageSha);
+    private static RepoInfo ToRepoInfo(Repository r, bool canManage)
+        => new(r.OwnerLogin, r.Name, r.FullName, r.IsPrivate, r.DefaultBranch, r.LatestCoverage, r.LatestCoverageSha,
+            canManage, canManage ? r.BadgeToken : null);
 }

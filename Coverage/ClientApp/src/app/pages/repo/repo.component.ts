@@ -50,4 +50,23 @@ export default class RepoComponent {
     if (current === null || previous === null) return null;
     return current - previous;
   }
+
+  badgeMarkdown(): string {
+    const r = this.repo();
+    if (!r) return '';
+    const base = `${location.origin}/badge/${r.owner}/${r.name}.svg`;
+    const url = r.isPrivate && r.badgeToken ? `${base}?token=${r.badgeToken}` : base;
+    return `[![Coverage](${url})](${location.origin}/r/${r.owner}/${r.name})`;
+  }
+
+  async copyBadge(): Promise<void> {
+    await navigator.clipboard.writeText(this.badgeMarkdown());
+  }
+
+  async rotateBadgeToken(): Promise<void> {
+    const r = this.repo();
+    if (!r) return;
+    const result = await this.browse.rotateBadgeToken(r.owner, r.name);
+    this.repo.set({ ...r, badgeToken: result.badgeToken });
+  }
 }

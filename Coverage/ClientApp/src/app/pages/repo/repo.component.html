@@ -10,7 +10,28 @@
     <div class="d-flex align-items-center gap-3 mb-3">
       <span class="text-muted">Latest coverage ({{ r.defaultBranch ?? 'default branch' }}):</span>
       <app-coverage-bar [summary]="r.latestCoverage" />
+      <img [src]="'/badge/' + r.owner + '/' + r.name + '.svg' + (r.isPrivate && r.badgeToken ? '?token=' + r.badgeToken : '')" alt="coverage badge" height="20">
     </div>
+
+    @if (r.canManage) {
+      <div class="border rounded p-2 mb-3 bg-light">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <strong class="small">README badge</strong>
+          <button class="btn btn-sm btn-outline-secondary" (click)="copyBadge()">
+            <i class="bi bi-clipboard"></i> Copy markdown
+          </button>
+          @if (r.isPrivate) {
+            <button class="btn btn-sm btn-outline-warning" (click)="rotateBadgeToken()">
+              <i class="bi bi-arrow-repeat"></i> {{ r.badgeToken ? 'Rotate' : 'Create' }} badge token
+            </button>
+          }
+        </div>
+        <code class="small d-block text-break">{{ badgeMarkdown() }}</code>
+        @if (r.isPrivate && !r.badgeToken) {
+          <div class="small text-muted mt-1">Private repository — create a badge token to make the badge work in your README.</div>
+        }
+      </div>
+    }
   }
 
   @if (commits(); as list) {

@@ -163,6 +163,66 @@ public partial class BrowseController : ControllerBase
     }
 
     /// <summary>
+    /// The commit's full coverage tree in bs-hierarchy-chart's HierarchyNode
+    /// shape: leaves carry value (coverable lines) + colorValue (covered %);
+    /// folders carry neither — the chart derives folder colors as
+    /// value-weighted means and sizes arcs by summed leaf values.
+    /// </summary>
+    [HttpGet("repos/{owner}/{name}/commits/{sha}/hierarchy")]
+    public async Task<ActionResult<HierarchyNodeDto>> GetHierarchy(string owner, string name, string sha, CancellationToken cancellationToken)
+    {
+        var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
+        if (repository is null) return NotFound();
+
+        var commit = await session.LoadAsync<Commit>(Commit.DocumentId(repository.GitHubId, sha), cancellationToken);
+        if (commit?.LatestBuildId is null) return NotFound();
+
+        var files = await LoadBuildFiles(commit.LatestBuildId, cancellationToken);
+
+        var root = new HierarchyNodeDto { Id = "/", Name = repository.Name, Children = [] };
+        foreach (var file in files.Where(f => f.Matched).OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase))
+        {
+            var segments = file.Path.Split('/');
+            var current = root;
+            for (var i = 0; i < segments.Length - 1; i++)
+            {
+                var folderPath = string.Join('/', segments[..(i + 1)]);
+                var next = current.Children!.FirstOrDefault(c => c.Id == folderPath);
+                if (next is null)
+                {
+                    next = new HierarchyNodeDto { Id = folderPath, Name = segments[i], Children = [] };
+                    current.Children!.Add(next);
+                }
+                current = next;
+            }
+
+            var coverable = file.Lines.Count;
+            current.Children!.Add(new HierarchyNodeDto
+            {
+                Id = file.Path,
+                Name = segments[^1],
+                Value = coverable,
+                ColorValue = coverable == 0 ? null
+                    : Math.Round(file.Lines.Count(l => l.Status != LineStatus.NotCovered) * 100.0 / coverable, 1),
+            });
+        }
+
+        return Ok(root);
+    }
+
+    public sealed class HierarchyNodeDto
+    {
+        public required string Id { get; init; }
+        public required string Name { get; init; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public int? Value { get; init; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public double? ColorValue { get; init; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public List<HierarchyNodeDto>? Children { get; set; }
+    }
+
+    /// <summary>
     /// One file's line coverage plus its source at that commit (fetched from
     /// GitHub live — never stored). Source may be null (uninstalled private
     /// repo, deleted history, binary); the UI then shows coverage-only rows.

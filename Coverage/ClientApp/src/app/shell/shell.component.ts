@@ -35,12 +35,15 @@ export class ShellComponent {
     });
   }
 
-  // Full-page redirect instead of a popup: the Spark external-login callback
-  // only emits the popup postMessage handshake when ?popup is propagated, which
-  // the /spark/auth/external-login endpoint currently doesn't do. The redirect
-  // flow round-trips through GitHub and lands back on returnUrl, signed in.
-  loginWithGitHub(): void {
-    window.location.href = '/spark/auth/external-login?provider=GitHub&returnUrl=/home';
+  // ng-spark-auth 22.1.0 owns the whole popup handshake (blocked, closed and
+  // server-refused paths all settle the promise). Fall back to a full-page
+  // redirect when a popup blocker interferes — in redirect mode the promise
+  // never settles, since the document is being replaced.
+  async loginWithGitHub(): Promise<void> {
+    const result = await this.authService.loginWithProvider('GitHub', { returnUrl: '/home' });
+    if (!result.success && result.error === 'popup_blocked') {
+      await this.authService.loginWithProvider('GitHub', { returnUrl: '/home', mode: 'redirect' });
+    }
   }
 
   async logout(): Promise<void> {

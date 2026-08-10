@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using MintPlayer.AspNetCore.SpaServices.Extensions;
 using MintPlayer.Spark;
+using MintPlayer.Spark.Abstractions.Authentication;
 using MintPlayer.Spark.Authorization.Extensions;
 using MintPlayer.Spark.Authorization.Identity;
 using MintPlayer.Spark.Messaging;
@@ -57,6 +58,16 @@ builder.Services.AddSpark(builder.Configuration, spark =>
             });
         }
     });
+    // Registered as a Spark credential scheme (non-ambient): the composite
+    // default-authenticate scheme tries it, which both silences the
+    // "refused by every registered scheme" warning on CI uploads and earns
+    // the non-ambient antiforgery exemption. The handler returns NoResult
+    // for anything that isn't a covt_ value, so this widens nothing.
+    // GitHubOidc is deliberately NOT a credential scheme — workflow JWTs
+    // stay valid only on endpoints that name the scheme explicitly.
+    spark.AddCredentialScheme<AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>(
+        ApiTokenAuthenticationHandler.SchemeName);
+
     spark.AddMessaging();
     spark.AddRecipients();
     spark.AddCronJobs();
@@ -80,14 +91,11 @@ builder.Services.AddSpark(builder.Configuration, spark =>
     });
 });
 
-// CI upload credentials — see Coverage/ApiTokens. Registered as extra schemes
-// beside the Identity cookie; endpoints opt in via AuthenticationSchemes.
-// 1. ApiToken: covt_… bearer values (returns NoResult for anything else).
-// 2. GitHubOidc: GitHub-signed workflow JWTs, validated against GitHub's JWKS;
-//    the audience must be this deployment's public base URL and the action
-//    must request exactly that audience.
+// GitHubOidc: GitHub-signed workflow JWTs, validated against GitHub's JWKS;
+// the audience must be this deployment's public base URL and the action must
+// request exactly that audience. (ApiToken is registered inside AddSpark as a
+// credential scheme — see above.)
 builder.Services.AddAuthentication()
-    .AddScheme<AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>(ApiTokenAuthenticationHandler.SchemeName, null)
     .AddJwtBearer(GitHubOidc.SchemeName, options =>
     {
         options.Authority = GitHubOidc.Issuer;

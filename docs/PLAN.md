@@ -100,7 +100,7 @@ ng-bootstrap#401 (→ `22.14.0` charts). All remaining work is in this repo.
 **Step 2 — upgrade follow-ups (optional, recommended):**
 1. Register the **ApiToken** scheme as a Spark credential scheme (`spark.AddCredentialScheme("ApiToken", isAmbient: false)` after moving its registration into the AddSpark callback) — silences the per-upload warning + earns the non-ambient antiforgery exemption. Deliberately do NOT register GitHubOidc (it would widen where workflow JWTs are accepted).
 2. Shell: replace the full-page-redirect login workaround with `authService.loginWithProvider('GitHub')` (ng-spark-auth 22.1.0 owns the whole popup handshake incl. blocked/closed/refused paths).
-3. Convert `GitHubEventsRecipient` (catch-all + manual dispatch) to typed `IRecipient<GitHubWebhookMessage<TEvent>>` recipients — the queue-name bug is fixed; route by CLR type, never write derived queue names down. Sequence during a quiet period (in-flight `spark-github-all` messages aren't picked up by the new typed queues).
+3. ~~Convert `GitHubEventsRecipient` to typed recipients~~ — **deliberately skipped**: the webhook processor broadcasts BOTH the catch-all and the typed envelope per event regardless of subscribers, so converting would only swap which family of unconsumed messages accumulates while splitting one cohesive handler into five classes. Revisit if Spark ever broadcasts only to subscribed queues (possible upstream ask).
 
 **Step 3 — coverage diagram (the feature):**
 1. Commit page: `bs-hierarchy-chart` (`layout="sunburst"`, `colorMin≈60`/`colorMax≈80`) fed from a new full-tree endpoint variant returning per-file `HierarchyNode {id: path, value: coverableLines, colorValue: coveredPct}` — folder colors derive upstream (value-weighted mean), no server rollup. `(zoom)` → `openFolder(path)`, `(nodeSelect)` → file view, `[(rootId)]` two-way-bound to the existing folder drill-down so tree and chart stay in sync (that pairing is also the documented WCAG target-size story). Bound column width (aspect-ratio 1 fills width).
@@ -123,7 +123,7 @@ ng-bootstrap#401 (→ `22.14.0` charts). All remaining work is in this repo.
 | M0 Spark groundwork | ✅ Resolved upstream by [Spark#231](https://github.com/MintPlayer/MintPlayer.Spark/pull/231) (ApiTokens lib cancelled → app keeps `covt_`; see PRD §10) |
 | M1 Scaffold · M2 Ingestion · M3 Action · M4 Browse UI · M6 Badges · M7 OIDC | ✅ Built, verified E2E, on `develop` |
 | M5 File view | ✅ App side built; `mp-code-viewer` remains the **only open upstream ask** (docs/ng-bootstrap-handoff.md §1) |
-| M8 Upgrade + diagram | 🔓 Unblocked by [ng-bootstrap#401](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/401) — next up |
+| M8 Upgrade + diagram | ✅ Built (preview.42 + 22.14 upgrade, ApiToken credential scheme, popup login, sunburst + ring on commit page) |
 | M9 Polish | pending |
 
 ## Sequencing notes

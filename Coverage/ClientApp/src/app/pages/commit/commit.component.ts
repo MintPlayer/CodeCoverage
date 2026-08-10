@@ -9,12 +9,14 @@ import { BsSpinnerComponent } from '@mintplayer/ng-bootstrap/spinner';
 import { BsAlertComponent } from '@mintplayer/ng-bootstrap/alert';
 import { BsBreadcrumbComponent, BsBreadcrumbItemComponent } from '@mintplayer/ng-bootstrap/breadcrumb';
 import { Color } from '@mintplayer/ng-bootstrap';
-import { BrowseService, CommitDetail, TreeResponse, coveragePercent } from '../../services/browse.service';
+import { BsHierarchyChartComponent, type HierarchyNodeEventDetail } from '@mintplayer/ng-bootstrap/charts/hierarchy';
+import { BrowseService, CommitDetail, CoverageHierarchyNode, TreeResponse, coveragePercent } from '../../services/browse.service';
 import { CoverageBarComponent } from '../../components/coverage-bar/coverage-bar.component';
+import { CoverageRingComponent } from '../../components/coverage-ring/coverage-ring.component';
 
 @Component({
   selector: 'app-commit',
-  imports: [CommonModule, DatePipe, RouterModule, BsCardComponent, BsCardHeaderComponent, BsTableComponent, BsBadgeComponent, BsSpinnerComponent, BsAlertComponent, BsBreadcrumbComponent, BsBreadcrumbItemComponent, CoverageBarComponent],
+  imports: [CommonModule, DatePipe, RouterModule, BsCardComponent, BsCardHeaderComponent, BsTableComponent, BsBadgeComponent, BsSpinnerComponent, BsAlertComponent, BsBreadcrumbComponent, BsBreadcrumbItemComponent, BsHierarchyChartComponent, CoverageBarComponent, CoverageRingComponent],
   templateUrl: './commit.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -29,6 +31,9 @@ export default class CommitComponent {
   readonly commit = signal<CommitDetail | null>(null);
   readonly tree = signal<TreeResponse | null>(null);
   readonly currentPath = signal('');
+  readonly hierarchy = signal<CoverageHierarchyNode | null>(null);
+  // The chart's zoom root; node ids are repo paths, '/' is the data root.
+  readonly chartRootId = signal<string | undefined>('/');
 
   /** Segments of the current folder path, each with its cumulative path for the breadcrumb. */
   readonly pathSegments = computed(() => {
@@ -56,14 +61,22 @@ export default class CommitComponent {
       this.sha.set(sha);
       this.commit.set(null);
       this.tree.set(null);
+      this.hierarchy.set(null);
       this.currentPath.set('');
+      this.chartRootId.set('/');
       this.commit.set(await this.browse.getCommit(owner, name, sha));
       await this.openFolder('');
+      try {
+        this.hierarchy.set(await this.browse.getHierarchy(owner, name, sha));
+      } catch {
+        this.hierarchy.set(null);
+      }
     });
   }
 
   async openFolder(path: string): Promise<void> {
     this.currentPath.set(path);
+    this.chartRootId.set(path || '/');
     this.tree.set(null);
     try {
       this.tree.set(await this.browse.getTree(this.owner(), this.name(), this.sha(), path || undefined));
@@ -74,5 +87,18 @@ export default class CommitComponent {
 
   openFile(path: string): void {
     this.router.navigate(['/r', this.owner(), this.name(), 'c', this.sha(), 'f'], { queryParams: { path } });
+  }
+
+  // Chart → drill-down sync. Zooming a folder re-roots the chart itself (via
+  // [(rootId)]); mirror it into the folder list. Selecting a leaf opens the file.
+  onChartZoom(detail: HierarchyNodeEventDetail): void {
+    const path = detail.node.id === '/' ? '' : detail.node.id;
+    if (path !== this.currentPath()) {
+      void this.openFolder(path);
+    }
+  }
+
+  onChartSelect(detail: HierarchyNodeEventDetail): void {
+    this.openFile(detail.node.id);
   }
 }

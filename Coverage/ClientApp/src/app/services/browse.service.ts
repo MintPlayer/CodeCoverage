@@ -70,6 +70,15 @@ export interface TreeResponse {
   unmatchedFiles: string[];
 }
 
+/** Matches bs-hierarchy-chart's HierarchyNode: id = repo path ('/' for root). */
+export interface CoverageHierarchyNode {
+  id: string;
+  name: string;
+  value?: number;
+  colorValue?: number;
+  children?: CoverageHierarchyNode[];
+}
+
 export interface LineCoverageInfo {
   number: number;
   hits?: number;
@@ -124,6 +133,11 @@ export class BrowseService {
     if (path) params = params.set('path', path);
     return firstValueFrom(this.http.get<TreeResponse>(
       `/api/browse/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/commits/${encodeURIComponent(sha)}/tree`, { params }));
+  }
+
+  getHierarchy(owner: string, name: string, sha: string): Promise<CoverageHierarchyNode> {
+    return firstValueFrom(this.http.get<CoverageHierarchyNode>(
+      `/api/browse/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/commits/${encodeURIComponent(sha)}/hierarchy`));
   }
 
   getFile(owner: string, name: string, sha: string, path: string): Promise<FileDetail> {

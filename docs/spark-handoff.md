@@ -1,5 +1,12 @@
 # Handoff: MintPlayer.Spark work for the Coverage project (M0)
 
+> **Status (2026-08-10): RESOLVED** by [MintPlayer.Spark#231](https://github.com/MintPlayer/MintPlayer.Spark/pull/231)
+> (merged 2026-08-09, published as `10.0.0-preview.42` + `@mintplayer/ng-spark-auth@22.1.0`).
+> Items 1, 3, 4, 5, 6 fixed; item 2 (ApiTokens library) **deliberately cancelled** in favour of
+> OAuth2 `client_credentials` via the new `MintPlayer.Spark.IdentityProvider` — Coverage keeps its
+> app-local `covt_` tokens (see PR docs `PRD-CoverageHandoff.md`). Upgrade checklist for this repo
+> lives in the Spark repo's `docs/release-notes-preview-42.md`. Kept for historical context.
+
 Work items for a Claude session running in `C:\Repos\MintPlayer.Spark`. Discovered
 during the Coverage-analyzer investigation (see `docs/PRD.md` in MintPlayer/CodeCoverage,
 §10 and PLAN.md M0). Branch from `master` (note: local checkout sits on `security-audit`,

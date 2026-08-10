@@ -87,10 +87,25 @@ The heart of the product; testable without any UI.
 2. 🟪 Action: `use-oidc` input (default on when `id-token: write` available and not a fork), `core.getIDToken(url)`.
 3. Policy: public repos may auto-provision on first OIDC upload; private repos must be known (App installed).
 
-## M8 — Coverage diagram 🟨🟦
+## M8 — Dependency upgrade + coverage diagram 🟦 (UNBLOCKED 2026-08-10)
 
-1. 🟨 `coverage-chart-core` (headless circle-packing/sunburst layout solver, pure + unit-tested) + `mp-sunburst`/`mp-circle-pack` WC + `bs-` wrapper: generic hierarchy/weight/color API, hover tooltips via `OverlayController`, click events, keyboard + SR alternative, explicit external sizing (container-query trap). Also `mp-progress-circle` (radial headline number).
-2. 🟦 Commit page integration: diagram beside the tree, click-through to folders/files.
+The upstream halves landed: Spark#231 (→ `10.0.0-preview.42`, `ng-spark-auth 22.1.0`) and
+ng-bootstrap#401 (→ `22.14.0` charts). All remaining work is in this repo.
+
+**Step 1 — upgrade (required):**
+1. Bump all `MintPlayer.Spark.*` NuGets `10.0.0-preview.41` → `10.0.0-preview.42`.
+2. ClientApp: `@mintplayer/ng-spark-auth` → `^22.1.0`; **pin** `@mintplayer/ng-bootstrap` `22.14.0` + `@mintplayer/web-components` `2.11.0` (the old `^22.13.0` caret resolves to 22.14 silently — make it a deliberate commit).
+3. Runtime verification: GitHub OAuth sign-in (the new composite default-authenticate scheme must not disturb the cookie path), one `covt_` upload, one OIDC-JWT upload. A "refused by every registered scheme" log warning is cosmetic (see step 2.1).
+
+**Step 2 — upgrade follow-ups (optional, recommended):**
+1. Register the **ApiToken** scheme as a Spark credential scheme (`spark.AddCredentialScheme("ApiToken", isAmbient: false)` after moving its registration into the AddSpark callback) — silences the per-upload warning + earns the non-ambient antiforgery exemption. Deliberately do NOT register GitHubOidc (it would widen where workflow JWTs are accepted).
+2. Shell: replace the full-page-redirect login workaround with `authService.loginWithProvider('GitHub')` (ng-spark-auth 22.1.0 owns the whole popup handshake incl. blocked/closed/refused paths).
+3. Convert `GitHubEventsRecipient` (catch-all + manual dispatch) to typed `IRecipient<GitHubWebhookMessage<TEvent>>` recipients — the queue-name bug is fixed; route by CLR type, never write derived queue names down. Sequence during a quiet period (in-flight `spark-github-all` messages aren't picked up by the new typed queues).
+
+**Step 3 — coverage diagram (the feature):**
+1. Commit page: `bs-hierarchy-chart` (`layout="sunburst"`, `colorMin≈60`/`colorMax≈80`) fed from a new full-tree endpoint variant returning per-file `HierarchyNode {id: path, value: coverableLines, colorValue: coveredPct}` — folder colors derive upstream (value-weighted mean), no server rollup. `(zoom)` → `openFolder(path)`, `(nodeSelect)` → file view, `[(rootId)]` two-way-bound to the existing folder drill-down so tree and chart stay in sync (that pairing is also the documented WCAG target-size story). Bound column width (aspect-ratio 1 fills width).
+2. Headline radial ring: hand-rolled `CoverageRingComponent` (~20 lines) on the public `arcPath` + `colorScale` from `@mintplayer/web-components/charts/core` (`ringGap: 0`) — upstream declined a donut/gauge component; contribute `mp-progress-circle` later only if this shape proves general.
+3. Later, once history is queryable: `bs-trend-chart` (with `goal` line) on the repo page; `bs-sparkline` in tables.
 
 ## M9 — Polish & stretch 🟦
 
@@ -101,6 +116,16 @@ The heart of the product; testable without any UI.
 
 ---
 
+## Status (2026-08-10)
+
+| Milestone | State |
+|---|---|
+| M0 Spark groundwork | ✅ Resolved upstream by [Spark#231](https://github.com/MintPlayer/MintPlayer.Spark/pull/231) (ApiTokens lib cancelled → app keeps `covt_`; see PRD §10) |
+| M1 Scaffold · M2 Ingestion · M3 Action · M4 Browse UI · M6 Badges · M7 OIDC | ✅ Built, verified E2E, on `develop` |
+| M5 File view | ✅ App side built; `mp-code-viewer` remains the **only open upstream ask** (docs/ng-bootstrap-handoff.md §1) |
+| M8 Upgrade + diagram | 🔓 Unblocked by [ng-bootstrap#401](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/401) — next up |
+| M9 Polish | pending |
+
 ## Sequencing notes
 
 - M0 (Spark PR) and M3 (action) can proceed in parallel with M1/M2 once the token library's *interface* is agreed — the Coverage app can stub token auth briefly.
@@ -109,9 +134,10 @@ The heart of the product; testable without any UI.
 
 ## PR map (one per repo)
 
-| Repo | PR contents |
-|---|---|
-| MintPlayer.Spark | M0 (queue-name fix, ApiTokens lib, popup fix, ng-bootstrap bump, doc fixes) |
-| mintplayer-ng-bootstrap | M5.1 + M8.1 (code viewer; chart + radial progress) — may split into two PRs if review size demands |
-| Coverage | M1–M2, then incremental PRs per milestone |
-| coverage-action | M3, then M7.2 |
+| Repo | PR contents | Status |
+|---|---|---|
+| MintPlayer.Spark | M0 (queue-name fix, popup fix, ng-bootstrap bump, R4-H1, doc fixes; ApiTokens→client_credentials) | ✅ [#231](https://github.com/MintPlayer/MintPlayer.Spark/pull/231) |
+| mintplayer-ng-bootstrap | Charts (hierarchy/trend/sparkline + public charts/core) | ✅ [#401](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/401) |
+| mintplayer-ng-bootstrap | `mp-code-viewer` (M5's component half) | ⏳ open — docs/ng-bootstrap-handoff.md §1 |
+| Coverage | M1–M7 built incrementally on `develop`; M8 next | 🔄 |
+| coverage-action | Lives in this repo under `action/` (extract only for Marketplace) | ✅ |

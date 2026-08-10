@@ -61,7 +61,7 @@ The Spark repo has **no dotnet template** — a new app is scaffolded by copying
 4. No badge/SVG rendering (app concern — domain-specific, stays in Coverage).
 5. Rate limiting exists but is **opt-in and scoped to `/spark/*` paths only** (fixed-window per client IP, 150 req/10 s default). Our `/api/uploads` and `/badge` endpoints live outside `/spark`, so they need their own ASP.NET `RateLimiter` policies.
 6. Useful extras confirmed: `MintPlayer.Spark.Migrations` (cluster-safe, forward-only, compare-exchange locked) for seed/schema migrations; `MintPlayer.Spark.Testing` (embedded-RavenDB test harness — requires a RavenDB license via `RAVENDB_LICENSE` env var or `raven-license.log`); Spark query paging happens **in memory** after materialization — our commit lists and file trees must use custom endpoints/indexes, not Spark queries, once data grows.
-7. **Open security finding R4-H1 (High)** on the `security-audit` branch: row-level authorization is enforced on `/spark/po` but **not** on `/spark/queries/{id}/execute` or the WebSocket `/stream` path — rows leak across tenants there. For Coverage this means private-repo entities must not be exposed through Spark's generic query endpoints until R4-H1 is fixed (or their `OnQueryAsync` filters at the source); our custom `/api` endpoints are unaffected.
+7. ~~Open security finding R4-H1~~ — **fixed in preview.42** (Spark#231): row-level rules now apply to lists, custom queries and streams via a shared `IRowSecurity`. Historical note: this finding originally motivated Coverage's DenyAll + custom-`/api` architecture, which we keep regardless.
 
 ---
 
@@ -231,31 +231,34 @@ Structure (Spark app with custom pages; generic Spark PO/query UI used for admin
 
 ### ng-bootstrap: use vs build
 
-**Ready to use**: `bs-datatable` tree mode (= the file browser: expandable path tree, lazy children, sortable coverage columns, virtual scroll), `bs-shell`, `bs-navbar`, `bs-breadcrumb`, `bs-progress-bar` (coverage % cells), `bs-badge`, `bs-card`, `bs-tab-control`, `bs-typeahead` (repo/file search), `bs-tooltip`/`bs-popover`, `bs-modal`/`bs-toast`, theming (dark mode).
+**Ready to use** (as of ng-bootstrap **22.14.0** / web-components **2.11.0**, charts added by [PR #401](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/401)):
 
-**To build upstream** (Lit web component + Angular wrapper, per repo conventions — copy `treeview`'s 11+9 file shape, register in the aria-conformance suite, demo page + `ts-dedent` snippets; a11y is non-negotiable there):
+- `bs-datatable` tree mode (= the file browser), `bs-shell`, `bs-navbar`, `bs-breadcrumb`, `bs-progress-bar` (linear % cells), `bs-badge`, `bs-card`, `bs-tab-control`, `bs-typeahead`, `bs-tooltip`/`bs-popover`, `bs-modal`/`bs-toast`, theming.
+- **`bs-hierarchy-chart`** (`@mintplayer/ng-bootstrap/charts/hierarchy`) — the coverage diagram, purpose-built: `layout="sunburst" | "icicle" | "treemap"`, `HierarchyNode {id,name,value,colorValue,children,hasChildren}` where arc size = summed leaf `value` (lines) and color = `colorValue` (coverage %) with folder colors derived as value-weighted means; lazy `loadChildren`; `(zoom)` for folders / `(nodeSelect)` for leaves with the full ancestor `path`; two-way `[(rootId)]` to sync an external tree; full `role="tree"` keyboard/SR support. Feed per-file `{id: path, value: coverableLines, colorValue: coveredPct}` — no server-side folder rollup needed. Set `colorMin/colorMax` ≈ 60/80, not the 0–100 default.
+- **`bs-trend-chart`** — coverage-over-time with `goal` line; **`bs-sparkline`** for inline table trends.
+- **`charts/core`** exports `arcPath` + `colorScale` publicly — the sanctioned way to hand-roll the headline radial ring (~20 lines; pass `ringGap: 0`).
 
-1. **`mp-code-viewer`** — extends the existing `mp-code-snippet` (highlight.js already integrated) with line numbers, a per-line annotation/gutter API (status + hit count via a generic `lineAnnotations` input — keep it coverage-agnostic), line anchors, and a light theme (current one is hard-coded dark).
-2. **`mp-sunburst` / circle-packing chart** (`coverage-chart-core` headless solver + rendering WC, following the `timeline-core`/`scheduler-core` convention) — hierarchical arcs/circles, hover tooltips via the existing `OverlayController`, click-through events, keyboard operable + SR alternative. Generic hierarchy-weight-color API; Coverage feeds it folder totals.
-3. **`mp-progress-circle`** — radial progress for the headline number (nothing radial exists today).
-4. Datatable **column filtering** — only if the tree view needs it (sorting is built in); defer.
+**Still to build upstream**:
 
-Gotcha to respect (repo CLAUDE.md): a chart WC must not rely on `container-type: inline-size` for its own size — give it explicit inline size from outside.
+1. **`mp-code-viewer`** — the only remaining upstream ask: line numbers, generic per-line annotation API, `#L42` anchors, `data-bs-theme`-aware theme (`code-snippet` is unchanged and hard-coded dark). Coverage's file page keeps its hand-rolled renderer until then. Spec: `docs/ng-bootstrap-handoff.md` §1.
+2. `mp-progress-circle` — **explicitly declined upstream** (donut/gauge out of the charts roster); hand-roll in Coverage on `arcPath`/`colorScale`, upstream later only if the shape proves general.
 
 ---
 
-## 10. Upstream fixes discovered during investigation (bundle into the Spark PR)
+## 10. Upstream work — RESOLVED
 
-1. **Typed webhook queue-name bug (likely startup crash)**: `GitHubWebhookMessage<TEvent>` has no `[MessageQueue]`, so its queue name is the closed-generic `FullName` containing `[ ] , =` — rejected by `MessageSubscriptionWorker.IsValidQueueName`, faulting the subscription manager. Fix: `[MessageQueue]` per closed type or sanitize/hash generic names. (Verify by booting WebhooksDemo first.)
-2. **External-login popup**: the demo opens `/spark/auth/external-login` without `popup`, and the callback URL is built without it, so the `postMessage` handshake never fires (and the listener leaks). Fix in Spark + demo.
-3. **ng-bootstrap upgrade**: Spark pins `@mintplayer/ng-bootstrap ^22.4.0`; current is 22.13.0 with new peer deps (`@mintplayer/web-components ^2`, `lit ^3.3`) — upgrade as part of the Spark PR so Coverage can consume the new components.
-4. Doc drift worth fixing opportunistically (README methods that don't exist: `CreateClientAsync`, `UseSparkAntiforgery`, `AllowedDevUsers` empty-list semantics, stale queue-name tables) — low priority, include what's cheap.
+All upstream blockers have landed:
+
+- **[MintPlayer.Spark#231](https://github.com/MintPlayer/MintPlayer.Spark/pull/231)** (merged 2026-08-09 → `10.0.0-preview.42`, `ng-spark-auth 22.1.0`): queue-name bug fixed (typed `GitHubWebhookMessage<TEvent>` recipients now work — names derived via `QueueNames.Derive`, route by CLR type only), popup handshake fixed (+ `loginWithProvider(provider, {mode})` client API), ng-bootstrap bump, R4-H1 row-level authz fixed across query/stream paths, doc fixes. The ApiTokens library was **deliberately cancelled** in favour of OAuth2 `client_credentials` via the new audited `MintPlayer.Spark.IdentityProvider`; Coverage keeps its app-local `covt_` tokens (GitHub OIDC remains the preferred CI path).
+- **[mintplayer-ng-bootstrap#401](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/401)** (merged 2026-08-10 → `22.14.0` / web-components `2.11.0`, purely additive): hierarchy/trend/sparkline charts (§9).
+
+**Remaining upstream ask** (only one): `mp-code-viewer` (§9.1). Minor upstream nits, none blocking: chart tooltips use a private shadow-DOM div rather than `OverlayController`; `code-snippet` ignores `data-bs-theme`; `bs-progress-bar` overwrites consumer host classes; `_bootstrap.scss` Sass `@import` deprecation noise.
 
 ---
 
 ## 11. Repo & deployment shape
 
-- **Coverage app**: standalone repo (`C:\Repos\Coverage`), scaffolded by copying the WebhooksDemo anatomy (`Coverage.Library` + `Coverage` host + `ClientApp`; the 27-item checklist from the anatomy report). **Spark consumption: published NuGets** — all 20 `MintPlayer.Spark.*` packages are on nuget.org at `10.0.0-preview.41` (current), and `@mintplayer/ng-spark` 22.0.8 / `ng-spark-auth` 22.0.1 are on npm. Coverage will be the first real out-of-tree consumer of the PackageReference path — expect (and upstream) packaging bugs. Note: the local Spark checkout is on the `security-audit` branch (one commit ahead of master) — confirm the intended base before branching.
+- **Coverage app**: standalone repo (`C:\Repos\Coverage`), scaffolded by copying the WebhooksDemo anatomy (built — see PLAN.md M1). **Version targets (2026-08-10)**: `MintPlayer.Spark.*` **10.0.0-preview.42** (latest; app currently on preview.41 — upgrade checklist in PLAN.md M8), `@mintplayer/ng-spark` 22.0.8, `@mintplayer/ng-spark-auth` **22.1.0**, `@mintplayer/ng-bootstrap` **22.14.0** + `@mintplayer/web-components` **2.11.0** (pin exact — the existing `^22.13.0` caret silently resolves to 22.14).
 - **GitHub App** (one per environment, prod + dev, as WebhooksDemo does): permissions — contents: read (source display, diffs), metadata, checks: write + PR: write (later), members: read (org membership); webhook events — installation(+repositories), repository, push, pull_request.
 - **Dev loop**: RavenDB local, smee.io tunnel for webhooks, `dotnet run` (host spawns the Angular dev server — never run `ng serve` manually), `Synchronize` launch profile for model sync.
 - **Deployment**: docker-compose (app + pinned RavenDB on an internal network, Traefik labels) following WebhooksDemo's `docker-compose.yml`/Dockerfile — including its supply-chain notes (`--skip-nx-cache`, selective csproj COPY closure).
@@ -266,8 +269,9 @@ Gotcha to respect (repo CLAUDE.md): a chart WC must not rely on `container-type:
 
 | # | Item | Position |
 |---|---|---|
-| 1 | ~~Spark NuGets published?~~ | **Resolved**: published & current (`10.0.0-preview.41`); use PackageReference. |
-| 1b | R4-H1 row-level auth gap (query execute / stream endpoints) | Don't expose private-repo entities via Spark generic query endpoints until fixed; filter in `OnQueryAsync`/custom queries at the source; ideally fix upstream in the Spark PR. |
+| 1 | ~~Spark NuGets published?~~ | **Resolved**: published & current (`10.0.0-preview.42`); use PackageReference. |
+| 1b | ~~R4-H1 row-level auth gap~~ | **Resolved upstream** (Spark#231: `IRowSecurity` enforced on query/custom/stream paths). Coverage keeps DenyAll + custom `/api` anyway (defense in depth, matches usage). |
+| 1c | Scaling flags from the Spark#231 review of this repo | Backlog: file view renders one DOM node per line (no virtualization); tree endpoint re-streams the whole build per folder drill-down; no live refresh of in-flight builds. |
 | 2 | Report size / RavenDB attachments | Fine for typical reports (KB–MB). Very large monorepo lcov files may need a blob-storage abstraction later. |
 | 3 | Join-request flow | Recommended *out* (GitHub is the authority, §6.3) — confirm with owner. |
 | 4 | Fork PR uploads | v1: token fallback documented; quarantined tokenless uploads later. |

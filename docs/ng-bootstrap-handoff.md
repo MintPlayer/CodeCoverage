@@ -1,5 +1,15 @@
 # Handoff: mintplayer-ng-bootstrap components for the Coverage project
 
+> **Status (2026-08-10): §2 RESOLVED** by [ng-bootstrap#401](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/401)
+> (published `22.14.0` / web-components `2.11.0`): `bs-hierarchy-chart` (sunburst/icicle/treemap —
+> replaces the circle-packing idea), `bs-trend-chart`, `bs-sparkline`, public `charts/core`
+> (`arcPath`/`colorScale`). The radial progress ring was **explicitly declined** upstream —
+> Coverage hand-rolls it on `charts/core` (PLAN.md M8.3.2). Chart tooltips use a private
+> shadow-DOM div, not `OverlayController` — accepted deviation.
+>
+> **§1 (`mp-code-viewer`) remains OPEN — the only outstanding upstream ask.** §3 extras also
+> untouched (bsShellTopbar promotion, Sass @import noise, bs-progress-bar host-class overwrite).
+
 Work items for a Claude session running in `C:\Repos\mintplayer-ng-bootstrap`.
 Follow that repo's CLAUDE.md conventions strictly (WC-first authoring, codegen-wc after
 SCSS edits, aria conformance suite registration, a11y checklist, demo page with

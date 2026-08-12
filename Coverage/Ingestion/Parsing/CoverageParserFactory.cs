@@ -20,6 +20,7 @@ public partial class CoverageParserFactory : ICoverageParserFactory
     [
         new LcovParser(),
         new CoberturaParser(),
+        new JaCoCoParser(),
     ];
 
     public ICoverageParser? Resolve(string content)

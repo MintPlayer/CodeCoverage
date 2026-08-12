@@ -140,6 +140,10 @@
         <bs-tab-page>
           <ng-container *bsTabPageHeader>{{ example.label }}</ng-container>
           <div class="p-3">
+            @if (example.config; as config) {
+              <p class="small text-muted">{{ config.note }}</p>
+              <bs-code-snippet [code]="config.code" [language]="config.language" class="mb-3" />
+            }
             <p class="small text-muted">{{ example.note }}</p>
             <bs-code-snippet [code]="example.code" language="yaml" />
           </div>

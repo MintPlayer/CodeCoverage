@@ -20,6 +20,8 @@ interface WorkflowExample {
   label: string;
   note: string;
   code: string;
+  /** Optional per-project configuration shown above the workflow. */
+  config?: { note: string; code: string; language: string };
 }
 
 @Component({
@@ -149,6 +151,44 @@ ${upload()}`),
       - run: mvn -B verify
 ${upload(`
           files: '**/jacoco.xml'`)}`),
+      },
+      {
+        key: 'nx',
+        label: 'Nx',
+        note: 'The --coverage flag forwards to vitest/jest through every Nx target shape (no "--" separator). '
+          + 'Run it on the plain test target, not atomized test-ci targets — those run one spec file each '
+          + 'into the same directory and overwrite each other\'s report.',
+        config: {
+          note: 'Per project, emit lcov into a stable workspace-level folder AND declare that folder as the '
+            + 'target\'s outputs — otherwise a cache-restored test run produces no report to upload. '
+            + 'Vitest needs both lines below (lcov is not a vitest default); Jest projects only need '
+            + '"coverageDirectory" (lcov is a Jest default).',
+          language: 'ts',
+          code: `// libs/my-lib/vitest.config.ts
+export default defineConfig({
+  test: {
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      reportsDirectory: '../../coverage/libs/my-lib',
+    },
+  },
+});
+
+// libs/my-lib/project.json — lets Nx restore reports on cache hits
+//   "test": {
+//     "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
+//     ...
+//   }`,
+        },
+        code: header(`      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx nx run-many -t test --coverage
+${upload(`
+          files: 'coverage/**/lcov.info'`)}`),
       },
     ];
   });

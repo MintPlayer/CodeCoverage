@@ -3,6 +3,7 @@ bin/
 obj/
 *.user
 .vs/
+tmp/
 
 # Node / Angular
 node_modules/

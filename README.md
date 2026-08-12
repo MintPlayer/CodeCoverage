@@ -98,5 +98,38 @@ dotnet run --project Coverage --launch-profile Synchronize
 ## Deployment
 
 `docker-compose.yml` runs the app plus a pinned RavenDB on an internal network behind
-Traefik. Copy `.env.example` to `.env`, fill in the GitHub App credentials, place the
-App's private key at `./github-app.pem`.
+Traefik. Every push to `master` tests, publishes `ghcr.io/mintplayer/codecoverage:master`,
+and SSHes into the VPS to pull + restart (`.github/workflows/publish.yml`). The VPS keeps
+**no git checkout**: the deploy refetches `docker-compose.yml` from the repo each time,
+while `.env` and `github-app.pem` in `/var/www/coverage` are **server-managed and never
+touched by deploys**.
+
+One-time VPS setup:
+
+1. `mkdir -p /var/www/coverage`; copy `.env.example` there as `.env` and fill it in
+   (`TRAEFIK_HOST=coverage.mintplayer.com`, GitHub App credentials, …). No trailing
+   slash on the host — it becomes the OIDC audience.
+2. Place the **production** GitHub App's private key at `/var/www/coverage/github-app.pem`,
+   readable by the container's `app` user (UID 1654) — e.g. `chmod 644` or `chown 1654`.
+   Beware: if the file is missing at first `up`, Docker silently creates a *directory*
+   at that path and App auth fails at runtime.
+3. `docker network create web` if it doesn't exist; Traefik must be attached to it, with
+   an entrypoint named `websecure` and an ACME resolver named `letsencrypt` (the compose
+   labels assume those exact names).
+4. DNS A/AAAA record for the subdomain → the VPS, *before* the first deploy (Let's
+   Encrypt won't issue without it).
+5. GitHub side: repository secrets `VPS_HOST`, `VPS_USERNAME`, `VPS_SSH_KEY`
+   (dedicated ed25519 deploy key in the VPS user's `authorized_keys`), optional
+   `VPS_PORT` / `VPS_SSH_KEY_PASSPHRASE`. Verify the ghcr package is **public** after
+   the first publish (the workflow's visibility PATCH is best-effort), or
+   `docker login ghcr.io` on the VPS with a `read:packages` PAT.
+6. Production GitHub App: callback URL `https://<host>/signin-github`, webhook URL
+   `https://<host>/spark/webhooks/github`, same permissions as the dev App.
+
+Manual redeploy: the workflow's `workflow_dispatch` button, or on the VPS
+`cd /var/www/coverage && docker compose pull && docker compose up -d --remove-orphans`
+(always pull-then-up; the compose file has no build block by design).
+
+RavenDB data lives in the `raven-data` named volume — it survives `pull`/`down`/`up`
+deploys; only `docker compose down -v` or a volume prune destroys it. There is no
+automated backup yet; back up the volume out-of-band if the data matters.

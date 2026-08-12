@@ -1,10 +1,16 @@
-name: Publish image
+name: Publish & deploy
 
-# Builds and pushes the image docker-compose.yml pulls
-# (ghcr.io/mintplayer/codecoverage:master).
+# master push → test → image to ghcr.io → SSH into the VPS, refetch
+# docker-compose.yml, pull + restart. The VPS keeps no git checkout; .env and
+# github-app.pem are server-managed files this workflow NEVER writes (see
+# README "Deployment").
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - 'docs/**'
+      - 'action/**'
+      - '**.md'
   workflow_dispatch:
 
 permissions:
@@ -12,7 +18,28 @@ permissions:
   packages: write
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          dotnet-quality: preview
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Restore & build
+        run: dotnet build Coverage.slnx --configuration Release
+
+      - name: Test
+        run: dotnet test Coverage.Tests/Coverage.Tests.csproj --configuration Release --no-build
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,5 +60,55 @@ jobs:
           tags: |
             ghcr.io/mintplayer/codecoverage:master
             ghcr.io/mintplayer/codecoverage:${{ github.sha }}
+          # Links the package to this repo — an unlinked org package is a
+          # known source of denied:permission_denied on later pushes.
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # ghcr packages are born private, which breaks the VPS pull with
+      # "denied". This PATCH is best-effort (GITHUB_TOKEN often lacks the org
+      # scope) — verify visibility in the package settings after the first
+      # publish rather than trusting a green run.
+      - name: Ensure the ghcr package is public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --method PATCH \
+            "/orgs/${{ github.repository_owner }}/packages/container/codecoverage" \
+            -f visibility=public 2>&1 || echo "(skipped — already public, missing, or insufficient token scope)"
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          passphrase: ${{ secrets.VPS_SSH_KEY_PASSPHRASE }}
+          envs: GITHUB_TOKEN
+          script: |
+            mkdir -p /var/www/coverage
+            cd /var/www/coverage
+
+            # .env and github-app.pem are server-managed — deploys never write
+            # them. Only the compose file is refreshed from the repo, so
+            # service/label changes ship with the push.
+            rm -f docker-compose.yml
+            curl -sf -H "Authorization: token $GITHUB_TOKEN" -o docker-compose.yml https://raw.githubusercontent.com/${{ github.repository }}/master/docker-compose.yml
+
+            echo "$GITHUB_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            docker compose --env-file .env pull
+            docker compose --env-file .env down --remove-orphans
+            docker compose --env-file .env up -d --remove-orphans
+
+            docker image prune -f

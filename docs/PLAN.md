@@ -173,7 +173,11 @@ Status legend: ✅ built 2026-08-12 (`feature/m10-m9-backlog`) · ⏳ deferred (
 13. ⏳ Fork-PR quarantine flow (today forks simply can't upload) — policy design needed.
 
 ### Ops / deployment
-14. ✅ **Image publish workflow** (`publish.yml`: ghcr.io/mintplayer/codecoverage:master + sha tag).
+14. ✅ **Publish + deploy workflow** (`publish.yml`: test-gated ghcr push with OCI source
+    label + best-effort visibility PATCH, then SSH deploy to the VPS — compose refetched
+    from master, server-managed `.env`/pem never touched; modeled on ng-bootstrap's
+    pipeline with Spark WebhooksDemo's refinements). VPS/DNS prerequisites: README
+    "Deployment". ⏳ RavenDB volume backup remains out-of-band.
 15. ✅ Traefik port pinned (`…server.port=8080` label; EXPOSE 8081 dropped).
 16. ✅ Compose healthchecks (bash `/dev/tcp` probes; `depends_on: service_healthy`).
 17. ✅ `.env.example` documents the `./github-app.pem` bind-mount.

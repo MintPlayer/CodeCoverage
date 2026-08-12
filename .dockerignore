@@ -1,0 +1,17 @@
+# Keep host build artifacts out of the image build context: a local/VPS-side
+# `docker build` would otherwise COPY bin/obj/node_modules over the restored
+# layers and break the build with mismatched project.assets.json paths.
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/.angular/
+.git/
+.github/
+.playwright-mcp/
+docs/
+action/
+tmp/
+*.md
+.env
+*.pem

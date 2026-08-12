@@ -27,14 +27,16 @@ services:
     restart: unless-stopped
 
   coverage-app:
+    # Pull-only: no build block, so `docker compose up -d` on the VPS can
+    # never fall back to building from source — deploys are pull + restart.
     image: ghcr.io/mintplayer/codecoverage:master
-    build:
-      context: .
-      dockerfile: Coverage/Dockerfile
     depends_on:
       coverage-raven:
         condition: service_healthy
     environment:
+      # Explicit: Program.cs derives the GitHub__{env}__* config prefix from
+      # the environment name — anything else silently disables sign-in.
+      - ASPNETCORE_ENVIRONMENT=Production
       - Spark__RavenDb__Urls__0=http://coverage-raven:8080
       - Spark__RavenDb__EnsureDatabaseCreated=true
       # OIDC audience: workflows must request an id-token with this audience
@@ -59,6 +61,9 @@ services:
       - "traefik.http.routers.coverage.tls.certresolver=letsencrypt"
       # Pin the upstream port explicitly so Traefik never guesses.
       - "traefik.http.services.coverage.loadbalancer.server.port=8080"
+      # The app sits on two networks; without this Traefik may resolve the
+      # container's coverage-internal IP, which it can't reach (random 504s).
+      - "traefik.docker.network=web"
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '200' <&3"]
       interval: 15s

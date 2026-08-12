@@ -21,3 +21,6 @@ ClientApp/coverage/
 
 # Local smoke-test logs
 boot-*.log
+
+# Playwright MCP browser-session artifacts
+.playwright-mcp/

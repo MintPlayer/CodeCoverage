@@ -37,10 +37,11 @@
 
   <main class="p-4">
     @if (loginError(); as error) {
-      <div class="alert alert-danger alert-dismissible" role="alert">
+      <bs-alert [type]="dangerColor" [announce]="true" class="d-block mb-3"
+                (isVisibleChange)="onLoginAlertVisible($event)">
         <i class="bi bi-exclamation-triangle"></i> {{ error }}
-        <button type="button" class="btn-close" aria-label="Dismiss" (click)="loginError.set(null)"></button>
-      </div>
+        <bs-alert-close />
+      </bs-alert>
     }
     <router-outlet />
   </main>

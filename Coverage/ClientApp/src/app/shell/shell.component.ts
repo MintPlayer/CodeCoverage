@@ -3,6 +3,8 @@ import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { BsShellComponent, BsShellSidebarDirective, BsShellState } from '@mintplayer/ng-bootstrap/shell';
 import { BsNavbarTogglerComponent } from '@mintplayer/ng-bootstrap/navbar-toggler';
+import { BsAlertComponent, BsAlertCloseComponent } from '@mintplayer/ng-bootstrap/alert';
+import { Color } from '@mintplayer/ng-bootstrap';
 import type { ShellStateChangeEventDetail } from '@mintplayer/web-components/shell';
 import { BsSelectComponent, BsSelectOption } from '@mintplayer/ng-bootstrap/select';
 import { SparkLanguageService } from '@mintplayer/ng-spark/services';
@@ -13,7 +15,7 @@ import { KeyValuePipe } from '@angular/common';
 
 @Component({
   selector: 'app-shell',
-  imports: [CommonModule, RouterModule, BsShellComponent, BsShellSidebarDirective, BsNavbarTogglerComponent, BsSelectComponent, BsSelectOption, ResolveTranslationPipe, TranslateKeyPipe, FormsModule, KeyValuePipe],
+  imports: [CommonModule, RouterModule, BsShellComponent, BsShellSidebarDirective, BsNavbarTogglerComponent, BsAlertComponent, BsAlertCloseComponent, BsSelectComponent, BsSelectOption, ResolveTranslationPipe, TranslateKeyPipe, FormsModule, KeyValuePipe],
   templateUrl: './shell.component.html',
   styleUrl: './shell.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -27,6 +29,7 @@ export class ShellComponent {
   shellState = signal<BsShellState>('auto');
   isSidebarVisible = signal<boolean>(false);
   loginError = signal<string | null>(null);
+  readonly dangerColor = Color.danger;
 
   /** Server error codes → something a human can act on. */
   private static readonly loginErrorMessages: Record<string, string> = {
@@ -64,6 +67,12 @@ export class ShellComponent {
 
   async logout(): Promise<void> {
     await this.authService.logout();
+  }
+
+  // bs-alert-close only hides the alert (isVisible model); clear the error so
+  // the @if removes it and a later failure starts from a fresh, visible alert.
+  onLoginAlertVisible(visible: boolean): void {
+    if (!visible) this.loginError.set(null);
   }
 
   toggleSidebar(open: boolean) {

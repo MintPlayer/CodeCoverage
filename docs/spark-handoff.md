@@ -9,6 +9,11 @@
 
 ## NEW (2026-08-12): bug — Smee dev tunnel's re-minification breaks installation-event signatures
 
+Filed as [MintPlayer.Spark#232](https://github.com/MintPlayer/MintPlayer.Spark/issues/232)
+(full analysis incl. why System.Text.Json only half-helps: JsonDocument fixes the scalar
+reinterpretation but Utf8JsonWriter re-escapes strings — only lexical whitespace-stripping
+is byte-exact by construction).
+
 For a Spark session in `C:\Repos\MintPlayer.Spark`. `SmeeBackgroundService`
 (libs/webhooks/MintPlayer.Spark.Webhooks.GitHub.DevTunnel/Services/SmeeBackgroundService.cs:49-51)
 re-minifies the smee-relayed body — correctly, since GitHub signs minified bytes and smee

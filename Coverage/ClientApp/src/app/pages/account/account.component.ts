@@ -8,7 +8,7 @@ import { BsTableComponent } from '@mintplayer/ng-bootstrap/table';
 import { BsBadgeComponent } from '@mintplayer/ng-bootstrap/badge';
 import { BsSpinnerComponent } from '@mintplayer/ng-bootstrap/spinner';
 import { BsAlertComponent } from '@mintplayer/ng-bootstrap/alert';
-import { BsFormComponent } from '@mintplayer/ng-bootstrap/form';
+import { BsFormComponent, BsFormControlDirective } from '@mintplayer/ng-bootstrap/form';
 import { BsSelectComponent, BsSelectOption } from '@mintplayer/ng-bootstrap/select';
 import { BsSparklineComponent } from '@mintplayer/ng-bootstrap/charts/sparkline';
 import { Color } from '@mintplayer/ng-bootstrap';
@@ -18,7 +18,7 @@ import { CoverageBarComponent } from '../../components/coverage-bar/coverage-bar
 
 @Component({
   selector: 'app-account',
-  imports: [CommonModule, DatePipe, RouterModule, FormsModule, BsCardComponent, BsCardHeaderComponent, BsTableComponent, BsBadgeComponent, BsSpinnerComponent, BsAlertComponent, BsFormComponent, BsSelectComponent, BsSelectOption, BsSparklineComponent, CoverageBarComponent],
+  imports: [CommonModule, DatePipe, RouterModule, FormsModule, BsCardComponent, BsCardHeaderComponent, BsTableComponent, BsBadgeComponent, BsSpinnerComponent, BsAlertComponent, BsFormComponent, BsFormControlDirective, BsSelectComponent, BsSelectOption, BsSparklineComponent, CoverageBarComponent],
   templateUrl: './account.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

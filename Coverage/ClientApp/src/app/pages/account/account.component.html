@@ -71,13 +71,13 @@
     <bs-form (submitted)="createToken()">
       <div class="d-flex align-items-end gap-2 flex-wrap mb-3">
         <div>
-          <label class="form-label small mb-1" for="token-description">Description</label>
+          <label class="form-label d-block small mb-1" for="token-description">Description</label>
           <input id="token-description" type="text"
                  [ngModel]="newDescription()" (ngModelChange)="newDescription.set($event)"
                  placeholder="e.g. CI uploads">
         </div>
         <div>
-          <label class="form-label small mb-1" for="token-scope">Scope</label>
+          <label class="form-label d-block small mb-1" for="token-scope">Scope</label>
           <bs-select id="token-scope"
                      [ngModel]="newRepoFullName()" (ngModelChange)="newRepoFullName.set($event)">
             <option [ngValue]="''">All repositories of {{ login() }}</option>

@@ -20,6 +20,8 @@ export interface RepoInfo {
   latestCoverageSha?: string;
   canManage: boolean;
   badgeToken?: string;
+  /** The server's public base URL (Coverage:BaseUrl) — badge markdown must use this, not location.origin. */
+  baseUrl?: string;
 }
 
 export interface CommitInfo {

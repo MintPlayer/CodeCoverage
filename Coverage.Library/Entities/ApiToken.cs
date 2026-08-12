@@ -5,8 +5,9 @@ namespace Coverage.Entities;
 /// the token value}, so global uniqueness holds by construction and lookup is
 /// a point-load; the plaintext value is shown once at creation and never stored.
 ///
-/// App-local for now — designed for extraction into a generic
-/// MintPlayer.Spark.Authorization.ApiTokens library (docs/spark-handoff.md §2).
+/// Deliberately app-local: the planned extraction into a generic Spark
+/// ApiTokens library was cancelled upstream in favor of client_credentials
+/// (docs/PRD.md §10) — Coverage keeps its own covt_ tokens.
 /// </summary>
 public class ApiToken
 {

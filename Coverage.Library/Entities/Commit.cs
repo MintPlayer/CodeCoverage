@@ -26,6 +26,15 @@ public class Commit
 
     public DateTimeOffset? AuthoredAt { get; set; }
 
+    /// <summary>
+    /// When this document was first created, by whichever path saw the commit
+    /// first (webhook or upload). AuthoredAt only arrives via push/PR webhooks,
+    /// so upload-only commits (the norm for OIDC auto-provisioned repos) would
+    /// otherwise have nothing to sort by — lists order by AuthoredAt coalesced
+    /// with this.
+    /// </summary>
+    public DateTimeOffset? FirstSeenAtUtc { get; set; }
+
     /// <summary>Merged coverage of the latest finalized build, denormalized for lists/badges.</summary>
     public CoverageSummary? Coverage { get; set; }
 

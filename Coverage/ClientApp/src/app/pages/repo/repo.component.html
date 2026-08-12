@@ -69,7 +69,8 @@
               </td>
               <td><app-coverage-bar [summary]="commit.coverage" /></td>
               <td>
-                @if (delta(i); as d) {
+                @let d = delta(i);
+                @if (d !== null) {
                   <span class="small" [class.text-success]="d > 0" [class.text-danger]="d < 0">
                     {{ d > 0 ? '+' : '' }}{{ d.toFixed(1) }}
                   </span>

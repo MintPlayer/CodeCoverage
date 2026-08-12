@@ -194,7 +194,7 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
         var commit = await session.LoadAsync<Commit>(id, ct);
         if (commit is null)
         {
-            commit = new Commit { Sha = sha, Repository = Repository.DocumentId(repoGitHubId) };
+            commit = new Commit { Sha = sha, Repository = Repository.DocumentId(repoGitHubId), FirstSeenAtUtc = DateTimeOffset.UtcNow };
             await session.StoreAsync(commit, id, ct);
         }
         return commit;

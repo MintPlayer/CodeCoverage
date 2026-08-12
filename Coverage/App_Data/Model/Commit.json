@@ -115,6 +115,21 @@
         "rules": []
       },
       {
+        "id": "3f8a2c61-9d54-4b0e-8f1a-6cd2e07b5a94",
+        "name": "FirstSeenAtUtc",
+        "label": {
+          "en": "First Seen At Utc"
+        },
+        "dataType": "datetime",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 8,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
         "id": "98971124-8b79-43ed-951c-29110c46577f",
         "name": "Coverage",
         "label": {
@@ -124,7 +139,7 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 8,
+        "order": 9,
         "asDetailType": "Coverage.Entities.CoverageSummary",
         "isArray": false,
         "showedOn": "Query, PersistentObject",
@@ -140,7 +155,7 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 9,
+        "order": 10,
         "isArray": false,
         "showedOn": "Query, PersistentObject",
         "rules": []

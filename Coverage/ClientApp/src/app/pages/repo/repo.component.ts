@@ -54,9 +54,10 @@ export default class RepoComponent {
   badgeMarkdown(): string {
     const r = this.repo();
     if (!r) return '';
-    const base = `${location.origin}/badge/${r.owner}/${r.name}.svg`;
+    const origin = r.baseUrl || location.origin;
+    const base = `${origin}/badge/${r.owner}/${r.name}.svg`;
     const url = r.isPrivate && r.badgeToken ? `${base}?token=${r.badgeToken}` : base;
-    return `[![Coverage](${url})](${location.origin}/r/${r.owner}/${r.name})`;
+    return `[![Coverage](${url})](${origin}/r/${r.owner}/${r.name})`;
   }
 
   async copyBadge(): Promise<void> {

@@ -21,9 +21,10 @@ public partial class BrowseController : ControllerBase
     [Inject] private readonly IAsyncDocumentSession session;
     [Inject] private readonly IGitHubAccessService gitHubAccess;
     [Inject] private readonly IGitHubContentService gitHubContent;
+    [Inject] private readonly IConfiguration configuration;
 
     public sealed record RepoInfo(string Owner, string Name, string FullName, bool IsPrivate, string? DefaultBranch,
-        CoverageSummary? LatestCoverage, string? LatestCoverageSha, bool CanManage, string? BadgeToken);
+        CoverageSummary? LatestCoverage, string? LatestCoverageSha, bool CanManage, string? BadgeToken, string? BaseUrl);
     public sealed record CommitInfo(string Sha, string? Branch, int? PullRequestNumber, string? Message,
         DateTimeOffset? AuthoredAt, CoverageSummary? Coverage);
     public sealed record BuildInfo(long RunId, int RunAttempt, string Status, string? FinalizeReason,
@@ -279,7 +280,9 @@ public partial class BrowseController : ControllerBase
         return await gitHubAccess.IsOwnerAllowedAsync(repository.OwnerLogin, cancellationToken) ? repository : null;
     }
 
-    private static RepoInfo ToRepoInfo(Repository r, bool canManage)
+    // BaseUrl rides along so the SPA builds badge markdown against the public
+    // URL rather than location.origin (dead links when copied from localhost).
+    private RepoInfo ToRepoInfo(Repository r, bool canManage)
         => new(r.OwnerLogin, r.Name, r.FullName, r.IsPrivate, r.DefaultBranch, r.LatestCoverage, r.LatestCoverageSha,
-            canManage, canManage ? r.BadgeToken : null);
+            canManage, canManage ? r.BadgeToken : null, configuration["Coverage:BaseUrl"]?.TrimEnd('/'));
 }

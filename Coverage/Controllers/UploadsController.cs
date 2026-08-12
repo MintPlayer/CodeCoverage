@@ -60,7 +60,7 @@ public partial class UploadsController : ControllerBase
         var commit = await session.LoadAsync<Commit>(commitId, cancellationToken);
         if (commit is null)
         {
-            commit = new Commit { Sha = form.CommitSha, Repository = repository.Id };
+            commit = new Commit { Sha = form.CommitSha, Repository = repository.Id, FirstSeenAtUtc = DateTimeOffset.UtcNow };
             await session.StoreAsync(commit, commitId, cancellationToken);
         }
         commit.Branch ??= form.Branch;

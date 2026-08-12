@@ -6,7 +6,9 @@ namespace Coverage.Indexes;
 /// <summary>
 /// Commit lists per repository, newest first, optionally only commits that
 /// have coverage. Query through <see cref="Result"/> (the indexed fields),
-/// then OfType back to the Commit documents.
+/// then OfType back to the Commit documents. AuthoredAt is coalesced with
+/// FirstSeenAtUtc so upload-only commits (which never get a webhook timestamp)
+/// still sort chronologically instead of clustering at one end.
 /// </summary>
 public class Commits_ByRepository : AbstractIndexCreationTask<Commit>
 {
@@ -25,7 +27,7 @@ public class Commits_ByRepository : AbstractIndexCreationTask<Commit>
                          {
                              Repository = commit.Repository,
                              Branch = commit.Branch,
-                             AuthoredAt = commit.AuthoredAt,
+                             AuthoredAt = commit.AuthoredAt ?? commit.FirstSeenAtUtc,
                              HasCoverage = commit.Coverage != null,
                          };
     }

@@ -20,6 +20,14 @@ public class FileCoverage
     /// <summary>False when the path couldn't be matched to the repo file list.</summary>
     public bool Matched { get; set; } = true;
 
+    /// <summary>
+    /// The report format (parser FormatName) that produced Branches. Branch
+    /// identity schemes differ per format (lcov reports real block/branch ids;
+    /// Cobertura and JaCoCo synthesize edges), so branch detail only merges
+    /// within one format — a session in another format merges line status only.
+    /// </summary>
+    public string? BranchFormat { get; set; }
+
     public List<LineCoverage> Lines { get; set; } = [];
 
     public List<BranchCoverage> Branches { get; set; } = [];

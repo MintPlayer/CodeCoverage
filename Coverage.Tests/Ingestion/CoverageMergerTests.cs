@@ -22,8 +22,8 @@ public class CoverageMergerTests
     {
         var target = new FileCoverage { BuildId = "b", Path = "x" };
 
-        CoverageMerger.MergeInto(target, ParsedWith((1, 3), (2, 0)));
-        CoverageMerger.MergeInto(target, ParsedWith((1, 3), (2, 0)));   // identical re-upload
+        CoverageMerger.MergeInto(target, ParsedWith((1, 3), (2, 0)), "lcov");
+        CoverageMerger.MergeInto(target, ParsedWith((1, 3), (2, 0)), "lcov");   // identical re-upload
 
         target.Lines.Single(l => l.Number == 1).Hits.Should().Be(3, "a re-uploaded report must not inflate counts");
         target.Lines.Single(l => l.Number == 2).Hits.Should().Be(0);
@@ -36,12 +36,12 @@ public class CoverageMergerTests
         var shard2 = ParsedWith((1, 0), (2, 2));
 
         var ab = new FileCoverage { BuildId = "b", Path = "x" };
-        CoverageMerger.MergeInto(ab, shard1);
-        CoverageMerger.MergeInto(ab, shard2);
+        CoverageMerger.MergeInto(ab, shard1, "lcov");
+        CoverageMerger.MergeInto(ab, shard2, "lcov");
 
         var ba = new FileCoverage { BuildId = "b", Path = "x" };
-        CoverageMerger.MergeInto(ba, shard2);
-        CoverageMerger.MergeInto(ba, shard1);
+        CoverageMerger.MergeInto(ba, shard2, "lcov");
+        CoverageMerger.MergeInto(ba, shard1, "lcov");
 
         ab.Lines.Should().BeEquivalentTo(ba.Lines);
         ab.Lines.Should().OnlyContain(l => l.Status == LineStatus.Covered);
@@ -63,10 +63,10 @@ public class CoverageMergerTests
         session2.ResolveStatuses();
 
         var target = new FileCoverage { BuildId = "b", Path = "x" };
-        CoverageMerger.MergeInto(target, session1);
+        CoverageMerger.MergeInto(target, session1, "lcov");
         target.Lines.Single().Status.Should().Be(LineStatus.PartiallyCovered);
 
-        CoverageMerger.MergeInto(target, session2);
+        CoverageMerger.MergeInto(target, session2, "lcov");
         target.Lines.Single().Status.Should().Be(LineStatus.Covered, "the union of both sessions takes every branch");
         target.Branches.Should().OnlyContain(b => b.Taken == 1);
     }
@@ -80,10 +80,38 @@ public class CoverageMergerTests
         withoutCounts.ResolveStatuses();
 
         var target = new FileCoverage { BuildId = "b", Path = "x" };
-        CoverageMerger.MergeInto(target, withCounts);
-        CoverageMerger.MergeInto(target, withoutCounts);
+        CoverageMerger.MergeInto(target, withCounts, "lcov");
+        CoverageMerger.MergeInto(target, withoutCounts, "lcov");
 
         target.Lines.Single().Hits.Should().Be(7);
+    }
+
+    [Fact]
+    public void Branch_detail_never_merges_across_formats()
+    {
+        // lcov reports real branch ids; Cobertura synthesizes "0"/index edges.
+        // The keys collide by accident, so max-merging them would invent
+        // coverage: here it would flip both edges to taken.
+        var lcov = new ParsedFile { RawPath = "x" };
+        lcov.AddLine(5, 1);
+        lcov.AddBranch(5, "0", "0", 1);
+        lcov.AddBranch(5, "0", "1", 0);
+        lcov.ResolveStatuses();
+
+        var cobertura = new ParsedFile { RawPath = "x" };
+        cobertura.AddLine(5, 2);
+        cobertura.AddBranch(5, "0", "0", 0);
+        cobertura.AddBranch(5, "0", "1", 1);
+        cobertura.ResolveStatuses();
+
+        var target = new FileCoverage { BuildId = "b", Path = "x" };
+        CoverageMerger.MergeInto(target, lcov, "lcov");
+        CoverageMerger.MergeInto(target, cobertura, "cobertura");
+
+        target.BranchFormat.Should().Be("lcov");
+        target.Branches.Count(b => b.Taken > 0).Should().Be(1, "the foreign format's edges must not merge in");
+        target.Lines.Single().Hits.Should().Be(2, "line data still merges across formats");
+        target.Lines.Single().Status.Should().Be(LineStatus.PartiallyCovered);
     }
 
     [Fact]

@@ -134,13 +134,26 @@ builder.Services.AddAuthentication()
 
 // Spark's built-in rate limiter only covers /spark/* — our ingest endpoints
 // need their own, partitioned per token (falling back to client IP).
+// The limiter middleware runs BEFORE authentication (UseSpark wires auth
+// later in the pipeline), so context.User is always anonymous here — the
+// partition key must come from the presented credential itself, not claims.
+static string UploadsPartitionKey(HttpContext context)
+{
+    var authorization = context.Request.Headers.Authorization.ToString();
+    if (authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        authorization = authorization[7..];
+    else if (authorization.StartsWith("Token ", StringComparison.OrdinalIgnoreCase))
+        authorization = authorization[6..];
+    if (authorization.StartsWith("covt_", StringComparison.Ordinal))
+        return ApiTokenService.Hash(authorization);
+    return context.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+}
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.AddPolicy("uploads", context => RateLimitPartition.GetFixedWindowLimiter(
-        partitionKey: context.User.FindFirst(ApiTokenAuthenticationHandler.TokenHashClaim)?.Value
-            ?? context.Connection.RemoteIpAddress?.ToString()
-            ?? "anonymous",
+        partitionKey: UploadsPartitionKey(context),
         _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 60,

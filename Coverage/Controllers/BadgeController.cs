@@ -45,9 +45,12 @@ public partial class BadgeController : ControllerBase
                 percent = summary.LinesCovered * 100.0 / summary.LinesCoverable;
         }
 
-        Response.Headers.CacheControl = repository?.IsPrivate == true
-            ? "private, max-age=300"
-            : "public, max-age=300";
+        // The header depends only on the REQUEST (was a capability presented?),
+        // never on whether the repo exists — a private-vs-public split keyed on
+        // the repo would be the existence oracle the never-404 rule prevents.
+        Response.Headers.CacheControl = string.IsNullOrEmpty(token)
+            ? "public, max-age=300"
+            : "private, max-age=300";
 
         return Content(BadgeRenderer.Coverage(percent), "image/svg+xml; charset=utf-8");
     }

@@ -35,8 +35,8 @@ Anything not specific to the coverage domain is implemented in the appropriate u
 |---|---|
 | `MintPlayer.Spark` | API-token (PAT) authentication library; missing webhook events (`workflow_run`, `status`); bug fixes found during investigation (see §10) |
 | `mintplayer-ng-bootstrap` | Coverage-annotatable code viewer; circle-packing/sunburst chart; radial progress; datatable column filtering (if needed) |
-| `Coverage` (this repo) | Coverage domain only: parsers, normalized model, merge, upload API, badge endpoint, app UI |
-| `coverage-action` (new repo) | The GitHub Action (must live at a repo root for `uses:` + Marketplace) |
+| `Coverage` (this repo) | Coverage domain only: parsers, normalized model, merge, upload API, badge endpoint, app UI, and the GitHub Action under `action/` |
+| `action/` (in this repo) | The GitHub Action, consumed as `MintPlayer/CodeCoverage/action@<ref>` (own repo only if Marketplace) |
 
 We are **not confined to Spark's `/spark/*` endpoints**: the app freely adds its own controllers/minimal-API endpoints (`/api/uploads`, `/badge/…`) alongside Spark — the sanctioned pattern WebhooksDemo already uses (its SPA fallback excludes both `/spark` and `/api`). The rule cuts the other way: whenever a piece of such an endpoint turns out to be generic (token authentication, a file-upload primitive, a webhook event), it is extracted into Spark rather than kept app-local.
 
@@ -55,7 +55,7 @@ The Spark repo has **no dotnet template** — a new app is scaffolded by copying
 
 **Confirmed gaps in Spark** (things we must build upstream):
 
-1. **No API-token/PAT infrastructure whatsoever** — no store, no `AuthenticationHandler`, no endpoints. The only non-cookie path is the implicit (unused, undocumented) Identity bearer-token flow. → New Spark library (§6).
+1. **No API-token/PAT infrastructure whatsoever** — no store, no `AuthenticationHandler`, no endpoints. The only non-cookie path is the implicit (unused, undocumented) Identity bearer-token flow. → Coverage built it app-local; the planned Spark library was cancelled (§6, §10).
 2. No `workflow_run`/`status` webhook events (only needed if we react to CI runs server-side; not required for MVP).
 3. **No file-upload/attachment/blob support at all** (verified: zero `IFormFile`/attachment/multipart hits in the framework). RavenDB itself supports attachments via the raw session API, which is what we'll use for raw report storage (§7); a Spark-level storage abstraction is *not* needed for v1.
 4. No badge/SVG rendering (app concern — domain-specific, stays in Coverage).
@@ -103,8 +103,8 @@ ApiToken           id: ApiTokens/{sha256hex}          // uniqueness by construct
 
 Commit             id: Commits/{repoGitHubId}/{sha}
   Repository (ref), Sha, Branch?, PullRequestNumber?, ParentSha?, Message?, AuthoredAt?
-  Coverage? (promoted at finalize), LatestBuildId?
-  // AuthoredAt only set by webhooks — upload-only commits have null; see PLAN M9.1
+  FirstSeenAtUtc?, Coverage? (promoted at finalize), LatestBuildId?
+  // AuthoredAt only arrives via webhooks; lists sort AuthoredAt ?? FirstSeenAtUtc (M9.1)
 
 Build              id: Commits/{repoGitHubId}/{sha}/builds/{runId}-{runAttempt}
   Commit (ref), Status: Open | Finalized
@@ -116,6 +116,7 @@ Build              id: Commits/{repoGitHubId}/{sha}/builds/{runId}-{runAttempt}
 
 FileCoverage       id: {buildId}/files/{pathHash}
   BuildId, Path (normalized repo-relative), Matched (path resolved against git ls-files)
+  BranchFormat?    // the format that produced Branches — branch detail merges within it only
   Lines: [ { Number, Hits?, Status } ]   // merged across sessions (max)
   Branches: [ { Line, BlockId, BranchId, Taken? } ]
 
@@ -126,42 +127,42 @@ CoverageSummary    (embedded) LinesCovered, LinesCoverable, BranchesCovered, Bra
 **Normalized line model** (dictated by the formats — JaCoCo and VS coveragexml have *no hit counts*):
 
 ```
-Line   { Number, Hits: int?,  Status: NotCoverable | NotCovered | PartiallyCovered | Covered }
-Branch { Line, BlockId, BranchId, Taken: int?, Total }
+Line   { Number, Hits: int?,  Status: NotCovered | PartiallyCovered | Covered }
+Branch { Line, BlockId, BranchId, Taken: int? }   // totals derive by counting edges
 ```
 
-All percentages derive from `Status`, never from `Hits`. Merge across sessions = **max** per line/branch key; never merge branch detail *across different formats* (identity schemes differ) — merge only line status there.
+Non-coverable lines are simply absent from the data (no `NotCoverable` member). All percentages derive from `Status`, never from `Hits`. Merge across sessions = **max** per line/branch key; branch detail never merges *across different formats* (identity schemes differ — lcov's real ids vs Cobertura/JaCoCo's synthesized edges): `FileCoverage.BranchFormat` records who owns the branch set, and a session in another format contributes line status only.
 
-**Raw uploads are retained** (the uploaded report files, gzipped) so the merged view can be lazily recomputed — this makes late uploads, re-runs, and parser bug-fix reprocessing trivially correct. Storage medium: RavenDB attachments on the Build document to start (they replicate/backup with the database); revisit if size becomes a problem.
+**Raw uploads are retained** (the uploaded report files, gzipped) so the merged view *can* be lazily recomputed — late uploads and re-runs work today; a reprocess-after-parser-fix endpoint is backlog, the raw data for it is already there. Storage medium: RavenDB attachments on the Build document to start (they replicate/backup with the database); revisit if size becomes a problem.
 
-**Folder-tree aggregation** reads a `BuildTreeSummary` document (`{buildId}/tree`, per-file line totals) materialized at finalize — one point-load per request for both the `/tree` folder-level endpoint and the `/hierarchy` sunburst endpoint. Builds finalized before the summary existed fall back to streaming their `FileCoverage` docs.
+**Folder-tree aggregation** reads a `BuildTreeSummary` document (`{buildId}/tree`, per-file line totals) materialized at finalize — one point-load per request for both the `/tree` folder-level endpoint and the `/hierarchy` sunburst endpoint. Builds finalized before the summary existed fall back to streaming their `FileCoverage` docs. Note: a late upload re-opens a finalized build, and the summary only refreshes at the next finalize — the tree can serve pre-late-upload numbers in that window.
 
 ---
 
 ## 6. Authentication & authorization
 
 ### 6.1 Interactive users
-Spark's existing GitHub OAuth login, with `SaveTokens = true`. Repo/org *visibility* mirrors GitHub: on login (and on manual "resync", and on a TTL) the server queries the user's accessible installations/repos (`GET /user/installations`, `GET /user/repos` as needed) and caches the result per user. **No parallel permission system.** Private repo pages require the viewer's GitHub access; public repo pages are world-readable.
+Spark's existing GitHub OAuth login, with `SaveTokens = true`. Repo/org *visibility* mirrors GitHub: on login (and on manual "resync", and on a 5-min TTL) the server queries `GET /user/installations` with the user's own OAuth token (plus the user's own login) and caches the resulting **owner list** per user. Visibility is owner-granular: reaching an installation grants every repo of that owner we know about — there is no per-repo check (`GET /user/repos` is not called). **No parallel permission system.** Private repo pages require the viewer's GitHub access; public repo pages are world-readable.
 
 ### 6.2 Upload credentials — two, and only two
 
-1. **GitHub Actions OIDC (preferred, tokenless).** The action requests an ID token with `audience=<our base URL>`; the server validates it as a standard JWT bearer (`Authority = https://token.actions.githubusercontent.com`, JWKS cached by `ConfigurationManager`), then takes `repository`, `repository_id`, `sha`, `run_id`, `run_attempt` **from claims**, ignoring conflicting body fields. Caveat: fork PRs never get `id-token: write` → fall back to token or accept quarantined unauthenticated uploads (v2).
+1. **GitHub Actions OIDC (preferred, tokenless).** The action requests an ID token with `audience=<our base URL>`; the server validates it as a standard JWT bearer (`Authority = https://token.actions.githubusercontent.com`, JWKS cached by `ConfigurationManager`). Claims usage, precisely: `run_id`/`run_attempt` **override** the body; `repository` is **validated-equal** against the body (mismatch → 404); `repository_id` is claim-only (no body field); the `sha` claim is **deliberately NOT used** — on pull_request events it is the ephemeral merge commit, while the body carries the PR head. Caveat: fork PRs never get `id-token: write` → fall back to token or accept quarantined unauthenticated uploads (v2).
 2. **Upload token (fallback for forks, other CIs, local runs).** Scoped to an account (org/user) or a single repository. Value = 43-char random urlsafe string with a recognizable prefix (`covt_`), stored only as SHA-256 hash (which is also the document id → globally unique by construction). Shown once. Revocable, listable, auditable.
 
-This is generic **PAT infrastructure → new Spark library** (working name `MintPlayer.Spark.Authorization.ApiTokens`): token entity + store, issuance/listing/revocation endpoints, an `AuthenticationHandler` that resolves `Authorization: Bearer covt_…` / `Token covt_…` to a principal with scope claims, wired via the existing `configureProviders: Action<IdentityBuilder>` hook. The Coverage app only maps token scopes to its own domain checks.
+Deliberately **app-local** (the planned Spark ApiTokens library was cancelled upstream in favor of `client_credentials` — §10): token entity + store, issuance/listing/revocation via `TokensController`, and an `AuthenticationHandler` resolving `Authorization: Bearer covt_…` / `Token covt_…` to a principal with scope claims, registered as a Spark **credential scheme** (`spark.AddCredentialScheme<…>` inside the AddSpark callback — non-ambient, so it joins the composite authenticate without widening antiforgery).
 
 ### 6.3 The "two users, one organization" problem
 
 The requirement as stated: tokens are unique per GitHub account/org, so a second member of an already-registered org must send a "join request".
 
-**Recommended design — GitHub is the authority; no join workflow.** An organization is registered once (first user installs the GitHub App on it — the `installation` webhook creates the `Account`). Any user whose GitHub membership in that org is confirmed (via their own OAuth token: `GET /user/memberships/orgs/{org}` or the installations list) automatically *sees* it; users GitHub reports as **org admins** can manage tokens/settings. A second member never creates a duplicate org and never needs anyone's manual approval — GitHub membership *is* the approval. This is Codecov's model, it removes an entire approval-queue feature, and it can't drift out of sync with reality.
+**Recommended design — GitHub is the authority; no join workflow.** An organization is registered once (first user installs the GitHub App on it — the `installation` webhook creates the `Account`). Any user who can reach that installation (their own OAuth token's `GET /user/installations`) automatically *sees* it — and, as built, can also **manage** its tokens/settings: there is no admin-role check today, so management rights equal installation visibility (an org-admin gate via `GET /user/memberships/orgs/{org}` is backlog, PLAN M9.29). A second member never creates a duplicate org and never needs anyone's manual approval — GitHub membership *is* the approval. This is Codecov's model, it removes an entire approval-queue feature, and it can't drift out of sync with reality.
 
 **Fallback (only if wanted later):** a manual join-request flow for edge cases where membership can't be verified (e.g. user declined `read:org` scope). Kept out of v1.
 
 ### 6.4 Badges without leaking private repos
 
 - Public repo: `GET /badge/{owner}/{repo}.svg` — unauthenticated, `Cache-Control: max-age=300`, its own per-IP rate-limit policy (GitHub's camo proxy funnels README renders through few IPs). Renders the repo's denormalized default-branch coverage; `?branch=` renders the newest covered commit of that branch instead.
-- Private repo: same URL + `&token={BadgeToken}` — an opaque, repo-scoped, independently rotatable secret that grants **only the rendered SVG** (never report data, file lists, or API access). Anyone who can read the README can already see the code, so the badge number leaks nothing *to them*; the forwarding risk is acceptable because the capability is so narrow. Wrong/missing token → a generic "unknown" badge (don't 404 — that confirms existence).
+- Private repo: same URL + `&token={BadgeToken}` — an opaque, repo-scoped, independently rotatable secret that grants **only the rendered SVG** (never report data, file lists, or API access). Anyone who can read the README can already see the code, so the badge number leaks nothing *to them*; the forwarding risk is acceptable because the capability is so narrow. Wrong/missing token → a generic "unknown" badge (don't 404 — that confirms existence). The `Cache-Control` header follows the same rule: it depends only on whether a token was presented, never on whether the repo exists.
 
 ---
 
@@ -169,7 +170,7 @@ The requirement as stated: tokens are unique per GitHub account/org, so a second
 
 ```
 POST /api/uploads   (Bearer: OIDC JWT or covt_ token)
-  multipart: metadata.json + N gzipped report files (+ fileList = `git ls-files` output)
+  multipart form: flat metadata fields + N gzipped report files (+ fileList = `git ls-files` output)
       │
       ▼
   resolve repo (claims/token) → upsert Commit → upsert Build (repoId, sha, runId, runAttempt)
@@ -197,18 +198,18 @@ Priority order (≈80 % of real uploads come from the first two):
 
 ### Path normalization (the real hard part)
 
-Every parser output goes through one normalizer: strip `rootDir` (= `GITHUB_WORKSPACE`, sent by the action), unify slashes, resolve Cobertura `<source>` roots, strip Go module prefixes, guess JaCoCo source roots — and as the universal fallback, **suffix-match against the uploaded `fileList` (git ls-files)**. Unmatched files land in an "unmatched" bucket visible in the build UI instead of silently vanishing.
+Every parser output goes through one normalizer: strip `rootDir` (= `GITHUB_WORKSPACE`, sent by the action), unify slashes, resolve Cobertura `<source>` roots — and as the universal fallback, **suffix-match against the uploaded `fileList` (git ls-files)**, which is also what resolves JaCoCo's package-relative paths (`com/example/Foo.java` → `src/main/java/…`; the match gives up when two repo files share a basename and both match). Unmatched files land in an "unmatched" bucket visible in the build UI instead of silently vanishing. Go module-prefix stripping comes with the Go parser (backlog).
 
 ---
 
-## 8. GitHub Action (`coverage-action`, new repo)
+## 8. GitHub Action (`action/` in this repo)
 
-**node20 JavaScript action, TypeScript, bundled with `@vercel/ncc`** (dist/ committed + CI check for staleness). Composite/bash is what Codecov uses only because they ship a compiled CLI; we have no CLI because parsing is server-side. Node gives `@actions/glob` (discovery), `@actions/http-client` (retries), `core.getIDToken(audience)` (OIDC) portably on all three OSes.
+Lives at `action/` in MintPlayer/CodeCoverage, consumed as `MintPlayer/CodeCoverage/action@<ref>` (extract to its own repo only if a Marketplace listing is ever wanted — `action.yml` must sit at a repo root for that). **node20 JavaScript action, TypeScript, bundled with `@vercel/ncc`** (dist/ committed + CI check for staleness). Composite/bash is what Codecov uses only because they ship a compiled CLI; we have no CLI because parsing is server-side. Node gives `@actions/glob` (discovery), hand-rolled fetch retries, `core.getIDToken(audience)` (OIDC) portably on all three OSes.
 
-- **Inputs**: `url` (server base), `token` (optional; else OIDC), `files`/`directory` (globs; else auto-detect using Codecov's proven glob + ignore lists), `flags`, `name`, `fail-ci-if-error` (default false), `finish` (boolean → calls the finalize endpoint, for users who want deterministic completion), `disable-search`.
-- **Sends**: gzipped report files + metadata: `repository`, `repositoryId`, `commitSha` (= `pull_request.head.sha` on PR events — **never** the merge `GITHUB_SHA`), `parentSha` (the PR base SHA on PR events), `branch` (`GITHUB_HEAD_REF` on PRs else `GITHUB_REF_NAME`), `pullRequestNumber`, `eventName`, `runId`, `runAttempt`, `jobName`, `workflow`, `actor`, `flags[]`, `uploaderVersion`, `rootDir` (`GITHUB_WORKSPACE`), `fileList` (`git ls-files`).
+- **Inputs**: `url` (server base), `token` (optional), `use-oidc` (default false; auto-chosen only when NO token is supplied and `id-token: write` is available), `files`/`directory` (globs; else auto-detect using Codecov's proven glob + ignore lists), `flags`, `name`, `fail-ci-if-error` (default false), `finish` (boolean → calls the finalize endpoint, for users who want deterministic completion), `disable-search`.
+- **Sends**: gzipped report files + flat form fields: `repository`, `commitSha` (= `pull_request.head.sha` on PR events — **never** the merge `GITHUB_SHA`), `parentSha` (the PR base SHA on PR events), `branch` (`GITHUB_HEAD_REF` on PRs else `GITHUB_REF_NAME`), `pullRequestNumber`, `eventName`, `runId`, `runAttempt`, `jobName`, `workflow`, `flags` (comma-joined, split server-side), `rootDir` (`GITHUB_WORKSPACE`), `fileList` (`git ls-files`). The repository *id* travels only as an OIDC claim, never as a body field.
 - **Multiple invocations per run** are the *designed* case: each call = one session appended to the same Build (`runId`+`runAttempt` key).
-- **Versioning**: semver tags + floating `v1` major tag; Marketplace listing once stable.
+- **Versioning**: pin `@master` for now; a `v1` tag is cut once the input surface settles (nothing is tagged yet).
 
 Usage sketch:
 
@@ -216,9 +217,10 @@ Usage sketch:
 permissions:
   id-token: write        # tokenless OIDC
 steps:
-  - uses: MintPlayer/coverage-action@v1
+  - uses: MintPlayer/CodeCoverage/action@master
     with:
-      url: https://coverage.example.com
+      url: https://coverage.mintplayer.com
+      use-oidc: true
       files: '**/coverage.cobertura.xml'
       flags: unit
 ```
@@ -230,9 +232,9 @@ steps:
 Structure (Spark app with custom pages; generic Spark PO/query UI used for admin-ish screens, custom Angular pages for the browsing experience):
 
 1. **Home** — the user's accounts (orgs + personal), each with repo count and aggregate coverage, plus a manual "Resync" of GitHub visibility. Public "explore" list optional.
-2. **Account page** — repositories with latest default-branch coverage %, sparkline per repo, and the upload-token management card (create account- or repo-scoped, list, revoke; visibility gated by the server's 403).
-3. **Repository page** — branch selector, coverage-over-time trend chart (80% goal line), commit list with coverage % and delta; badge snippet (markdown, copy button, built on the server's `Coverage:BaseUrl`); settings (badge token rotate).
-4. **Commit/build page** — summary header (coverage %, files, lines, sessions/flags with parse status), **file/folder tree** and **sunburst/circle-packing diagram** side by side (both click-through), unmatched-files warning.
+2. **Account page** — repositories with latest default-branch coverage %, sparkline per repo, and the upload-token management card (create account- or repo-scoped, list, revoke; the card renders only when the server's token list loads — fail-closed on any error, not 403 specifically).
+3. **Repository page** — branch selector, coverage-over-time trend chart (80% goal line), commit list with coverage % and delta; badge snippet (markdown, copy button, built on the server's `Coverage:BaseUrl`) with inline badge-token create/rotate for private repos (public badges need no token); per-SDK workflow setup card.
+4. **Commit/build page** — summary header (ring, coverage bar, lines/branches/files) + a builds table (sessions/flags with parse status), **file/folder tree** and **sunburst diagram** side by side (both click-through), unmatched-files warning.
 5. **File view** — syntax-highlighted source with per-line coverage gutter: green (covered), red (uncovered), orange (partial branch), hit counts, deep-linkable line anchors (`#L42`).
 
 ### ng-bootstrap: use vs build
@@ -268,7 +270,7 @@ All upstream blockers have landed:
 - **Coverage app**: standalone repo (`C:\Repos\Coverage`), scaffolded by copying the WebhooksDemo anatomy (built — see PLAN.md M1). **Versions (2026-08-12, post-M10)**: on `MintPlayer.Spark.*` **10.0.0-preview.42** (latest), `@mintplayer/ng-spark` 22.0.8, `@mintplayer/ng-spark-auth` ^22.1.0, `@mintplayer/ng-bootstrap` **22.15.0** + `@mintplayer/web-components` **2.12.0** (pinned exact), `highlight.js` **^11.11.1** as a direct dependency (optional peer upstream, but statically imported by the published code-snippet module).
 - **GitHub App** (one per environment, prod + dev, as WebhooksDemo does): repository permissions — contents: read (source display + `push` events), metadata: read (mandatory), pull requests: read (`pull_request` events); account permissions — email addresses: read (Spark's first-sign-in auto-provisioning requires a GitHub-attested verified primary email via `GET /user/emails`); checks: write + PR: write only later, with M9.11. No org permissions: viewer visibility comes from `GET /user/installations` with the user's own OAuth token. Webhook events — repository, push, pull_request (installation events are always delivered). Full setup table: README "GitHub App settings".
 - **Dev loop**: RavenDB local, smee.io tunnel for webhooks, `dotnet run` (host spawns the Angular dev server — never run `ng serve` manually), `Synchronize` launch profile for model sync.
-- **Deployment**: docker-compose (app + pinned RavenDB on an internal network, Traefik labels) following WebhooksDemo's `docker-compose.yml`/Dockerfile — including its supply-chain notes (selective csproj COPY closure). Target host **coverage.mintplayer.com**. Fully automated pipeline (`publish.yml`): master push → test → ghcr.io image → SSH redeploy on the VPS (compose refetched from master; `.env` + `github-app.pem` are server-managed and never written by deploys). RavenDB data persists in the `raven-data` named volume; backup is out-of-band. One-time VPS/DNS checklist: README "Deployment".
+- **Deployment**: docker-compose (app + pinned RavenDB on an internal network, Traefik labels) following WebhooksDemo's `docker-compose.yml`/Dockerfile — including its supply-chain notes (selective csproj COPY closure). Target host **coverage.mintplayer.com**. Fully automated pipeline (`publish.yml`): master push (docs/action/markdown-only pushes are path-filtered out) → test → ghcr.io image → SSH redeploy on the VPS (compose refetched from master; `.env` + `github-app.pem` are server-managed and never written by deploys). RavenDB data persists in the `raven-data` named volume; backup is out-of-band. One-time VPS/DNS checklist: README "Deployment".
 
 ---
 

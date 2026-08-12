@@ -74,7 +74,7 @@ public partial class ParseSessionRecipient : IRecipient<ParseSessionMessage>
                     }
 
                     fileCoverage.Matched |= matched;
-                    CoverageMerger.MergeInto(fileCoverage, parsedFile);
+                    CoverageMerger.MergeInto(fileCoverage, parsedFile, parser.FormatName);
                 }
 
                 parsedAnything = true;

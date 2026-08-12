@@ -41,7 +41,7 @@ Copy the WebhooksDemo anatomy (the 27-item checklist from the investigation):
 The heart of the product; testable without any UI.
 
 1. Normalized model (`Line {Number, Hits?, Status}` etc. — PRD §5) + merge (max semantics, per-session).
-2. `ICoverageParser` + sniffing factory (root-element/text dispatch). Parsers: **LCOV**, **Cobertura** (then JaCoCo in M2.5). Extensive fixture-based tests (real files from coverlet, nyc, coverage.py, gcovr, lcov 1.x+2.x).
+2. `ICoverageParser` + sniffing factory (root-element/text dispatch). Parsers: **LCOV**, **Cobertura** (then JaCoCo in M2.5). *(As built: inline-fixture unit tests covering the tricky records — lcov 2.x `BRDA -`/block prefixes included; a corpus of real coverlet/nyc/coverage.py/gcovr files never materialized, tracked with M9.26.)*
 3. Path normalizer: rootDir strip, slash unification, Cobertura `<source>` resolution, `fileList` suffix-matching fallback, unmatched-bucket.
 4. `POST /api/uploads` (multipart: metadata + gzipped files + fileList) authenticating via API token (M0 lib); store raw files as RavenDB attachments on the Build; Build/Session bookkeeping keyed `(repoId, sha, runId, runAttempt)`; parse via Spark message-bus recipient.
 5. Finalization: explicit `POST /api/uploads/finish` + debounce (~2 min) + timeout (~30 min) via cron/subscription worker; recompute `Commit.CoverageSummary`.
@@ -51,7 +51,7 @@ The heart of the product; testable without any UI.
 
 ## M3 — GitHub Action MVP 🟪
 
-1. New repo `coverage-action`: node20 + TypeScript + ncc bundle (dist/ committed + CI staleness check).
+1. ~~New repo `coverage-action`~~ *(as built: lives in this repo under `action/`, consumed as `MintPlayer/CodeCoverage/action@<ref>`)*: node20 + TypeScript + ncc bundle (dist/ committed + CI staleness check).
 2. v1 inputs: `url`, `token`, `files`/`directory` globs (auto-detect fallback using Codecov's glob/ignore lists), `flags`, `name`, `finish`, `fail-ci-if-error`.
 3. Correct metadata (PR-head SHA, branch, runId/runAttempt, `rootDir`, `git ls-files`).
 4. Dogfood: run it in the Coverage repo's own CI (and optionally mintplayer-ng-bootstrap's — both already emit cobertura).
@@ -61,7 +61,7 @@ The heart of the product; testable without any UI.
 ## M4 — Browse UI 🟦
 
 1. **Home** (accounts + aggregate %), **Account** page (repos + latest default-branch coverage), **Repository** page (branch selector, commit list with % and delta).
-2. **Commit/build** page: summary header, sessions/flags with parse status, unmatched-files warning, and the **file/folder tree** via `bs-datatable` tree mode (lazy children from a tree-summary endpoint, coverage-% columns with `bs-progress-bar` cells).
+2. **Commit/build** page: summary header, sessions/flags with parse status, unmatched-files warning, and the **file/folder tree** ~~via `bs-datatable` tree mode~~ *(as built: plain `bs-table` + breadcrumb drill-down; the datatable upgrade is M9.28)* with coverage-% cells.
 3. Custom endpoints + RavenDB static indexes for the commit list and tree aggregation (not Spark generic queries — paging happens in-memory there).
 4. Private-repo pages gated on the viewer's synced GitHub access.
 
@@ -69,7 +69,7 @@ The heart of the product; testable without any UI.
 
 ## M5 — File view + code-viewer component 🟨🟦
 
-1. 🟨 **`mp-code-viewer`** in ng-bootstrap (extend `mp-code-snippet`): line numbers, generic per-line annotation API (status class + optional label/count), line anchors, light theme, keyboard/a11y per repo CLAUDE.md; Angular wrapper `bs-code-viewer`; conformance-suite registration; demo page.
+1. 🟨 ~~**`mp-code-viewer`** in ng-bootstrap~~ *(as delivered by ng-bootstrap#402: `mp-code-snippet` was **extended into the viewer** — no separate component or `bs-code-viewer` wrapper exists; see M10)*: line numbers, generic per-line annotation API, line anchors, theme-following, keyboard/a11y.
 2. 🟦 File view page: fetch source from GitHub at view time (installation token, contents: read, ETag cache — we never store source), overlay line coverage (green/red/orange + hit counts), `#L42` deep links.
 
 **Exit criteria**: viewing a covered file for a commit shows highlighted source identical to the report.
@@ -78,13 +78,15 @@ The heart of the product; testable without any UI.
 
 1. `GET /badge/{owner}/{repo}.svg?branch=…` — self-rendered SVG (shields.io-style flat badge is ~30 lines of templated SVG), color scale red→green.
 2. Private repos require `&token={BadgeToken}` (scoped, rotatable; wrong/missing → "unknown" badge, never 404).
-3. Repo page shows the ready-to-paste markdown snippet; settings allow badge-token rotation.
+3. Repo page shows the ready-to-paste markdown snippet *(as built: badge-token create/rotate
+   sits inline in the README-badge box, shown for private repos only — public badges need no
+   token; there is no separate settings tab)*.
 4. `Cache-Control: max-age=300` + rate limiting.
 
 ## M7 — OIDC tokenless uploads 🟦🟪
 
-1. 🟦 JWT bearer validation (`Authority = token.actions.githubusercontent.com`, `aud` = our base URL); claims (`repository`, `repository_id`, `sha`, `run_id`, `run_attempt`) override body metadata.
-2. 🟪 Action: `use-oidc` input (default on when `id-token: write` available and not a fork), `core.getIDToken(url)`.
+1. 🟦 JWT bearer validation (`Authority = token.actions.githubusercontent.com`, `aud` = our base URL); claims usage as built: `run_id`/`run_attempt` override the body, `repository` is validated-equal, `sha` deliberately NOT used (merge-commit trap — the body carries the PR head).
+2. 🟪 Action: `use-oidc` input (default false; auto-chosen only when NO token input is supplied and `id-token: write` is available), `core.getIDToken(url)`.
 3. Policy: public repos may auto-provision on first OIDC upload; private repos must be known (App installed).
 
 ## M8 — Dependency upgrade + coverage diagram 🟦 (UNBLOCKED 2026-08-10)
@@ -98,7 +100,7 @@ ng-bootstrap#401 (→ `22.14.0` charts). All remaining work is in this repo.
 3. Runtime verification: GitHub OAuth sign-in (the new composite default-authenticate scheme must not disturb the cookie path), one `covt_` upload, one OIDC-JWT upload. A "refused by every registered scheme" log warning is cosmetic (see step 2.1).
 
 **Step 2 — upgrade follow-ups (optional, recommended):**
-1. Register the **ApiToken** scheme as a Spark credential scheme (`spark.AddCredentialScheme("ApiToken", isAmbient: false)` after moving its registration into the AddSpark callback) — silences the per-upload warning + earns the non-ambient antiforgery exemption. Deliberately do NOT register GitHubOidc (it would widen where workflow JWTs are accepted).
+1. Register the **ApiToken** scheme as a Spark credential scheme (as built: the generic overload `spark.AddCredentialScheme<AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>(SchemeName)` inside the AddSpark callback, non-ambient by default) — silences the per-upload warning + earns the non-ambient antiforgery exemption. Deliberately do NOT register GitHubOidc (it would widen where workflow JWTs are accepted).
 2. Shell: replace the full-page-redirect login workaround with `authService.loginWithProvider('GitHub')` (ng-spark-auth 22.1.0 owns the whole popup handshake incl. blocked/closed/refused paths).
 3. ~~Convert `GitHubEventsRecipient` to typed recipients~~ — **deliberately skipped**: the webhook processor broadcasts BOTH the catch-all and the typed envelope per event regardless of subscribers, so converting would only swap which family of unconsumed messages accumulates while splitting one cohesive handler into five classes. Revisit if Spark ever broadcasts only to subscribed queues (possible upstream ask).
 
@@ -134,7 +136,8 @@ Upstream's own migration checklist for OUR file page: mintplayer-ng-bootstrap
    **The one silent breaker**: `scrollToTarget()` uses `document.getElementById('L'+n)` which
    returns null into a shadow root — must become `viewer()?.scrollToLine(n)` (viewChild).
    Write our own extension→language map (grammar keys cover cs/ts/html/json/scss/sql/yaml/vb/md;
-   razor/fsharp/xaml absent → plain text + console.warn; `canHighlight`/`registerLanguage`
+   razor/fsharp/xaml absent → plain text + console.warn for unmapped extensions (a mapped key
+   failing `canHighlight` falls back silently); `canHighlight`/`registerLanguage`
    exported for gating/extending). Layout trap: `code { min-width: max-content }` propagates —
    flex ancestors need `min-width: 0` or phones get body-level horizontal scroll.
 3. Cleanup while there: `bs-shell-topbar.directive.ts` is unnecessary — upstream confirmed a plain
@@ -152,7 +155,7 @@ Status legend: ✅ built 2026-08-12 (`feature/m10-m9-backlog`) · ⏳ deferred (
    upload paths; `Commits_ByRepository` sorts on `AuthoredAt ?? FirstSeenAtUtc`.
 2. ✅ Zero delta renders blank: `@if (delta(i); as d)` — `0` is falsy → `@let` + null check.
 3. ✅ Badge markdown: repo response carries `Coverage:BaseUrl`; the snippet is built from it
-   instead of `location.origin`.
+   (`location.origin` remains only as a defensive fallback when the server sends none).
 4. ✅ Stale "designed for extraction" comment in `ApiToken.cs` replaced with the cancelled-upstream note.
 
 ### Missing product features (PRD promises, verified unbuilt)
@@ -178,7 +181,9 @@ Status legend: ✅ built 2026-08-12 (`feature/m10-m9-backlog`) · ⏳ deferred (
     from master, server-managed `.env`/pem never touched; modeled on ng-bootstrap's
     pipeline with Spark WebhooksDemo's refinements). VPS/DNS prerequisites: README
     "Deployment". ⏳ RavenDB volume backup remains out-of-band.
-15. ✅ Traefik port pinned (`…server.port=8080` label; EXPOSE 8081 dropped).
+15. ✅ Traefik port pinned (`…server.port=8080` label; EXPOSE 8081 dropped) +
+    `traefik.docker.network=web` (two-network container — without it Traefik can route to
+    the unreachable internal IP).
 16. ✅ Compose healthchecks (bash `/dev/tcp` probes; `depends_on: service_healthy`).
 17. ✅ `.env.example` documents the `./github-app.pem` bind-mount.
 18. ⏳ CI dogfood OIDC leg — needs a deployed instance reachable from CI first.
@@ -199,13 +204,26 @@ Status legend: ✅ built 2026-08-12 (`feature/m10-m9-backlog`) · ⏳ deferred (
 ### Testing
 26. ⏳ Integration tests via `MintPlayer.Spark.Testing` (embedded RavenDB; needs `RAVENDB_LICENSE`
     provisioning in CI) — upload endpoint, auth handlers, finalization FIFO, browse API. Current
-    suite is pure-unit (parsers/merger/normalizer).
+    suite is pure-unit (parsers/merger/normalizer/smee-minifier), all inline fixtures.
 27. ✅ Dead `"test": "ng test"` script dropped (no runner installed).
 
 ### UI upgrades (components exist upstream, adoption optional)
 28. ⏳ Folder list → `bs-datatable` tree mode (expandable rows + sortable coverage columns + lazy
     child fetch; https://bootstrap.mintplayer.com/enterprise/datatables) replacing the plain
     `bs-table` + breadcrumb drill-down — pairs naturally with the `[(rootId)]`-synced sunburst.
+
+### Added by the 2026-08-12 doc-vs-code re-audit
+29. ⏳ Admin-role gating: token/badge management currently requires only installation
+    *visibility* (any org member who can reach the installation can mint/revoke tokens);
+    gate on `GET /user/memberships/orgs/{org}` role=admin — PRD §6.3.
+30. ⏳ Reprocess-after-parser-fix endpoint/job replaying the retained raw attachments
+    (PRD §5 keeps them for exactly this; no trigger exists yet).
+31. ✅ Cross-format branch-merge guard (`FileCoverage.BranchFormat`): branch detail merges
+    within one report format only; a session in another format contributes line status only
+    (PRD §5's rule, previously unimplemented). ✅ Uploads rate-limiter partitions on the
+    presented `covt_` token hash again (the limiter runs before authentication, so the old
+    claims-based key silently degraded to per-IP). ✅ Badge `Cache-Control` no longer keyed
+    on repo existence (was an existence oracle).
 
 ---
 

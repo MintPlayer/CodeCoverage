@@ -1,0 +1,5 @@
+[    6295ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ https://localhost:5200/@vite/client:524
+[    6318ms] [LOG] Angular is running in development mode. @ https://localhost:5200/@fs/C:/Repos/Coverage/Coverage/ClientApp/.angular/cache/22.1.3/ClientApp/vite/deps/core-Ud4ZOIWX.js?v=61696570:9110
+[  553752ms] [LOG] [vite] server connection lost. Polling for restart... @ https://localhost:5200/@vite/client:992
+[  590041ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ https://localhost:5200/@vite/client:524
+[  590075ms] [LOG] Angular is running in development mode. @ https://localhost:5200/@fs/C:/Repos/Coverage/Coverage/ClientApp/.angular/cache/22.1.3/ClientApp/vite/deps/core-Ud4ZOIWX.js?v=7be93776:9110

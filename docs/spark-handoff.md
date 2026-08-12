@@ -7,6 +7,35 @@
 > app-local `covt_` tokens (see PR docs `PRD-CoverageHandoff.md`). Upgrade checklist for this repo
 > lives in the Spark repo's `docs/release-notes-preview-42.md`. Kept for historical context.
 
+## NEW (2026-08-12): bug — Smee dev tunnel's re-minification breaks installation-event signatures
+
+For a Spark session in `C:\Repos\MintPlayer.Spark`. `SmeeBackgroundService`
+(libs/webhooks/MintPlayer.Spark.Webhooks.GitHub.DevTunnel/Services/SmeeBackgroundService.cs:49-51)
+re-minifies the smee-relayed body — correctly, since GitHub signs minified bytes and smee
+pretty-prints — but does it with `JsonConvert.SerializeObject(JsonConvert.DeserializeObject(...))`,
+which *reinterprets scalars* instead of just stripping whitespace:
+
+- default `DateParseHandling` rewrites fractional-second timestamps:
+  `"2026-08-12T08:45:12.000+02:00"` → `"2026-08-12T08:45:12+02:00"` (measured);
+- float parsing rewrites trailing zeros: `1.50` → `1.5` (measured).
+
+GitHub's **installation / installation_repositories** events carry exactly those
+`.000`-style timestamps, so their HMAC never matches and `SparkWebhookEventProcessor`
+drops them ("signature validation failed") — with a correct webhook secret. Push events
+happen to survive (no fractional timestamps), which hides the bug until someone installs
+an App through the tunnel. Coverage hit this live on its first real installation.
+
+**Fix**: minify *lexically* — remove whitespace outside string literals, copy every token
+verbatim (JS pretty-printing only ever adds whitespace, so this reconstructs the signed
+bytes exactly). Working implementation + unit tests to lift: Coverage repo,
+`Coverage/Services/SmeeWebhookTunnelService.cs` (`LexicalMinify`) and
+`Coverage.Tests/Services/SmeeWebhookTunnelServiceTests.cs`. Note `e.Data.Body` from
+Smee.IO.Client may already be a parsed JToken (its `ToString()` pretty-prints and its
+internal Newtonsoft parse may already have converted date strings) — if so, the fix also
+needs the raw SSE frame rather than the parsed Dto, as in Coverage's replacement service.
+Once fixed upstream, Coverage swaps back to `options.AddSmeeDevTunnel(...)` and deletes
+its local tunnel.
+
 ## NEW (2026-08-12): docs-only item — App walkthrough misses the sign-in email permission
 
 For a Spark session in `C:\Repos\MintPlayer.Spark`. Found while doing Coverage's first real

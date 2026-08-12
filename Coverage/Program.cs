@@ -11,7 +11,6 @@ using MintPlayer.Spark.Abstractions.Authentication;
 using MintPlayer.Spark.Authorization.Extensions;
 using MintPlayer.Spark.Authorization.Identity;
 using MintPlayer.Spark.Messaging;
-using MintPlayer.Spark.Webhooks.GitHub.DevTunnel.Extensions;
 using MintPlayer.Spark.Webhooks.GitHub.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -95,13 +94,19 @@ builder.Services.AddSpark(builder.Configuration, spark =>
         if (long.TryParse(builder.Configuration["GitHub:Development:AppId"], out var devId))
             options.DevelopmentAppId = devId;
 
-        var smeeUrl = builder.Configuration["GitHub:SmeeChannelUrl"];
-        if (!string.IsNullOrEmpty(smeeUrl))
-        {
-            options.AddSmeeDevTunnel(smeeUrl);
-        }
+        // Deliberately NOT options.AddSmeeDevTunnel(smeeUrl): re-minifying the
+        // smee-relayed body is necessary (GitHub signs minified bytes), but
+        // Spark's tunnel does it via a Newtonsoft round-trip that rewrites
+        // fractional-second timestamps — so every installation event fails
+        // signature validation. Our lexically-minifying replacement is
+        // registered below; upstream fix tracked in docs/spark-handoff.md.
     });
 });
+
+if (!string.IsNullOrEmpty(builder.Configuration["GitHub:SmeeChannelUrl"]))
+{
+    builder.Services.AddHostedService<Coverage.Services.SmeeWebhookTunnelService>();
+}
 
 // GitHubOidc: GitHub-signed workflow JWTs, validated against GitHub's JWKS;
 // the audience must be this deployment's public base URL and the action must

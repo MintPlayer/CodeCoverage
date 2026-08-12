@@ -1,0 +1,1 @@
+[      57ms] [ERROR] Failed to load resource: the server responded with a status of 500 () @ https://localhost:5200/signin-github?code=bogus&installation_id=153131096&setup_action=install:0

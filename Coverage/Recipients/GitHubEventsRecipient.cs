@@ -67,10 +67,8 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
             case "unsuspend":
             case "new_permissions_accepted":
                 account.InstallationId = evt.Installation.Id;
-                foreach (var repo in evt.Repositories ?? [])
-                {
-                    await UpsertRepository(repo.Id, repo.Name, repo.FullName, repo.Private, account, ct);
-                }
+                await UpsertRepositories(
+                    (evt.Repositories ?? []).Select(r => (r.Id, r.Name, r.FullName, r.Private)), account, ct);
                 break;
             case "deleted":
             case "suspend":
@@ -90,16 +88,20 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
         account.AvatarUrl = ghAccount.AvatarUrl;
         account.InstallationId = evt.Installation.Id;
 
-        foreach (var repo in evt.RepositoriesAdded ?? [])
-        {
-            await UpsertRepository(repo.Id, repo.Name, repo.FullName, repo.Private, account, ct);
-        }
+        await UpsertRepositories(
+            (evt.RepositoriesAdded ?? []).Select(r => (r.Id, r.Name, r.FullName, r.Private)), account, ct);
 
-        foreach (var repo in evt.RepositoriesRemoved ?? [])
+        var removedIds = (evt.RepositoriesRemoved ?? [])
+            .Select(r => Repository.DocumentId(r.Id))
+            .ToArray();
+        if (removedIds.Length > 0)
         {
-            var existing = await session.LoadAsync<Repository>(Repository.DocumentId(repo.Id), ct);
-            if (existing is not null)
-                session.Delete(existing);
+            var loaded = await session.LoadAsync<Repository>(removedIds, ct);
+            foreach (var existing in loaded.Values)
+            {
+                if (existing is not null)
+                    session.Delete(existing);
+            }
         }
     }
 
@@ -180,12 +182,44 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
             repository = new Repository { GitHubId = gitHubId };
             await session.StoreAsync(repository, id, ct);
         }
+        ApplyRepositoryFields(repository, name, fullName, isPrivate, account);
+        return repository;
+    }
+
+    /// <summary>
+    /// One round-trip for the whole batch: an installation event carries every
+    /// repository the App was granted, and a per-repo LoadAsync loop blows
+    /// RavenDB's 30-requests-per-session cap on any real account.
+    /// </summary>
+    private async Task UpsertRepositories(
+        IEnumerable<(long GitHubId, string Name, string FullName, bool IsPrivate)> repos, Account account, CancellationToken ct)
+    {
+        var items = repos.ToList();
+        if (items.Count == 0) return;
+
+        var loaded = await session.LoadAsync<Repository>(
+            items.Select(r => Repository.DocumentId(r.GitHubId)), ct);
+
+        foreach (var item in items)
+        {
+            var id = Repository.DocumentId(item.GitHubId);
+            var repository = loaded.GetValueOrDefault(id);
+            if (repository is null)
+            {
+                repository = new Repository { GitHubId = item.GitHubId };
+                await session.StoreAsync(repository, id, ct);
+            }
+            ApplyRepositoryFields(repository, item.Name, item.FullName, item.IsPrivate, account);
+        }
+    }
+
+    private static void ApplyRepositoryFields(Repository repository, string name, string fullName, bool isPrivate, Account account)
+    {
         repository.Account = account.Id;
         repository.Name = name;
         repository.FullName = fullName;
         repository.OwnerLogin = fullName.Split('/')[0];
         repository.IsPrivate = isPrivate;
-        return repository;
     }
 
     private async Task<Commit> GetOrCreateCommit(long repoGitHubId, string sha, CancellationToken ct)

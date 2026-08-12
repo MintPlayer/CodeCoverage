@@ -52,7 +52,7 @@ them until that ships.
 
 **Webhook events to subscribe**: `Repository`, `Push`, `Pull request`
 (`installation` / `installation_repositories` are always delivered to Apps, no
-subscription needed). Webhook URL: your smee channel in dev, `https://<host>/spark/webhooks/github` in prod;
+subscription needed). Webhook URL: your smee channel in dev, `https://<host>/api/github/webhooks` in prod;
 set a webhook secret and keep it in `GitHub:WebhookSecret`.
 
 **Identity (sign-in)**: add a **Callback URL** per environment — GitHub requires
@@ -125,7 +125,7 @@ One-time VPS setup:
    the first publish (the workflow's visibility PATCH is best-effort), or
    `docker login ghcr.io` on the VPS with a `read:packages` PAT.
 6. Production GitHub App: callback URL `https://<host>/signin-github`, webhook URL
-   `https://<host>/spark/webhooks/github`, same permissions as the dev App.
+   `https://<host>/api/github/webhooks`, same permissions as the dev App.
 
 Manual redeploy: the workflow's `workflow_dispatch` button, or on the VPS
 `cd /var/www/coverage && docker compose pull && docker compose up -d --remove-orphans`

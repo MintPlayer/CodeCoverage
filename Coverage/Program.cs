@@ -123,6 +123,17 @@ builder.Services.AddRateLimiter(options =>
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
+    // Badges get their own, roomier policy: GitHub's camo proxy funnels every
+    // README render through a handful of IPs, so sharing the uploads policy
+    // would let one popular badge throttle them all.
+    options.AddPolicy("badges", context => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 600,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
 });
 
 builder.Services.AddSpaStaticFilesImproved(configuration =>

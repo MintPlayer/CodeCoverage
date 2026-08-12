@@ -1,8 +1,9 @@
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 USER app
 WORKDIR /app
+# 8080 only (ASPNETCORE_HTTP_PORTS default): a second exposed port would make
+# Traefik's port detection ambiguous. TLS terminates at Traefik.
 EXPOSE 8080
-EXPOSE 8081
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 # Node 22 for the Angular production build

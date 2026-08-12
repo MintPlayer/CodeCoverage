@@ -18,23 +18,31 @@ namespace Coverage.Controllers;
 /// </summary>
 [ApiController]
 [AllowAnonymous]
-[EnableRateLimiting("uploads")]
+[EnableRateLimiting("badges")]
 public partial class BadgeController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;
 
+    /// <summary>
+    /// Default-branch coverage from the denormalized Repository.LatestCoverage;
+    /// ?branch= reads the newest covered commit of that branch instead.
+    /// </summary>
     [HttpGet("badge/{owner}/{name}.svg")]
     [ResponseCache(Duration = 300, Location = ResponseCacheLocation.Any)]
-    public async Task<IActionResult> Get(string owner, string name, [FromQuery] string? token, CancellationToken cancellationToken)
+    public async Task<IActionResult> Get(string owner, string name, [FromQuery] string? token, [FromQuery] string? branch, CancellationToken cancellationToken)
     {
         var repository = await session.Query<Repository>()
             .Where(r => r.FullName == $"{owner}/{name}")
             .FirstOrDefaultAsync(cancellationToken);
 
         double? percent = null;
-        if (repository is not null && MayView(repository, token) && repository.LatestCoverage is { LinesCoverable: > 0 } coverage)
+        if (repository is not null && MayView(repository, token))
         {
-            percent = coverage.LinesCovered * 100.0 / coverage.LinesCoverable;
+            var summary = string.IsNullOrEmpty(branch)
+                ? repository.LatestCoverage
+                : await LoadBranchCoverage(repository, branch, cancellationToken);
+            if (summary is { LinesCoverable: > 0 })
+                percent = summary.LinesCovered * 100.0 / summary.LinesCoverable;
         }
 
         Response.Headers.CacheControl = repository?.IsPrivate == true
@@ -42,6 +50,16 @@ public partial class BadgeController : ControllerBase
             : "public, max-age=300";
 
         return Content(BadgeRenderer.Coverage(percent), "image/svg+xml; charset=utf-8");
+    }
+
+    private async Task<CoverageSummary?> LoadBranchCoverage(Repository repository, string branch, CancellationToken cancellationToken)
+    {
+        var commit = await session.Query<Indexes.Commits_ByRepository.Result, Indexes.Commits_ByRepository>()
+            .Where(c => c.Repository == repository.Id && c.Branch == branch && c.HasCoverage)
+            .OrderByDescending(c => c.AuthoredAt)
+            .OfType<Commit>()
+            .FirstOrDefaultAsync(cancellationToken);
+        return commit?.Coverage;
     }
 
     private static bool MayView(Repository repository, string? token)

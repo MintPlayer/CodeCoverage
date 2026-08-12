@@ -17,6 +17,13 @@ services:
       - raven-data:/var/lib/ravendb/data
     networks:
       - coverage-internal
+    # No curl/wget assumptions: bash's /dev/tcp is enough for "is it listening".
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     restart: unless-stopped
 
   coverage-app:
@@ -25,7 +32,8 @@ services:
       context: .
       dockerfile: Coverage/Dockerfile
     depends_on:
-      - coverage-raven
+      coverage-raven:
+        condition: service_healthy
     environment:
       - Spark__RavenDb__Urls__0=http://coverage-raven:8080
       - Spark__RavenDb__EnsureDatabaseCreated=true
@@ -37,12 +45,22 @@ services:
       - GitHub__Production__ClientSecret=${GITHUB_APP_CLIENT_SECRET}
       - GitHub__Production__PrivateKeyPath=/run/secrets/github-app.pem
     volumes:
+      # GitHub App private key, downloaded from the App settings page; see
+      # .env.example for the expected location.
       - ./github-app.pem:/run/secrets/github-app.pem:ro
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.coverage.rule=Host(`${TRAEFIK_HOST}`)"
       - "traefik.http.routers.coverage.entrypoints=websecure"
       - "traefik.http.routers.coverage.tls.certresolver=letsencrypt"
+      # Pin the upstream port explicitly so Traefik never guesses.
+      - "traefik.http.services.coverage.loadbalancer.server.port=8080"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '200' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
     networks:
       - web
       - coverage-internal

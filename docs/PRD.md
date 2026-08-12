@@ -134,7 +134,7 @@ All percentages derive from `Status`, never from `Hits`. Merge across sessions =
 
 **Raw uploads are retained** (the uploaded report files, gzipped) so the merged view can be lazily recomputed — this makes late uploads, re-runs, and parser bug-fix reprocessing trivially correct. Storage medium: RavenDB attachments on the Build document to start (they replicate/backup with the database); revisit if size becomes a problem.
 
-**Folder-tree aggregation** is computed on the fly by streaming the build's `FileCoverage` docs (both the `/tree` folder-level endpoint and the `/hierarchy` sunburst endpoint) — no `TreeSummary` document exists; materializing one at finalize is the caching fix tracked as PLAN M9.20.
+**Folder-tree aggregation** reads a `BuildTreeSummary` document (`{buildId}/tree`, per-file line totals) materialized at finalize — one point-load per request for both the `/tree` folder-level endpoint and the `/hierarchy` sunburst endpoint. Builds finalized before the summary existed fall back to streaming their `FileCoverage` docs.
 
 ---
 
@@ -160,7 +160,7 @@ The requirement as stated: tokens are unique per GitHub account/org, so a second
 
 ### 6.4 Badges without leaking private repos
 
-- Public repo: `GET /badge/{owner}/{repo}.svg` — unauthenticated, `Cache-Control: max-age=300`. Renders the repo's denormalized default-branch coverage; a `?branch=` variant is not implemented (PLAN M9.25).
+- Public repo: `GET /badge/{owner}/{repo}.svg` — unauthenticated, `Cache-Control: max-age=300`, its own per-IP rate-limit policy (GitHub's camo proxy funnels README renders through few IPs). Renders the repo's denormalized default-branch coverage; `?branch=` renders the newest covered commit of that branch instead.
 - Private repo: same URL + `&token={BadgeToken}` — an opaque, repo-scoped, independently rotatable secret that grants **only the rendered SVG** (never report data, file lists, or API access). Anyone who can read the README can already see the code, so the badge number leaks nothing *to them*; the forwarding risk is acceptable because the capability is so narrow. Wrong/missing token → a generic "unknown" badge (don't 404 — that confirms existence).
 
 ---
@@ -189,10 +189,10 @@ POST /api/uploads   (Bearer: OIDC JWT or covt_ token)
 `ICoverageParser` implementations behind a sniffing factory modelled on ReportGenerator's root-element dispatch (`coverage`→Cobertura/Clover/…, `report`→JaCoCo, `CoverageSession`→OpenCover, text starting `TN:`/`SF:`→LCOV, JSON with `statementMap`→Istanbul, `mode:` header→Go).
 
 Priority order (≈80 % of real uploads come from the first two):
-1. **LCOV** (`.info`) — mind lcov 2.x records (`FNL`/`FNA`, `e|f|U` block prefixes, `BRDA` taken=`-`).
-2. **Cobertura** — also covers coverage.py XML and coverlet; branch data in `condition-coverage="… (c/t)"`; group multiple `<class>` by `@filename`.
-3. **JaCoCo** — validates the nullable-hits design (`mi`/`ci`/`mb`/`cb` only).
-4. Istanbul JSON, Clover, OpenCover, Go cover.
+1. **LCOV** (`.info`) — built. Mind lcov 2.x records (`FNL`/`FNA`, `e|f|U` block prefixes, `BRDA` taken=`-`).
+2. **Cobertura** — built. Also covers coverage.py XML and coverlet; branch data in `condition-coverage="… (c/t)"`; group multiple `<class>` by `@filename`.
+3. **JaCoCo** — built. Validates the nullable-hits design (`mi`/`ci`/`mb`/`cb` only): executed lines carry `Hits = null`, unexecuted a genuine 0.
+4. Istanbul JSON, Clover, OpenCover, Go cover (backlog).
 5. Long tail via an **opt-in ReportGenerator.Core adapter** (Apache-2.0) mapping `ParserResult` into our model — never as the core dependency (assembly-shaped model, undocumented API, sum-merge semantics).
 
 ### Path normalization (the real hard part)
@@ -229,9 +229,9 @@ steps:
 
 Structure (Spark app with custom pages; generic Spark PO/query UI used for admin-ish screens, custom Angular pages for the browsing experience):
 
-1. **Home** — the user's accounts (orgs + personal), each with repo count and aggregate coverage. Public "explore" list optional.
-2. **Account page** — repositories with latest default-branch coverage %, sparkline (later), sorting. Admin tab (org admins only): upload tokens, GitHub App installation status.
-3. **Repository page** — branch selector, commit list with coverage % and delta; badge snippet (markdown, copy button); settings (badge token rotate, repo token).
+1. **Home** — the user's accounts (orgs + personal), each with repo count and aggregate coverage, plus a manual "Resync" of GitHub visibility. Public "explore" list optional.
+2. **Account page** — repositories with latest default-branch coverage %, sparkline per repo, and the upload-token management card (create account- or repo-scoped, list, revoke; visibility gated by the server's 403).
+3. **Repository page** — branch selector, coverage-over-time trend chart (80% goal line), commit list with coverage % and delta; badge snippet (markdown, copy button, built on the server's `Coverage:BaseUrl`); settings (badge token rotate).
 4. **Commit/build page** — summary header (coverage %, files, lines, sessions/flags with parse status), **file/folder tree** and **sunburst/circle-packing diagram** side by side (both click-through), unmatched-files warning.
 5. **File view** — syntax-highlighted source with per-line coverage gutter: green (covered), red (uncovered), orange (partial branch), hit counts, deep-linkable line anchors (`#L42`).
 
@@ -244,7 +244,7 @@ Structure (Spark app with custom pages; generic Spark PO/query UI used for admin
 - **`bs-trend-chart`** — coverage-over-time with `goal` line; **`bs-sparkline`** for inline table trends.
 - **`charts/core`** exports `arcPath` + `colorScale` publicly — the sanctioned way to hand-roll the headline radial ring (~20 lines; pass `ringGap: 0`).
 
-**Code viewer — shipped upstream** ([PR #402](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/402), 2026-08-11 → `22.15.0` / web-components `2.12.0`): `bs-code-snippet` was **extended into the viewer** (no separate `mp-code-viewer`): per-line subgrid DOM, `annotations: CodeLineAnnotation[]` (`{line, kind, label, secondaryLabel, description}` — style via `::part(annotation-<kind>)`), `lineNumbers`, `lineHref` (fragment-safe with `<base href>`), `activeLine` + `scrollToLine()` method, `data-bs-theme`-following `light-dark()` theme. Adoption = PLAN.md **M10** (incl. the `highlight.js@^11.11.1` direct-dependency requirement and the `scrollToLine` shadow-DOM gotcha). Upstream wrote a migration checklist against our file page: ng-bootstrap `docs/prd/code-snippet-viewer.md` §12.
+**Code viewer — shipped upstream and adopted** ([PR #402](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/402), 2026-08-11 → `22.15.0` / web-components `2.12.0`): `bs-code-snippet` was **extended into the viewer** (no separate `mp-code-viewer`): per-line subgrid DOM, `annotations: CodeLineAnnotation[]` (`{line, kind, label, secondaryLabel, description}` — style via `::part(annotation-<kind>)`), `lineNumbers`, `lineHref` (fragment-safe with `<base href>`), `activeLine` + `scrollToLine()` method, `data-bs-theme`-following `light-dark()` theme. The file page uses it since PLAN.md **M10** (highlight.js as a direct dependency, `scrollToLine()` for deep links since the rows live in a shadow root, extension→grammar map gated on `canHighlight`).
 
 `mp-progress-circle` remains **declined upstream** — Coverage's hand-rolled `CoverageRingComponent` on the public `arcPath`/`colorScale` is the design.
 
@@ -265,7 +265,7 @@ All upstream blockers have landed:
 
 ## 11. Repo & deployment shape
 
-- **Coverage app**: standalone repo (`C:\Repos\Coverage`), scaffolded by copying the WebhooksDemo anatomy (built — see PLAN.md M1). **Versions (2026-08-12)**: on `MintPlayer.Spark.*` **10.0.0-preview.42** (latest), `@mintplayer/ng-spark` 22.0.8, `@mintplayer/ng-spark-auth` ^22.1.0, `@mintplayer/ng-bootstrap` **22.14.0** + `@mintplayer/web-components` **2.11.0** (pinned exact). **Next pins (M10)**: ng-bootstrap **22.15.0** + web-components **2.12.0** + `highlight.js@^11.11.1` as a direct dependency (optional peer upstream, but statically imported by the published code-snippet module).
+- **Coverage app**: standalone repo (`C:\Repos\Coverage`), scaffolded by copying the WebhooksDemo anatomy (built — see PLAN.md M1). **Versions (2026-08-12, post-M10)**: on `MintPlayer.Spark.*` **10.0.0-preview.42** (latest), `@mintplayer/ng-spark` 22.0.8, `@mintplayer/ng-spark-auth` ^22.1.0, `@mintplayer/ng-bootstrap` **22.15.0** + `@mintplayer/web-components` **2.12.0** (pinned exact), `highlight.js` **^11.11.1** as a direct dependency (optional peer upstream, but statically imported by the published code-snippet module).
 - **GitHub App** (one per environment, prod + dev, as WebhooksDemo does): permissions — contents: read (source display, diffs), metadata, checks: write + PR: write (later), members: read (org membership); webhook events — installation(+repositories), repository, push, pull_request.
 - **Dev loop**: RavenDB local, smee.io tunnel for webhooks, `dotnet run` (host spawns the Angular dev server — never run `ng serve` manually), `Synchronize` launch profile for model sync.
 - **Deployment**: docker-compose (app + pinned RavenDB on an internal network, Traefik labels) following WebhooksDemo's `docker-compose.yml`/Dockerfile — including its supply-chain notes (`--skip-nx-cache`, selective csproj COPY closure).
@@ -278,7 +278,7 @@ All upstream blockers have landed:
 |---|---|---|
 | 1 | ~~Spark NuGets published?~~ | **Resolved**: published & current (`10.0.0-preview.42`); use PackageReference. |
 | 1b | ~~R4-H1 row-level auth gap~~ | **Resolved upstream** (Spark#231: `IRowSecurity` enforced on query/custom/stream paths). Coverage keeps DenyAll + custom `/api` anyway (defense in depth, matches usage). |
-| 1c | Scaling flags from the Spark#231 review of this repo | Backlog: file view renders one DOM node per line (no virtualization); tree endpoint re-streams the whole build per folder drill-down; no live refresh of in-flight builds. |
+| 1c | Scaling flags from the Spark#231 review of this repo | Tree/hierarchy streaming fixed (materialized `BuildTreeSummary`, M9.20). Remaining backlog: file view renders one DOM node per line (no virtualization — upstream viewer also renders plain, 2000 rows measured fine); no live refresh of in-flight builds. |
 | 2 | Report size / RavenDB attachments | Fine for typical reports (KB–MB). Very large monorepo lcov files may need a blob-storage abstraction later. |
 | 3 | Join-request flow | Recommended *out* (GitHub is the authority, §6.3) — confirm with owner. |
 | 4 | Fork PR uploads | v1: token fallback documented; quarantined tokenless uploads later. |

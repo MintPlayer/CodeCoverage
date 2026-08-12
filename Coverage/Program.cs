@@ -88,11 +88,18 @@ builder.Services.AddSpark(builder.Configuration, spark =>
         options.ClientId = builder.Configuration[$"GitHub:{envPrefix}:ClientId"];
         options.PrivateKeyPath = builder.Configuration[$"GitHub:{envPrefix}:PrivateKeyPath"];
 
-        if (long.TryParse(builder.Configuration["GitHub:Production:AppId"], out var prodId))
-            options.ProductionAppId = prodId;
+        // ProductionAppId = "the App whose webhooks THIS instance processes"
+        // — locally that's the dev App. DevelopmentAppId means something else
+        // entirely: "forward that App's webhooks to connected dev clients
+        // instead of processing them", a production-side setting. Setting it
+        // on a local machine makes the processor silently skip every
+        // recipient (Spark webhooks README warns exactly this).
+        if (long.TryParse(builder.Configuration[$"GitHub:{envPrefix}:AppId"], out var appId))
+            options.ProductionAppId = appId;
 
-        if (long.TryParse(builder.Configuration["GitHub:Development:AppId"], out var devId))
-            options.DevelopmentAppId = devId;
+        if (!builder.Environment.IsDevelopment()
+            && long.TryParse(builder.Configuration["GitHub:Development:AppId"], out var devAppId))
+            options.DevelopmentAppId = devAppId;
 
         // Deliberately NOT options.AddSmeeDevTunnel(smeeUrl): re-minifying the
         // smee-relayed body is necessary (GitHub signs minified bytes), but

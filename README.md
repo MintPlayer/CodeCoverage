@@ -54,10 +54,15 @@ them until that ships.
 subscription needed). Webhook URL: your smee channel in dev, `https://<host>/spark/webhooks/github` in prod;
 set a webhook secret and keep it in `GitHub:WebhookSecret`.
 
-**Identity (sign-in)**: enable *Request user authorization (OAuth) during
-installation* and add a **Callback URL** per environment — GitHub requires exact
-matches including the port. Spark pins the OAuth callback path to
+**Identity (sign-in)**: add a **Callback URL** per environment — GitHub requires
+exact matches including the port. Spark pins the OAuth callback path to
 `/signin-github`, so for local dev that's `https://localhost:5200/signin-github`.
+Leave *Request user authorization (OAuth) during installation* **unchecked**: it
+makes GitHub redirect installs to the callback URL with a `code` but no OAuth
+`state` (our server never initiated that flow), which the handler rejects. The
+sign-in button performs its own properly-stated OAuth challenge and doesn't need
+it. Optionally set the **Setup URL** to the app's home page so installs land
+back in the app.
 The App's *Client ID* / a generated *client secret* go into
 `GitHub:{Development|Production}:ClientId` / `:ClientSecret` below; sign-in is
 disabled (button throws "No authentication handler is registered for the scheme

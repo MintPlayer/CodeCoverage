@@ -55,6 +55,18 @@ builder.Services.AddSpark(builder.Configuration, spark =>
                 options.ClientId = gitHubClientId;
                 options.ClientSecret = builder.Configuration[$"GitHub:{envPrefix}:ClientSecret"] ?? string.Empty;
                 options.SaveTokens = true;
+                // GitHub can hit the callback with a code but no OAuth state —
+                // notably the App's "Request user authorization during
+                // installation" flow, which our server never initiated. Without
+                // this the handler throws and the user gets a 500 instead of
+                // the app; the real sign-in path is unaffected (it always has
+                // state). Sign-in itself stays available via the shell button.
+                options.Events.OnRemoteFailure = context =>
+                {
+                    context.Response.Redirect("/home");
+                    context.HandleResponse();
+                    return Task.CompletedTask;
+                };
             });
         }
     });

@@ -83,6 +83,26 @@ public partial class BrowseController : ControllerBase
         return Ok(commits.Select(c => new CommitInfo(c.Sha, c.Branch, c.PullRequestNumber, c.Message, c.AuthoredAt, c.Coverage)));
     }
 
+    /// <summary>Distinct branches that have commits with coverage, default branch first.</summary>
+    [HttpGet("repos/{owner}/{name}/branches")]
+    public async Task<ActionResult<IEnumerable<string>>> GetBranches(string owner, string name, CancellationToken cancellationToken)
+    {
+        var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
+        if (repository is null) return NotFound();
+
+        var branches = await session.Query<Indexes.Commits_ByRepository.Result, Indexes.Commits_ByRepository>()
+            .Where(c => c.Repository == repository.Id && c.HasCoverage)
+            .Select(c => c.Branch)
+            .Distinct()
+            .Take(200)
+            .ToListAsync(cancellationToken);
+
+        return Ok(branches
+            .Where(b => !string.IsNullOrEmpty(b))
+            .OrderByDescending(b => b == repository.DefaultBranch)
+            .ThenBy(b => b, StringComparer.OrdinalIgnoreCase));
+    }
+
     [HttpGet("repos/{owner}/{name}/commits/{sha}")]
     public async Task<ActionResult<object>> GetCommit(string owner, string name, string sha, CancellationToken cancellationToken)
     {

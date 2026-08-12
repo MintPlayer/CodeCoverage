@@ -23,6 +23,9 @@ export default class RepoComponent {
   readonly name = signal('');
   readonly repo = signal<RepoInfo | null>(null);
   readonly commits = signal<CommitInfo[] | null>(null);
+  readonly branches = signal<string[]>([]);
+  /** '' = all branches. */
+  readonly selectedBranch = signal('');
 
   constructor() {
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(async (params) => {
@@ -32,13 +35,23 @@ export default class RepoComponent {
       this.name.set(name);
       this.repo.set(null);
       this.commits.set(null);
-      const [repo, commits] = await Promise.all([
+      this.branches.set([]);
+      this.selectedBranch.set('');
+      const [repo, commits, branches] = await Promise.all([
         this.browse.getRepo(owner, name),
         this.browse.getCommits(owner, name),
+        this.browse.getBranches(owner, name).catch(() => [] as string[]),
       ]);
       this.repo.set(repo);
       this.commits.set(commits);
+      this.branches.set(branches);
     });
+  }
+
+  async selectBranch(branch: string): Promise<void> {
+    this.selectedBranch.set(branch);
+    this.commits.set(null);
+    this.commits.set(await this.browse.getCommits(this.owner(), this.name(), branch || undefined));
   }
 
   /** Delta vs the previous (older) commit in the list, in percent points. */

@@ -118,6 +118,11 @@ export class BrowseService {
     return firstValueFrom(this.http.get<RepoInfo>(`/api/browse/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`));
   }
 
+  getBranches(owner: string, name: string): Promise<string[]> {
+    return firstValueFrom(this.http.get<string[]>(
+      `/api/browse/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/branches`));
+  }
+
   getCommits(owner: string, name: string, branch?: string): Promise<CommitInfo[]> {
     let params = new HttpParams();
     if (branch) params = params.set('branch', branch);

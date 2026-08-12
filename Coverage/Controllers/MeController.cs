@@ -19,7 +19,8 @@ public partial class MeController : ControllerBase
 
     /// <summary>
     /// The accounts (user + organizations) the signed-in user may see, joined
-    /// with what we know about them (App installed or not).
+    /// with what we know about them (App installed or not) and an aggregate of
+    /// their repositories' latest coverage.
     /// </summary>
     [HttpGet("accounts")]
     public async Task<ActionResult<IEnumerable<AccountInfo>>> GetAccounts(CancellationToken cancellationToken)
@@ -32,16 +33,40 @@ public partial class MeController : ControllerBase
             .Where(a => a.Login.In(owners))
             .ToListAsync(cancellationToken);
 
+        var repos = await session.Query<Repository>()
+            .Where(r => r.OwnerLogin.In(owners))
+            .Take(4096)
+            .ToListAsync(cancellationToken);
+        var reposByOwner = repos.ToLookup(r => r.OwnerLogin, StringComparer.OrdinalIgnoreCase);
+
         var byLogin = known.ToDictionary(a => a.Login, StringComparer.OrdinalIgnoreCase);
 
         var result = owners
-            .Select(owner => byLogin.TryGetValue(owner, out var account)
-                ? new AccountInfo(account.Login, account.Type, account.AvatarUrl, account.InstallationId is not null)
-                : new AccountInfo(owner, "User", null, false))
+            .Select(owner =>
+            {
+                var ownerRepos = reposByOwner[owner].ToList();
+                var covered = ownerRepos.Sum(r => r.LatestCoverage?.LinesCovered ?? 0);
+                var coverable = ownerRepos.Sum(r => r.LatestCoverage?.LinesCoverable ?? 0);
+                var aggregate = coverable > 0 ? Math.Round(covered * 100.0 / coverable, 1) : (double?)null;
+                return byLogin.TryGetValue(owner, out var account)
+                    ? new AccountInfo(account.Login, account.Type, account.AvatarUrl, account.InstallationId is not null, ownerRepos.Count, aggregate)
+                    : new AccountInfo(owner, "User", null, false, ownerRepos.Count, aggregate);
+            })
             .OrderBy(a => a.Login, StringComparer.OrdinalIgnoreCase);
 
         return Ok(result);
     }
 
-    public sealed record AccountInfo(string Login, string Type, string? AvatarUrl, bool Installed);
+    /// <summary>
+    /// Drops the cached GitHub visibility for the signed-in user and returns
+    /// the freshly queried account list (manual counterpart of the 5-min TTL).
+    /// </summary>
+    [HttpPost("accounts/resync")]
+    public async Task<ActionResult<IEnumerable<AccountInfo>>> Resync(CancellationToken cancellationToken)
+    {
+        await gitHubAccess.InvalidateAsync(cancellationToken);
+        return await GetAccounts(cancellationToken);
+    }
+
+    public sealed record AccountInfo(string Login, string Type, string? AvatarUrl, bool Installed, int RepoCount, double? AggregateCoverage);
 }

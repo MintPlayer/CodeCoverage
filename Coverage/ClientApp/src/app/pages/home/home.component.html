@@ -11,7 +11,15 @@
 
       @if (authService.user()?.isAuthenticated) {
         <bs-card class="mt-3 d-block">
-          <bs-card-header>{{ 'app.yourAccounts' | t }}</bs-card-header>
+          <bs-card-header>
+            <div class="d-flex align-items-center">
+              <span class="me-auto">{{ 'app.yourAccounts' | t }}</span>
+              <button class="btn btn-sm btn-outline-secondary" (click)="resync()" [disabled]="loading()"
+                      title="Re-query GitHub for your organizations and installations">
+                <i class="bi bi-arrow-repeat"></i> Resync
+              </button>
+            </div>
+          </bs-card-header>
           @if (loading()) {
             <div class="d-flex align-items-center gap-2">
               <bs-spinner />
@@ -29,7 +37,13 @@
                     } @else {
                       <i class="bi" [class.bi-person]="account.type === 'User'" [class.bi-people]="account.type !== 'User'"></i>
                     }
-                    <a [routerLink]="['/a', account.login]" class="me-auto">{{ account.login }}</a>
+                    <a [routerLink]="['/a', account.login]">{{ account.login }}</a>
+                    <span class="text-muted small me-auto">
+                      {{ account.repoCount }} {{ account.repoCount === 1 ? 'repo' : 'repos' }}
+                      @if (account.aggregateCoverage !== undefined && account.aggregateCoverage !== null) {
+                        · {{ account.aggregateCoverage }}%
+                      }
+                    </span>
                     @if (account.installed) {
                       <bs-badge class="text-bg-success">{{ 'app.appInstalled' | t }}</bs-badge>
                     } @else {

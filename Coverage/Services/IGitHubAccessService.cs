@@ -9,4 +9,7 @@ public interface IGitHubAccessService
 {
     Task<string[]> GetAllowedOwnersAsync(CancellationToken cancellationToken = default);
     Task<bool> IsOwnerAllowedAsync(string ownerLogin, CancellationToken cancellationToken = default);
+
+    /// <summary>Drops the current user's cached owner list so the next call re-queries GitHub (manual resync).</summary>
+    Task InvalidateAsync(CancellationToken cancellationToken = default);
 }

@@ -43,4 +43,15 @@ export default class HomeComponent {
       this.loading.set(false);
     }
   }
+
+  async resync(): Promise<void> {
+    this.loading.set(true);
+    try {
+      this.accounts.set(await this.accountsService.resync());
+    } catch {
+      // keep the current list on failure
+    } finally {
+      this.loading.set(false);
+    }
+  }
 }

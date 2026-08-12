@@ -34,6 +34,19 @@
     }
   }
 
+  @if (branches().length > 1) {
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <label class="small text-muted" for="branch-select">Branch</label>
+      <select id="branch-select" class="form-select form-select-sm w-auto"
+              [value]="selectedBranch()" (change)="selectBranch($any($event.target).value)">
+        <option value="">All branches</option>
+        @for (branch of branches(); track branch) {
+          <option [value]="branch">{{ branch }}{{ branch === repo()?.defaultBranch ? ' (default)' : '' }}</option>
+        }
+      </select>
+    </div>
+  }
+
   @if (commits(); as list) {
     @if (list.length === 0) {
       <p class="text-muted mb-0">No commits with coverage yet — upload a report from your workflow first.</p>

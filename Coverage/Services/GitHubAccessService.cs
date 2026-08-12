@@ -60,6 +60,17 @@ public partial class GitHubAccessService : IGitHubAccessService
         return owners.Contains(ownerLogin, StringComparer.OrdinalIgnoreCase);
     }
 
+    public async Task InvalidateAsync(CancellationToken cancellationToken = default)
+    {
+        var principal = httpContextAccessor.HttpContext?.User;
+        if (principal?.Identity?.IsAuthenticated != true)
+            return;
+
+        var user = await userManager.GetUserAsync(principal);
+        if (user is not null)
+            memoryCache.Remove($"github-owners/{user.Id}");
+    }
+
     private async Task<string[]> QueryGitHubInstallationOwnersAsync(string accessToken, CancellationToken cancellationToken)
     {
         try

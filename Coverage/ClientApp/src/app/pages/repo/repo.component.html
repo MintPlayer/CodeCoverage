@@ -34,6 +34,18 @@
     }
   }
 
+  @if (trendSeries().length > 0) {
+    <div class="mb-3" style="max-width: 640px;">
+      <bs-trend-chart
+        [series]="trendSeries()"
+        [yMin]="0"
+        [yMax]="100"
+        [goal]="80"
+        goalLabel="80% goal"
+        inputLabel="Coverage over time" />
+    </div>
+  }
+
   @if (branches().length > 1) {
     <div class="d-flex align-items-center gap-2 mb-2">
       <label class="small text-muted" for="branch-select">Branch</label>

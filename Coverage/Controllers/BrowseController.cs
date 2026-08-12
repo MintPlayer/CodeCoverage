@@ -83,6 +83,79 @@ public partial class BrowseController : ControllerBase
         return Ok(commits.Select(c => new CommitInfo(c.Sha, c.Branch, c.PullRequestNumber, c.Message, c.AuthoredAt, c.Coverage)));
     }
 
+    public sealed record HistoryPoint(string Sha, DateTimeOffset? Timestamp, int LinesCovered, int LinesCoverable, double Percent);
+
+    /// <summary>
+    /// Coverage over time for one repository (ascending, ready for
+    /// bs-trend-chart). Timestamp is AuthoredAt coalesced with FirstSeenAtUtc
+    /// and may still be null for documents that predate either stamp.
+    /// </summary>
+    [HttpGet("repos/{owner}/{name}/history")]
+    public async Task<ActionResult<IEnumerable<HistoryPoint>>> GetHistory(
+        string owner, string name, [FromQuery] string? branch, [FromQuery] int take = 100, CancellationToken cancellationToken = default)
+    {
+        var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
+        if (repository is null) return NotFound();
+
+        var query = session.Query<Indexes.Commits_ByRepository.Result, Indexes.Commits_ByRepository>()
+            .Where(c => c.Repository == repository.Id && c.HasCoverage);
+        if (!string.IsNullOrEmpty(branch))
+            query = query.Where(c => c.Branch == branch);
+
+        var commits = await query
+            .OrderByDescending(c => c.AuthoredAt)
+            .Take(Math.Clamp(take, 1, 500))
+            .OfType<Commit>()
+            .ToListAsync(cancellationToken);
+
+        commits.Reverse();
+        return Ok(commits
+            .Where(c => c.Coverage is { LinesCoverable: > 0 })
+            .Select(c => new HistoryPoint(c.Sha, c.AuthoredAt ?? c.FirstSeenAtUtc,
+                c.Coverage!.LinesCovered, c.Coverage.LinesCoverable,
+                Math.Round(c.Coverage.LinesCovered * 100.0 / c.Coverage.LinesCoverable, 1))));
+    }
+
+    /// <summary>
+    /// Recent coverage percentages per repository of an account (ascending),
+    /// for table sparklines. One query: the newest ~1000 covered commits
+    /// across the account, grouped per repo — sparsely-uploaded repos may
+    /// show fewer points, which is fine for a sparkline.
+    /// </summary>
+    [HttpGet("accounts/{login}/sparklines")]
+    public async Task<ActionResult<Dictionary<string, double[]>>> GetSparklines(string login, CancellationToken cancellationToken)
+    {
+        var includePrivate = await gitHubAccess.IsOwnerAllowedAsync(login, cancellationToken);
+
+        var repos = await session.Query<Repository>()
+            .Where(r => r.OwnerLogin == login)
+            .Take(1024)
+            .ToListAsync(cancellationToken);
+        var visible = repos.Where(r => includePrivate || !r.IsPrivate).ToDictionary(r => r.Id!, r => r.FullName);
+        if (visible.Count == 0) return Ok(new Dictionary<string, double[]>());
+
+        var repoIds = visible.Keys.ToArray();
+        var commits = await session.Query<Indexes.Commits_ByRepository.Result, Indexes.Commits_ByRepository>()
+            .Where(c => c.Repository.In(repoIds) && c.HasCoverage)
+            .OrderByDescending(c => c.AuthoredAt)
+            .Take(1000)
+            .OfType<Commit>()
+            .ToListAsync(cancellationToken);
+
+        var result = commits
+            .Where(c => c.Repository is not null && c.Coverage is { LinesCoverable: > 0 })
+            .GroupBy(c => c.Repository!)
+            .Where(g => visible.ContainsKey(g.Key))
+            .ToDictionary(
+                g => visible[g.Key],
+                g => g.Take(20)
+                      .Reverse()
+                      .Select(c => Math.Round(c.Coverage!.LinesCovered * 100.0 / c.Coverage.LinesCoverable, 1))
+                      .ToArray());
+
+        return Ok(result);
+    }
+
     /// <summary>Distinct branches that have commits with coverage, default branch first.</summary>
     [HttpGet("repos/{owner}/{name}/branches")]
     public async Task<ActionResult<IEnumerable<string>>> GetBranches(string owner, string name, CancellationToken cancellationToken)

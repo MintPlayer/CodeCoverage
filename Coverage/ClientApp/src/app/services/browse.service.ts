@@ -101,6 +101,14 @@ export interface FileDetail {
   branches: BranchCoverageInfo[];
 }
 
+export interface HistoryPoint {
+  sha: string;
+  timestamp?: string;
+  linesCovered: number;
+  linesCoverable: number;
+  percent: number;
+}
+
 export function coveragePercent(summary?: CoverageSummary | null): number | null {
   if (!summary || summary.linesCoverable === 0) return null;
   return (summary.linesCovered / summary.linesCoverable) * 100;
@@ -116,6 +124,18 @@ export class BrowseService {
 
   getRepo(owner: string, name: string): Promise<RepoInfo> {
     return firstValueFrom(this.http.get<RepoInfo>(`/api/browse/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`));
+  }
+
+  getHistory(owner: string, name: string, branch?: string): Promise<HistoryPoint[]> {
+    let params = new HttpParams();
+    if (branch) params = params.set('branch', branch);
+    return firstValueFrom(this.http.get<HistoryPoint[]>(
+      `/api/browse/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/history`, { params }));
+  }
+
+  getSparklines(login: string): Promise<Record<string, number[]>> {
+    return firstValueFrom(this.http.get<Record<string, number[]>>(
+      `/api/browse/accounts/${encodeURIComponent(login)}/sparklines`));
   }
 
   getBranches(owner: string, name: string): Promise<string[]> {

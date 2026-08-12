@@ -8,6 +8,7 @@ import { BsTableComponent } from '@mintplayer/ng-bootstrap/table';
 import { BsBadgeComponent } from '@mintplayer/ng-bootstrap/badge';
 import { BsSpinnerComponent } from '@mintplayer/ng-bootstrap/spinner';
 import { BsAlertComponent } from '@mintplayer/ng-bootstrap/alert';
+import { BsSparklineComponent } from '@mintplayer/ng-bootstrap/charts/sparkline';
 import { Color } from '@mintplayer/ng-bootstrap';
 import { BrowseService, RepoInfo } from '../../services/browse.service';
 import { TokensService, TokenInfo, CreatedToken } from '../../services/tokens.service';
@@ -15,7 +16,7 @@ import { CoverageBarComponent } from '../../components/coverage-bar/coverage-bar
 
 @Component({
   selector: 'app-account',
-  imports: [CommonModule, DatePipe, RouterModule, FormsModule, BsCardComponent, BsCardHeaderComponent, BsTableComponent, BsBadgeComponent, BsSpinnerComponent, BsAlertComponent, CoverageBarComponent],
+  imports: [CommonModule, DatePipe, RouterModule, FormsModule, BsCardComponent, BsCardHeaderComponent, BsTableComponent, BsBadgeComponent, BsSpinnerComponent, BsAlertComponent, BsSparklineComponent, CoverageBarComponent],
   templateUrl: './account.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -26,6 +27,8 @@ export default class AccountComponent {
 
   readonly login = signal('');
   readonly repos = signal<RepoInfo[] | null>(null);
+  /** fullName → recent coverage percentages (ascending) for table sparklines. */
+  readonly sparklines = signal<Record<string, number[]>>({});
 
   // Token management: visible only when the tokens list loads (the server
   // returns 403 for accounts the viewer can't manage — that's the gate).
@@ -46,7 +49,11 @@ export default class AccountComponent {
       this.tokens.set(null);
       this.canManageTokens.set(false);
       this.createdToken.set(null);
+      this.sparklines.set({});
       this.repos.set(await this.browse.getAccountRepos(login));
+      this.browse.getSparklines(login).then(
+        (lines) => this.sparklines.set(lines),
+        () => this.sparklines.set({}));
       await this.loadTokens();
     });
   }

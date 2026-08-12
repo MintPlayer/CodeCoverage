@@ -12,6 +12,7 @@
           <tr>
             <th>Repository</th>
             <th>Coverage</th>
+            <th>Trend</th>
             <th>Latest commit</th>
           </tr>
         </thead>
@@ -25,6 +26,14 @@
                 }
               </td>
               <td><app-coverage-bar [summary]="repo.latestCoverage" /></td>
+              <td>
+                @let points = sparklines()[repo.fullName];
+                @if (points && points.length > 1) {
+                  <bs-sparkline style="width: 90px; height: 24px;" class="d-inline-block"
+                                [points]="points" [yMin]="0" [yMax]="100"
+                                [inputLabel]="'Coverage trend for ' + repo.fullName" />
+                }
+              </td>
               <td>
                 @if (repo.latestCoverageSha) {
                   <a [routerLink]="['/r', repo.owner, repo.name, 'c', repo.latestCoverageSha]" class="font-monospace small">

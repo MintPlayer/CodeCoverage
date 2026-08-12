@@ -2,18 +2,29 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { CommonModule, DatePipe } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { BsCardComponent, BsCardHeaderComponent } from '@mintplayer/ng-bootstrap/card';
+import { FormsModule } from '@angular/forms';
+import { BsSelectComponent, BsSelectOption } from '@mintplayer/ng-bootstrap/select';
+import { BsCardComponent, BsCardHeaderComponent, BsCardBodyComponent } from '@mintplayer/ng-bootstrap/card';
 import { BsTableComponent } from '@mintplayer/ng-bootstrap/table';
 import { BsBadgeComponent } from '@mintplayer/ng-bootstrap/badge';
 import { BsSpinnerComponent } from '@mintplayer/ng-bootstrap/spinner';
+import { BsTabControlComponent, BsTabPageComponent, BsTabPageHeaderDirective } from '@mintplayer/ng-bootstrap/tab-control';
+import { BsCodeSnippetComponent } from '@mintplayer/ng-bootstrap/code-snippet';
 import { BsTrendChartComponent } from '@mintplayer/ng-bootstrap/charts/trend';
 import type { TrendSeries } from '@mintplayer/web-components/charts/trend';
 import { BrowseService, CommitInfo, HistoryPoint, RepoInfo, coveragePercent } from '../../services/browse.service';
 import { CoverageBarComponent } from '../../components/coverage-bar/coverage-bar.component';
 
+interface WorkflowExample {
+  key: string;
+  label: string;
+  note: string;
+  code: string;
+}
+
 @Component({
   selector: 'app-repo',
-  imports: [CommonModule, DatePipe, RouterModule, BsCardComponent, BsCardHeaderComponent, BsTableComponent, BsBadgeComponent, BsSpinnerComponent, BsTrendChartComponent, CoverageBarComponent],
+  imports: [CommonModule, DatePipe, RouterModule, FormsModule, BsCardComponent, BsCardHeaderComponent, BsCardBodyComponent, BsTableComponent, BsBadgeComponent, BsSpinnerComponent, BsSelectComponent, BsSelectOption, BsTabControlComponent, BsTabPageComponent, BsTabPageHeaderDirective, BsCodeSnippetComponent, BsTrendChartComponent, CoverageBarComponent],
   templateUrl: './repo.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -44,6 +55,102 @@ export default class RepoComponent {
       label: 'Line coverage %',
       points: history.map((h, i) => ({ x: allDated ? new Date(h.timestamp!) : i, y: h.percent })),
     }];
+  });
+
+  /** Example CI workflows per ecosystem, built against this deployment's URL. */
+  readonly workflowExamples = computed<WorkflowExample[]>(() => {
+    const url = this.repo()?.baseUrl || location.origin;
+    const upload = (extra = '') => `      - name: Upload coverage
+        uses: MintPlayer/CodeCoverage/action@master
+        with:
+          url: ${url}
+          use-oidc: true${extra}
+          finish: true`;
+    const header = (testJob: string) => `name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  id-token: write   # tokenless upload via OIDC
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+${testJob}`;
+
+    return [
+      {
+        key: 'dotnet',
+        label: '.NET',
+        note: 'Coverlet ships with the xunit/mstest templates; --collect produces a Cobertura report the action auto-detects.',
+        code: header(`      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - run: dotnet test --collect:"XPlat Code Coverage"
+${upload()}`),
+      },
+      {
+        key: 'node',
+        label: 'Node.js',
+        note: 'Jest writes coverage/lcov.info when run with --coverage; lcov is auto-detected.',
+        code: header(`      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx jest --coverage
+${upload()}`),
+      },
+      {
+        key: 'angular',
+        label: 'Angular',
+        note: 'ng test --code-coverage emits coverage/<project>/lcov.info via karma-coverage.',
+        code: header(`      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx ng test --watch=false --code-coverage --browsers=ChromeHeadless
+${upload()}`),
+      },
+      {
+        key: 'react',
+        label: 'React',
+        note: 'Vitest with the v8 provider writes an lcov report; for CRA/jest use "npm test -- --coverage --watchAll=false" instead.',
+        code: header(`      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx vitest run --coverage --coverage.reporter=lcov
+${upload()}`),
+      },
+      {
+        key: 'python',
+        label: 'Python',
+        note: 'pytest-cov with --cov-report=xml produces a Cobertura-style coverage.xml.',
+        code: header(`      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements.txt pytest pytest-cov
+      - run: pytest --cov --cov-report=xml
+${upload()}`),
+      },
+      {
+        key: 'java',
+        label: 'Java',
+        note: 'The JaCoCo Maven plugin writes target/site/jacoco/jacoco.xml during verify.',
+        code: header(`      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: mvn -B verify
+${upload(`
+          files: '**/jacoco.xml'`)}`),
+      },
+    ];
   });
 
   constructor() {

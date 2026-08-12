@@ -107,12 +107,108 @@ ng-bootstrap#401 (→ `22.14.0` charts). All remaining work is in this repo.
 2. Headline radial ring: hand-rolled `CoverageRingComponent` (~20 lines) on the public `arcPath` + `colorScale` from `@mintplayer/web-components/charts/core` (`ringGap: 0`) — upstream declined a donut/gauge component; contribute `mp-progress-circle` later only if this shape proves general.
 3. Later, once history is queryable: `bs-trend-chart` (with `goal` line) on the repo page; `bs-sparkline` in tables.
 
-## M9 — Polish & stretch 🟦
+## M10 — Adopt the unified code viewer 🟦 (UNBLOCKED 2026-08-11 by ng-bootstrap#402)
 
-- More parsers (Istanbul JSON, Clover, OpenCover, Go; ReportGenerator.Core fallback adapter).
-- Coverage-over-time sparklines; commit-to-commit delta view.
-- PR comments + commit statuses / checks with annotations (needs checks: write + PR: write).
-- Patch (diff) coverage; fork-PR quarantine flow; join-request fallback if ever needed.
+[PR #402](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/402) extended
+`bs-code-snippet` into the full viewer (per-line DOM via subgrid rows, `annotations:
+CodeLineAnnotation[]` with `{line, kind, label, secondaryLabel, description}`,
+`lineNumbers`, `lineHref`, `activeLine`, `scrollToLine()`, `data-bs-theme`-aware
+`light-dark()` theming, roving-tabindex a11y). No separate `mp-code-viewer` exists.
+Upstream's own migration checklist for OUR file page: mintplayer-ng-bootstrap
+`docs/prd/code-snippet-viewer.md` §12; working coverage-shaped demo under
+`apps/ng-bootstrap-demo/.../advanced/code-snippet/`.
+
+1. Pin `@mintplayer/ng-bootstrap` **22.15.0** + `@mintplayer/web-components` **2.12.0**; add
+   **`highlight.js@^11.11.1` as a direct dependency** (declared optional peer, but the published
+   module has a static `import 'highlight.js/lib/core'` — the Angular build fails to resolve
+   without it). Breaking changes in 22.15 are confined to code-snippet (`codeToCopy`→`code`,
+   `lineActivate` payload, theme default) — Coverage uses none of it yet, clean upgrade.
+2. Replace the hand-rolled renderer in `pages/file/` with `<bs-code-snippet>`:
+   map the existing `RenderedLine[]` → `CodeLineAnnotation[]` (`kind` = covered/partial/uncovered,
+   `label` = hits ("0×" renders — label shows when present), `secondaryLabel` = branch ratio,
+   `description` for the tooltip/SR text); `[lineHref]="(l) => '#L' + l"` (bare fragments are
+   rewritten against `location.pathname + location.search`, so `?path=` survives — no routerLink
+   needed); tint via `::ng-deep mp-code-snippet::part(annotation-<kind>)` (parts, not CSS vars —
+   deliberate upstream deviation). Source-unavailable case: annotations may exceed `code`'s
+   extent, so `code: ''` still renders a full gutter.
+   **The one silent breaker**: `scrollToTarget()` uses `document.getElementById('L'+n)` which
+   returns null into a shadow root — must become `viewer()?.scrollToLine(n)` (viewChild).
+   Write our own extension→language map (grammar keys cover cs/ts/html/json/scss/sql/yaml/vb/md;
+   razor/fsharp/xaml absent → plain text + console.warn; `canHighlight`/`registerLanguage`
+   exported for gating/extending). Layout trap: `code { min-width: max-content }` propagates —
+   flex ancestors need `min-width: 0` or phones get body-level horizontal scroll.
+3. Cleanup while there: `bs-shell-topbar.directive.ts` is unnecessary — upstream confirmed a plain
+   `<div slot="topbar">` works and the directive's "promote upstream" TODO points at nothing;
+   delete it in shell.component. Also fix the stale comment in
+   `Recipients/GitHubEventsRecipient.cs:14-19` (cites the FIXED queue-name bug; the real reason
+   for keeping the catch-all is the dual-broadcast note in M8 step 2.3).
+
+## M9 — Verified backlog (from the 2026-08-12 code-vs-docs audit) 🟦
+
+### Correctness fixes (do first)
+1. **Commit-ordering bug**: `Commit.AuthoredAt` is only set by push/PR webhooks; upload-only
+   commits (the norm for OIDC auto-provisioned repos) have null → RavenDB clusters them at one
+   end of `OrderByDescending(AuthoredAt)` (`Commits_ByRepository`), so the repo page isn't
+   newest-first and the Δ column (computed against "next row down") is wrong. Fix: stamp
+   `FirstSeenAtUtc` at upsert in BOTH webhook and upload paths; index coalesced with AuthoredAt.
+2. Zero delta renders blank: `@if (delta(i); as d)` — `0` is falsy (`repo.component.html`).
+3. Badge markdown uses `location.origin` → dead URLs when copied from localhost. Serve
+   `Coverage:BaseUrl` to the SPA (e.g. on the repo response) and build the snippet from it.
+4. Stale "designed for extraction" comment in `ApiToken.cs` (that plan was cancelled — PRD §10).
+
+### Missing product features (PRD promises, verified unbuilt)
+5. **Upload-token management UI** — backend complete (`TokensController` create/list/revoke) but
+   NOTHING calls `/api/tokens`; today tokens are minted by hand-POSTing. PRD §9.2's account admin
+   tab. Include revoke (handler enforces revocation already) and repo-scoped tokens —
+   `ApiToken.Scope="Repository"` is honored on upload but `TokensController.Create` hardcodes
+   `"Account"`, making the scope unreachable.
+6. Branch selector on the repo page (server + service already support `?branch=`; UI never sends it).
+7. Home-page aggregates (repo count + aggregate coverage per account — PRD §9.1).
+8. Manual "resync" of GitHub visibility (only the 5-min TTL exists — PRD §6.1).
+9. Coverage-over-time: history endpoint (derivable from `Commits_ByRepository` + `Commit.Coverage`)
+   + `bs-trend-chart` (with `goal` line) on the repo page; `bs-sparkline` in tables.
+10. More parsers: **JaCoCo first** (validates the nullable-Hits design; was "M2.5", never happened),
+    then Istanbul JSON, Clover, OpenCover, Go; opt-in ReportGenerator.Core fallback adapter.
+11. PR comments + commit statuses/checks (needs checks:write + PR:write on the App).
+12. Patch/diff coverage (inputs exist: `ParentSha` stored; note the action's wire field is
+    `parentSha` — there is no separate baseSha field).
+13. Fork-PR quarantine flow (today forks simply can't upload).
+
+### Ops / deployment
+14. **Image publish workflow** — compose pulls `ghcr.io/mintplayer/codecoverage:master` but no
+    workflow builds/pushes it.
+15. Traefik port ambiguity: Dockerfile exposes 8080+8081 with no
+    `traefik.http.services…server.port` label — Traefik may pick 8081. Drop EXPOSE 8081 or label.
+16. Compose healthchecks (`/health` exists; wire `healthcheck` + `depends_on: service_healthy`).
+17. `.env.example`: document the `./github-app.pem` bind-mount.
+18. CI dogfood never exercises OIDC (token-based, conditional on `vars.COVERAGE_URL`; no
+    `id-token: write`) — add an OIDC leg once deployed.
+19. Action versioning: tag `v1`, README consumer usage (`uses:` snippet, badge URL, token-vs-OIDC);
+    remove the unused `check-dist` npm script.
+
+### Performance / scale / hardening
+20. Tree + hierarchy endpoints re-stream the whole build's FileCoverage per request (commit page
+    fires both on load) — cache per build or materialize a TreeSummary at finalize.
+21. File-view virtualization (upstream component also renders plain; 2000 rows measured fine —
+    watch item for giant generated files).
+22. Live refresh of in-flight builds (no polling/SSE; Pending sessions need manual reload).
+23. OIDC auto-provisioning is unbounded (any public repo can create docs + 50MB attachments;
+    rate limiter bounds rate, not cumulative storage) — quota/retention.
+24. Badge shares the "uploads" rate-limit policy — a popular badge behind GitHub's camo proxy
+    (few IPs) can throttle itself; split policies.
+25. Per-branch badges (`?branch=` is documented nowhere anymore — the endpoint serves the
+    default-branch `LatestCoverage` only; implement branch lookup if wanted).
+
+### Testing
+26. Integration tests via `MintPlayer.Spark.Testing` (embedded RavenDB; needs `RAVENDB_LICENSE`) —
+    upload endpoint, auth handlers, finalization FIFO, browse API. Current suite = 20 pure-unit
+    tests (parsers/merger/normalizer) only.
+27. ClientApp declares `"test": "ng test"` but installs no test runner — add one or drop the script.
+
+### UI upgrades (components exist upstream, adoption optional)
+28. Folder list → `bs-datatable` tree mode (expandable rows + sortable coverage columns + lazy
+    child fetch; https://bootstrap.mintplayer.com/enterprise/datatables) replacing the plain
+    `bs-table` + breadcrumb drill-down — pairs naturally with the `[(rootId)]`-synced sunburst.
 
 ---
 
@@ -122,9 +218,23 @@ ng-bootstrap#401 (→ `22.14.0` charts). All remaining work is in this repo.
 |---|---|
 | M0 Spark groundwork | ✅ Resolved upstream by [Spark#231](https://github.com/MintPlayer/MintPlayer.Spark/pull/231) (ApiTokens lib cancelled → app keeps `covt_`; see PRD §10) |
 | M1 Scaffold · M2 Ingestion · M3 Action · M4 Browse UI · M6 Badges · M7 OIDC | ✅ Built, verified E2E, on `develop` |
-| M5 File view | ✅ App side built; `mp-code-viewer` remains the **only open upstream ask** (docs/ng-bootstrap-handoff.md §1) |
+| M5 File view | ✅ App side built (hand-rolled renderer); viewer component shipped upstream ([#402](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/402)) — adoption is M10 |
 | M8 Upgrade + diagram | ✅ Built (preview.42 + 22.14 upgrade, ApiToken credential scheme, popup login, sunburst + ring on commit page) |
-| M9 Polish | pending |
+| M10 Code-viewer adoption | 🔓 Unblocked — pin 22.15.0/2.12.0 + highlight.js, swap the file renderer |
+| M9 Verified backlog | pending — audited 2026-08-12, list below is code-verified |
+
+**Nothing remains upstream.** All three repos delivered (Spark#231, ng-bootstrap#401 + #402);
+the only open upstream nit is cosmetic Sass `@import` deprecation noise. Two audit corrections to
+older claims: upstream found `bsShellTopbar` needs no promotion (`<div slot="topbar">` works
+directly — delete our directive in M10.3) and the `bs-progress-bar` host-class clobbering was
+measured NOT real.
+
+**As-built deviations from this plan:** the file browser is a plain `bs-table` with breadcrumb
+drill-down — `bs-datatable` tree mode exists upstream (see
+https://bootstrap.mintplayer.com/enterprise/datatables, "Tree mode — expandable rows") and
+adopting it is M9.28; only the commit list has a static index (tree aggregation streams on the
+fly — see M9.20); the badge endpoint has no `?branch=` (M9.25); typed webhook recipients were
+deliberately skipped (M8 step 2.3 note).
 
 ## Sequencing notes
 
@@ -138,6 +248,6 @@ ng-bootstrap#401 (→ `22.14.0` charts). All remaining work is in this repo.
 |---|---|---|
 | MintPlayer.Spark | M0 (queue-name fix, popup fix, ng-bootstrap bump, R4-H1, doc fixes; ApiTokens→client_credentials) | ✅ [#231](https://github.com/MintPlayer/MintPlayer.Spark/pull/231) |
 | mintplayer-ng-bootstrap | Charts (hierarchy/trend/sparkline + public charts/core) | ✅ [#401](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/401) |
-| mintplayer-ng-bootstrap | `mp-code-viewer` (M5's component half) | ⏳ open — docs/ng-bootstrap-handoff.md §1 |
-| Coverage | M1–M7 built incrementally on `develop`; M8 next | 🔄 |
+| mintplayer-ng-bootstrap | Unified code-snippet viewer (M5's component half) | ✅ [#402](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/402) (22.15.0/2.12.0) |
+| Coverage | M1–M8 built incrementally on `develop`; next: M10 then M9 | 🔄 |
 | coverage-action | Lives in this repo under `action/` (extract only for Marketplace) | ✅ |

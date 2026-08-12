@@ -7,8 +7,18 @@
 > Coverage hand-rolls it on `charts/core` (PLAN.md M8.3.2). Chart tooltips use a private
 > shadow-DOM div, not `OverlayController` — accepted deviation.
 >
-> **§1 (`mp-code-viewer`) remains OPEN — the only outstanding upstream ask.** §3 extras also
-> untouched (bsShellTopbar promotion, Sass @import noise, bs-progress-bar host-class overwrite).
+> **Status update (2026-08-12): §1 RESOLVED** by [ng-bootstrap#402](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/402)
+> (published `22.15.0` / web-components `2.12.0`): `bs-code-snippet` was **extended into the
+> viewer** rather than a new `mp-code-viewer` — per-line subgrid DOM, `annotations` API
+> (styled via `::part(annotation-<kind>)`, a deliberate deviation from the CSS-variables ask),
+> `lineNumbers`, `lineHref`, `activeLine` + `scrollToLine()` (fragment hrefs can't scroll into a
+> shadow root), `data-bs-theme`-following theme. Adoption = Coverage PLAN.md M10 (note the
+> `highlight.js@^11.11.1` direct-dependency requirement).
+>
+> §3 closed by upstream investigation: `bsShellTopbar` promotion is unnecessary
+> (`<div slot="topbar">` works directly — delete our local directive, M10.3);
+> the `bs-progress-bar` host-class overwrite was measured NOT real.
+> **Only remaining item: the Sass `@import` → `@use` migration noise. Nothing else is upstream.**
 
 Work items for a Claude session running in `C:\Repos\mintplayer-ng-bootstrap`.
 Follow that repo's CLAUDE.md conventions strictly (WC-first authoring, codegen-wc after

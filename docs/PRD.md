@@ -82,39 +82,45 @@ Full detail with URLs in the research reports; the load-bearing findings:
 
 ## 5. Domain model
 
-RavenDB documents (natural ids where possible):
+RavenDB documents — **as built** in `Coverage.Library/Entities/` (deterministic ids so webhook
+and upload upserts are idempotent):
 
 ```
-Account            id: accounts/{githubLogin(lower)}
+Account            id: Accounts/{gitHubId}
   GitHubId, Login, Type (User|Organization), AvatarUrl
-  InstallationId?          // GitHub App installation for this account, when installed
-  Admins: [userId]         // bootstrap-time cache; authority is GitHub (see §6.3)
+  InstallationId?          // GitHub App installation, when installed
+  // no Admins list — GitHub is the authority (§6.3), nothing cached
 
-Repository         id: repos/{githubRepoId}
-  AccountId, Name, FullName, Private, DefaultBranch, Archived
+Repository         id: Repositories/{gitHubId}
+  Account (ref), GitHubId, Name, FullName, OwnerLogin, IsPrivate, DefaultBranch, Archived
   BadgeToken?              // random, only set for private repos; rotatable
+  LatestCoverage?, LatestCoverageSha?, LatestCoverageAtUtc?   // denormalized at finalize
 
-UploadToken        id: uploadtokens/{tokenHash}       // uniqueness by construction
-  Scope: Account | Repository, TargetId
-  CreatedByUserId, CreatedAt, RevokedAt?
-  // token value shown once at creation; only SHA-256 hash stored
+ApiToken           id: ApiTokens/{sha256hex}          // uniqueness by construction
+  Scope: Account | Repository, AccountLogin? | RepositoryGitHubId?
+  Description?, CreatedByUserId, CreatedAtUtc, RevokedAtUtc?
+  // token value (covt_…) shown once at creation; only the SHA-256 hash exists here
 
-Commit             id: repos/{repoId}/commits/{sha}
-  Sha, Branch, PullRequestNumber?, ParentSha?, BaseSha?, AuthoredAt
-  LatestBuildId, CoverageSummary { LinesCovered, LinesCoverable, BranchRate?, ... }
+Commit             id: Commits/{repoGitHubId}/{sha}
+  Repository (ref), Sha, Branch?, PullRequestNumber?, ParentSha?, Message?, AuthoredAt?
+  Coverage? (promoted at finalize), LatestBuildId?
+  // AuthoredAt only set by webhooks — upload-only commits have null; see PLAN M9.1
 
-Build              id: repos/{repoId}/commits/{sha}/builds/{runId}-{runAttempt}
-  Status: Open | Finalized
-  CiRunId, CiRunAttempt, WorkflowName, EventName
-  Sessions: [ { SessionId, JobName, Flags[], UploadedAt,
-                RawUploadRefs[], ParseStatus, FilesCount } ]
-  FinalizedAt?, FinalizeReason (Explicit | Debounce | Timeout)
+Build              id: Commits/{repoGitHubId}/{sha}/builds/{runId}-{runAttempt}
+  Commit (ref), Status: Open | Finalized
+  CiRunId, CiRunAttempt, WorkflowName?, EventName?
+  CreatedAtUtc, LastUploadAtUtc?, FinalizedAtUtc?, FinalizeReason? (Explicit|Debounce|Timeout)
+  Sessions: [ { SessionId, JobName?, Flags[], UploadedAtUtc,
+                ParseStatus (Pending|Parsed|Failed), Error?, RawFileNames[], RootDir?, FilesCount } ]
+  Coverage?                // raw report files live as attachments on this document
 
-FileCoverage       id: repos/{repoId}/commits/{sha}/builds/{buildId}/files/{pathHash}
-  Path (normalized repo-relative)
-  Lines: [ { N, Hits?, Status } ]        // merged across sessions (max)
-  Branches: [ { Line, BlockId, BranchId, Taken?, Total } ]
-  PerSession?                             // keep per-session detail while cheap
+FileCoverage       id: {buildId}/files/{pathHash}
+  BuildId, Path (normalized repo-relative), Matched (path resolved against git ls-files)
+  Lines: [ { Number, Hits?, Status } ]   // merged across sessions (max)
+  Branches: [ { Line, BlockId, BranchId, Taken? } ]
+
+CoverageSummary    (embedded) LinesCovered, LinesCoverable, BranchesCovered, BranchesTotal,
+                   FilesCount            // rates always derived, never stored
 ```
 
 **Normalized line model** (dictated by the formats — JaCoCo and VS coveragexml have *no hit counts*):
@@ -128,7 +134,7 @@ All percentages derive from `Status`, never from `Hits`. Merge across sessions =
 
 **Raw uploads are retained** (the uploaded report files, gzipped) so the merged view can be lazily recomputed — this makes late uploads, re-runs, and parser bug-fix reprocessing trivially correct. Storage medium: RavenDB attachments on the Build document to start (they replicate/backup with the database); revisit if size becomes a problem.
 
-**Folder-tree aggregation** is computed per build (a `TreeSummary` document or on-the-fly from `FileCoverage` docs + a static index) to serve the tree UI and the sunburst diagram.
+**Folder-tree aggregation** is computed on the fly by streaming the build's `FileCoverage` docs (both the `/tree` folder-level endpoint and the `/hierarchy` sunburst endpoint) — no `TreeSummary` document exists; materializing one at finalize is the caching fix tracked as PLAN M9.20.
 
 ---
 
@@ -154,7 +160,7 @@ The requirement as stated: tokens are unique per GitHub account/org, so a second
 
 ### 6.4 Badges without leaking private repos
 
-- Public repo: `GET /badge/{owner}/{repo}.svg?branch=main` — unauthenticated, `Cache-Control: max-age=300`.
+- Public repo: `GET /badge/{owner}/{repo}.svg` — unauthenticated, `Cache-Control: max-age=300`. Renders the repo's denormalized default-branch coverage; a `?branch=` variant is not implemented (PLAN M9.25).
 - Private repo: same URL + `&token={BadgeToken}` — an opaque, repo-scoped, independently rotatable secret that grants **only the rendered SVG** (never report data, file lists, or API access). Anyone who can read the README can already see the code, so the badge number leaks nothing *to them*; the forwarding risk is acceptable because the capability is so narrow. Wrong/missing token → a generic "unknown" badge (don't 404 — that confirms existence).
 
 ---
@@ -200,7 +206,7 @@ Every parser output goes through one normalizer: strip `rootDir` (= `GITHUB_WORK
 **node20 JavaScript action, TypeScript, bundled with `@vercel/ncc`** (dist/ committed + CI check for staleness). Composite/bash is what Codecov uses only because they ship a compiled CLI; we have no CLI because parsing is server-side. Node gives `@actions/glob` (discovery), `@actions/http-client` (retries), `core.getIDToken(audience)` (OIDC) portably on all three OSes.
 
 - **Inputs**: `url` (server base), `token` (optional; else OIDC), `files`/`directory` (globs; else auto-detect using Codecov's proven glob + ignore lists), `flags`, `name`, `fail-ci-if-error` (default false), `finish` (boolean → calls the finalize endpoint, for users who want deterministic completion), `disable-search`.
-- **Sends**: gzipped report files + metadata: `repository`, `repositoryId`, `commitSha` (= `pull_request.head.sha` on PR events — **never** the merge `GITHUB_SHA`), `baseSha`, `branch` (`GITHUB_HEAD_REF` on PRs else `GITHUB_REF_NAME`), `pullRequestNumber`, `eventName`, `runId`, `runAttempt`, `jobName`, `workflow`, `actor`, `flags[]`, `uploaderVersion`, `rootDir` (`GITHUB_WORKSPACE`), `fileList` (`git ls-files`).
+- **Sends**: gzipped report files + metadata: `repository`, `repositoryId`, `commitSha` (= `pull_request.head.sha` on PR events — **never** the merge `GITHUB_SHA`), `parentSha` (the PR base SHA on PR events), `branch` (`GITHUB_HEAD_REF` on PRs else `GITHUB_REF_NAME`), `pullRequestNumber`, `eventName`, `runId`, `runAttempt`, `jobName`, `workflow`, `actor`, `flags[]`, `uploaderVersion`, `rootDir` (`GITHUB_WORKSPACE`), `fileList` (`git ls-files`).
 - **Multiple invocations per run** are the *designed* case: each call = one session appended to the same Build (`runId`+`runAttempt` key).
 - **Versioning**: semver tags + floating `v1` major tag; Marketplace listing once stable.
 
@@ -233,15 +239,14 @@ Structure (Spark app with custom pages; generic Spark PO/query UI used for admin
 
 **Ready to use** (as of ng-bootstrap **22.14.0** / web-components **2.11.0**, charts added by [PR #401](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/401)):
 
-- `bs-datatable` tree mode (= the file browser), `bs-shell`, `bs-navbar`, `bs-breadcrumb`, `bs-progress-bar` (linear % cells), `bs-badge`, `bs-card`, `bs-tab-control`, `bs-typeahead`, `bs-tooltip`/`bs-popover`, `bs-modal`/`bs-toast`, theming.
+- `bs-datatable` tree mode (expandable rows — https://bootstrap.mintplayer.com/enterprise/datatables; the as-built file browser uses a plain `bs-table` drill-down, upgrade tracked PLAN M9.28), `bs-shell`, `bs-navbar`, `bs-breadcrumb`, `bs-progress-bar` (linear % cells), `bs-badge`, `bs-card`, `bs-tab-control`, `bs-typeahead`, `bs-tooltip`/`bs-popover`, `bs-modal`/`bs-toast`, theming.
 - **`bs-hierarchy-chart`** (`@mintplayer/ng-bootstrap/charts/hierarchy`) — the coverage diagram, purpose-built: `layout="sunburst" | "icicle" | "treemap"`, `HierarchyNode {id,name,value,colorValue,children,hasChildren}` where arc size = summed leaf `value` (lines) and color = `colorValue` (coverage %) with folder colors derived as value-weighted means; lazy `loadChildren`; `(zoom)` for folders / `(nodeSelect)` for leaves with the full ancestor `path`; two-way `[(rootId)]` to sync an external tree; full `role="tree"` keyboard/SR support. Feed per-file `{id: path, value: coverableLines, colorValue: coveredPct}` — no server-side folder rollup needed. Set `colorMin/colorMax` ≈ 60/80, not the 0–100 default.
 - **`bs-trend-chart`** — coverage-over-time with `goal` line; **`bs-sparkline`** for inline table trends.
 - **`charts/core`** exports `arcPath` + `colorScale` publicly — the sanctioned way to hand-roll the headline radial ring (~20 lines; pass `ringGap: 0`).
 
-**Still to build upstream**:
+**Code viewer — shipped upstream** ([PR #402](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/402), 2026-08-11 → `22.15.0` / web-components `2.12.0`): `bs-code-snippet` was **extended into the viewer** (no separate `mp-code-viewer`): per-line subgrid DOM, `annotations: CodeLineAnnotation[]` (`{line, kind, label, secondaryLabel, description}` — style via `::part(annotation-<kind>)`), `lineNumbers`, `lineHref` (fragment-safe with `<base href>`), `activeLine` + `scrollToLine()` method, `data-bs-theme`-following `light-dark()` theme. Adoption = PLAN.md **M10** (incl. the `highlight.js@^11.11.1` direct-dependency requirement and the `scrollToLine` shadow-DOM gotcha). Upstream wrote a migration checklist against our file page: ng-bootstrap `docs/prd/code-snippet-viewer.md` §12.
 
-1. **`mp-code-viewer`** — the only remaining upstream ask: line numbers, generic per-line annotation API, `#L42` anchors, `data-bs-theme`-aware theme (`code-snippet` is unchanged and hard-coded dark). Coverage's file page keeps its hand-rolled renderer until then. Spec: `docs/ng-bootstrap-handoff.md` §1.
-2. `mp-progress-circle` — **explicitly declined upstream** (donut/gauge out of the charts roster); hand-roll in Coverage on `arcPath`/`colorScale`, upstream later only if the shape proves general.
+`mp-progress-circle` remains **declined upstream** — Coverage's hand-rolled `CoverageRingComponent` on the public `arcPath`/`colorScale` is the design.
 
 ---
 
@@ -252,13 +257,15 @@ All upstream blockers have landed:
 - **[MintPlayer.Spark#231](https://github.com/MintPlayer/MintPlayer.Spark/pull/231)** (merged 2026-08-09 → `10.0.0-preview.42`, `ng-spark-auth 22.1.0`): queue-name bug fixed (typed `GitHubWebhookMessage<TEvent>` recipients now work — names derived via `QueueNames.Derive`, route by CLR type only), popup handshake fixed (+ `loginWithProvider(provider, {mode})` client API), ng-bootstrap bump, R4-H1 row-level authz fixed across query/stream paths, doc fixes. The ApiTokens library was **deliberately cancelled** in favour of OAuth2 `client_credentials` via the new audited `MintPlayer.Spark.IdentityProvider`; Coverage keeps its app-local `covt_` tokens (GitHub OIDC remains the preferred CI path).
 - **[mintplayer-ng-bootstrap#401](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/401)** (merged 2026-08-10 → `22.14.0` / web-components `2.11.0`, purely additive): hierarchy/trend/sparkline charts (§9).
 
-**Remaining upstream ask** (only one): `mp-code-viewer` (§9.1). Minor upstream nits, none blocking: chart tooltips use a private shadow-DOM div rather than `OverlayController`; `code-snippet` ignores `data-bs-theme`; `bs-progress-bar` overwrites consumer host classes; `_bootstrap.scss` Sass `@import` deprecation noise.
+- **[mintplayer-ng-bootstrap#402](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/402)** (merged 2026-08-11 → `22.15.0` / `2.12.0`): the unified code-snippet viewer (§9) — the last upstream ask.
+
+**Nothing remains upstream.** Only cosmetic nit left: `_bootstrap.scss` Sass `@import` deprecation noise. (Two earlier nits were investigated upstream and closed: `bsShellTopbar` needs no promotion — `<div slot="topbar">` works directly; the `bs-progress-bar` host-class clobbering was measured not-real.)
 
 ---
 
 ## 11. Repo & deployment shape
 
-- **Coverage app**: standalone repo (`C:\Repos\Coverage`), scaffolded by copying the WebhooksDemo anatomy (built — see PLAN.md M1). **Version targets (2026-08-10)**: `MintPlayer.Spark.*` **10.0.0-preview.42** (latest; app currently on preview.41 — upgrade checklist in PLAN.md M8), `@mintplayer/ng-spark` 22.0.8, `@mintplayer/ng-spark-auth` **22.1.0**, `@mintplayer/ng-bootstrap` **22.14.0** + `@mintplayer/web-components` **2.11.0** (pin exact — the existing `^22.13.0` caret silently resolves to 22.14).
+- **Coverage app**: standalone repo (`C:\Repos\Coverage`), scaffolded by copying the WebhooksDemo anatomy (built — see PLAN.md M1). **Versions (2026-08-12)**: on `MintPlayer.Spark.*` **10.0.0-preview.42** (latest), `@mintplayer/ng-spark` 22.0.8, `@mintplayer/ng-spark-auth` ^22.1.0, `@mintplayer/ng-bootstrap` **22.14.0** + `@mintplayer/web-components` **2.11.0** (pinned exact). **Next pins (M10)**: ng-bootstrap **22.15.0** + web-components **2.12.0** + `highlight.js@^11.11.1` as a direct dependency (optional peer upstream, but statically imported by the published code-snippet module).
 - **GitHub App** (one per environment, prod + dev, as WebhooksDemo does): permissions — contents: read (source display, diffs), metadata, checks: write + PR: write (later), members: read (org membership); webhook events — installation(+repositories), repository, push, pull_request.
 - **Dev loop**: RavenDB local, smee.io tunnel for webhooks, `dotnet run` (host spawns the Angular dev server — never run `ng serve` manually), `Synchronize` launch profile for model sync.
 - **Deployment**: docker-compose (app + pinned RavenDB on an internal network, Traefik labels) following WebhooksDemo's `docker-compose.yml`/Dockerfile — including its supply-chain notes (`--skip-nx-cache`, selective csproj COPY closure).
@@ -275,6 +282,6 @@ All upstream blockers have landed:
 | 2 | Report size / RavenDB attachments | Fine for typical reports (KB–MB). Very large monorepo lcov files may need a blob-storage abstraction later. |
 | 3 | Join-request flow | Recommended *out* (GitHub is the authority, §6.3) — confirm with owner. |
 | 4 | Fork PR uploads | v1: token fallback documented; quarantined tokenless uploads later. |
-| 5 | Source display in file view | Fetch file content from GitHub at view time via installation token (contents: read) — we never store source; cache with ETag. Private repo view already requires GitHub-verified access. |
+| 5 | Source display in file view | Fetch file content from GitHub at view time via installation token (contents: read), raw.githubusercontent.com fallback for public repos — we never store source; 30-min `IMemoryCache` keyed by the immutable (repo, sha, path) — no conditional requests needed. Private repo view already requires GitHub-verified access. |
 | 6 | Rate limiting on upload/badge endpoints | ASP.NET `AddRateLimiter` per token/IP (Spark's built-in limiter only covers `/spark/*`); badge endpoint additionally cached. |
 | 7 | `after_n_builds`-style config | Explicitly rejected; debounce+timeout+optional explicit finish instead. |

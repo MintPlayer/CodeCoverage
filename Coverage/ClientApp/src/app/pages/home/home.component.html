@@ -3,10 +3,12 @@
     <div [md]="8">
       <bs-card>
         <bs-card-header>{{ 'app.welcomeTitle' | t }}</bs-card-header>
-        <p>{{ 'app.welcomeSubtitle' | t }}</p>
-        @if (!authService.user()?.isAuthenticated) {
-          <p class="text-muted">{{ 'app.signInPrompt' | t }}</p>
-        }
+        <div class="p-3">
+          <p class="mb-0">{{ 'app.welcomeSubtitle' | t }}</p>
+          @if (!authService.user()?.isAuthenticated) {
+            <p class="text-muted mb-0 mt-2">{{ 'app.signInPrompt' | t }}</p>
+          }
+        </div>
       </bs-card>
 
       @if (authService.user()?.isAuthenticated) {

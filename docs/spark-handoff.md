@@ -7,6 +7,27 @@
 > app-local `covt_` tokens (see PR docs `PRD-CoverageHandoff.md`). Upgrade checklist for this repo
 > lives in the Spark repo's `docs/release-notes-preview-42.md`. Kept for historical context.
 
+## NEW (2026-08-12): docs-only item — App walkthrough misses the sign-in email permission
+
+For a Spark session in `C:\Repos\MintPlayer.Spark`. Found while doing Coverage's first real
+GitHub sign-in: the App-creation walkthrough
+(`libs/webhooks/MintPlayer.Spark.Webhooks.GitHub/README.md`, permissions tables around line 47)
+documents repository/organization permissions but not the **account** permission that Spark's own
+external login depends on. Any app whose GitHub App is also the sign-in provider (via
+`identity.AddGitHub(...)`) needs **Account permissions → Email addresses: Read-only**:
+`GitHubAuthenticationExtensions.OnCreatingTicket` calls `GET /user/emails` to attest a verified
+primary email, and the external-login callback (R2-H11) refuses to auto-provision a first-time
+user without that attestation — the OAuth popup completes, then sign-in fails `email_not_verified`
+with nothing in the server logs. Suggested addition after the organization-permissions note:
+
+- An "Account permissions (only if the app is also used for sign-in via Spark's `AddGitHub`)"
+  table with **Email addresses / Read-only** and the failure symptom above.
+- A note that adding an account permission does **not** upgrade previously authorized user
+  tokens — users get an "additional permissions" prompt on the next authorize, or must revoke
+  the old authorization (GitHub → Settings → Applications → Authorized GitHub Apps).
+- While there: §537's note (scopes are ignored for GitHub Apps) is the reason this must be an
+  App permission rather than a `user:email` scope — worth cross-linking the two notes.
+
 Work items for a Claude session running in `C:\Repos\MintPlayer.Spark`. Discovered
 during the Coverage-analyzer investigation (see `docs/PRD.md` in MintPlayer/CodeCoverage,
 §10 and PLAN.md M0). Branch from `master` (note: local checkout sits on `security-audit`,

@@ -23,6 +23,40 @@ Prerequisites:
   MintPlayer.Spark's `libs/webhooks/MintPlayer.Spark.Webhooks.GitHub/README.md`;
   for local webhook delivery use a [smee.io](https://smee.io) channel.
 
+### GitHub App settings
+
+Create one App per environment (dev + prod). What the app actually uses:
+
+**Repository permissions**
+
+| Permission | Level | Why |
+|---|---|---|
+| Contents | Read-only | File view fetches source at a commit through the installation token; also required to subscribe to `push` events |
+| Metadata | Read-only | Mandatory on every App; covers repository listings |
+| Pull requests | Read-only | Required to subscribe to `pull_request` events |
+
+No organization or account permissions are needed: the viewer's visibility is
+derived from `GET /user/installations` with the **user's OAuth token**, which
+lists whatever installations that user can access on their own authority.
+
+Planned upgrades (PLAN M9.11 — PR comments and commit checks) will additionally
+need **Checks: Read & write** and **Pull requests: Read & write**; don't grant
+them until that ships.
+
+**Webhook events to subscribe**: `Repository`, `Push`, `Pull request`
+(`installation` / `installation_repositories` are always delivered to Apps, no
+subscription needed). Webhook URL: your smee channel in dev, `https://<host>/spark/webhooks/github` in prod;
+set a webhook secret and keep it in `GitHub:WebhookSecret`.
+
+**Identity (sign-in)**: enable *Request user authorization (OAuth) during
+installation* and add a **Callback URL** per environment — GitHub requires exact
+matches including the port. Spark pins the OAuth callback path to
+`/signin-github`, so for local dev that's `https://localhost:5200/signin-github`.
+The App's *Client ID* / a generated *client secret* go into
+`GitHub:{Development|Production}:ClientId` / `:ClientSecret` below; sign-in is
+disabled (button throws "No authentication handler is registered for the scheme
+'GitHub'") until they're configured.
+
 Configure secrets (never commit them):
 
 ```bash

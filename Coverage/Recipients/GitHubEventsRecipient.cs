@@ -14,9 +14,10 @@ namespace Coverage.Recipients;
 /// Subscribes to the catch-all <see cref="GitHubWebhookMessage"/> (queue
 /// "spark-github-all") and dispatches on EventType, deserializing EventJson
 /// per event — deliberately NOT the typed GitHubWebhookMessage&lt;TEvent&gt;
-/// envelopes: their queue names derive from the closed generic's FullName,
-/// which Spark's queue-name allowlist rejects at startup (upstream bug, see
-/// docs/PRD.md §10.1).
+/// envelopes: the webhook processor broadcasts BOTH the catch-all and the
+/// typed envelope for every event regardless of subscribers, so switching
+/// would only swap which family of unconsumed messages accumulates while
+/// splitting one cohesive handler into five classes (docs/PLAN.md M8 2.3).
 /// </summary>
 public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
 {

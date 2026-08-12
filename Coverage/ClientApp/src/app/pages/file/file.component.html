@@ -20,23 +20,15 @@
       </div>
     }
 
-    <div class="code-view border rounded">
-      @for (line of renderedLines(); track line.number) {
-        <div class="code-line" [class]="'line-' + line.status" [id]="'L' + line.number"
-             [class.line-target]="line.number === targetLine()">
-          <a class="line-number" [routerLink]="[]" [queryParams]="{ path: path() }" [fragment]="'L' + line.number">{{ line.number }}</a>
-          <span class="line-hits" [title]="line.branchInfo ? 'Branches: ' + line.branchInfo : ''">
-            @if (line.hits !== undefined) {
-              {{ line.hits }}×
-            }
-            @if (line.branchInfo) {
-              <span class="branch-info">{{ line.branchInfo }}</span>
-            }
-          </span>
-          <span class="line-text">{{ line.text }}</span>
-        </div>
-      }
-    </div>
+    <bs-code-snippet
+      [code]="code()"
+      [language]="language()"
+      [lineNumbers]="true"
+      [annotations]="annotations()"
+      [activeLine]="targetLine()"
+      [lineHref]="lineHref"
+      [label]="path()"
+      (lineActivate)="onLineActivate($event)" />
   } @else {
     <p class="text-muted mb-0">No coverage data for this file.</p>
   }

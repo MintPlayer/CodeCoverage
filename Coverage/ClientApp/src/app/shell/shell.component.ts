@@ -4,7 +4,6 @@ import { RouterModule } from '@angular/router';
 import { BsShellComponent, BsShellSidebarDirective, BsShellState } from '@mintplayer/ng-bootstrap/shell';
 import { BsNavbarTogglerComponent } from '@mintplayer/ng-bootstrap/navbar-toggler';
 import type { ShellStateChangeEventDetail } from '@mintplayer/web-components/shell';
-import { BsShellTopbarDirective } from './bs-shell-topbar.directive';
 import { BsSelectComponent, BsSelectOption } from '@mintplayer/ng-bootstrap/select';
 import { SparkLanguageService } from '@mintplayer/ng-spark/services';
 import { ResolveTranslationPipe, TranslateKeyPipe } from '@mintplayer/ng-spark/pipes';
@@ -14,7 +13,7 @@ import { KeyValuePipe } from '@angular/common';
 
 @Component({
   selector: 'app-shell',
-  imports: [CommonModule, RouterModule, BsShellComponent, BsShellSidebarDirective, BsShellTopbarDirective, BsNavbarTogglerComponent, BsSelectComponent, BsSelectOption, ResolveTranslationPipe, TranslateKeyPipe, FormsModule, KeyValuePipe],
+  imports: [CommonModule, RouterModule, BsShellComponent, BsShellSidebarDirective, BsNavbarTogglerComponent, BsSelectComponent, BsSelectOption, ResolveTranslationPipe, TranslateKeyPipe, FormsModule, KeyValuePipe],
   templateUrl: './shell.component.html',
   styleUrl: './shell.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush

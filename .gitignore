@@ -3,14 +3,25 @@ bin/
 obj/
 *.user
 .vs/
+tmp/
 
 # Node / Angular
 node_modules/
 dist/
+# The GitHub Action ships its bundled dist (node20 action contract)
+!action/dist/
 .angular/
 .nx/
-coverage/
+out-tsc/
+# Test-coverage output only — never the Coverage/ project folder (git ignores case on Windows)
+ClientApp/coverage/
 
 # Environment
 .env
 *.pem
+
+# Local smoke-test logs
+boot-*.log
+
+# Playwright MCP browser-session artifacts
+.playwright-mcp/

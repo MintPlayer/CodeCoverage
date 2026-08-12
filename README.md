@@ -1,0 +1,136 @@
+# Coverage
+
+A self-hosted code-coverage analyzer for GitHub — upload coverage reports from your
+workflows, browse coverage per organization → repository → commit → file, and embed
+badges in your READMEs.
+
+Built on [MintPlayer.Spark](https://github.com/MintPlayer/MintPlayer.Spark)
+(ASP.NET Core + RavenDB + Angular) with
+[mintplayer-ng-bootstrap](https://github.com/MintPlayer/mintplayer-ng-bootstrap).
+
+- **Product & architecture**: [docs/PRD.md](docs/PRD.md)
+- **Milestone plan**: [docs/PLAN.md](docs/PLAN.md)
+- **The upload GitHub Action**: [action/README.md](action/README.md) (`uses: MintPlayer/CodeCoverage/action@master`)
+- **Upstream (Spark) work items**: [docs/spark-handoff.md](docs/spark-handoff.md)
+
+## Local development
+
+Prerequisites:
+
+- .NET 10 SDK, Node 22+
+- RavenDB running unsecured on `http://localhost:8080` (the `Coverage` database is
+  auto-created in Development)
+- A GitHub App (for sign-in + webhooks). Follow the walkthrough in
+  MintPlayer.Spark's `libs/webhooks/MintPlayer.Spark.Webhooks.GitHub/README.md`;
+  for local webhook delivery use a [smee.io](https://smee.io) channel.
+
+### GitHub App settings
+
+Create one App per environment (dev + prod). What the app actually uses:
+
+**Repository permissions**
+
+| Permission | Level | Why |
+|---|---|---|
+| Contents | Read-only | File view fetches source at a commit through the installation token; also required to subscribe to `push` events |
+| Metadata | Read-only | Mandatory on every App; covers repository listings |
+| Pull requests | Read-only | Required to subscribe to `pull_request` events |
+
+**Account permissions**
+
+| Permission | Level | Why |
+|---|---|---|
+| Email addresses | Read-only | First-time sign-in only auto-provisions a local account when GitHub attests a **verified primary email** — Spark reads `GET /user/emails` with the user's token, and for a GitHub App that endpoint needs this permission. Without it the popup completes but sign-in fails with `email_not_verified`. |
+
+No organization permissions are needed: the viewer's visibility is derived
+from `GET /user/installations` with the **user's OAuth token**, which lists
+whatever installations that user can access on their own authority.
+
+Planned upgrades (PLAN M9.11 — PR comments and commit checks) will additionally
+need **Checks: Read & write** and **Pull requests: Read & write**; don't grant
+them until that ships.
+
+**Webhook events to subscribe**: `Repository`, `Push`, `Pull request`
+(`installation` / `installation_repositories` are always delivered to Apps, no
+subscription needed). Webhook URL: your smee channel in dev, `https://<host>/spark/webhooks/github` in prod;
+set a webhook secret and keep it in `GitHub:WebhookSecret`.
+
+**Identity (sign-in)**: add a **Callback URL** per environment — GitHub requires
+exact matches including the port. Spark pins the OAuth callback path to
+`/signin-github`, so for local dev that's `https://localhost:5200/signin-github`.
+Leave *Request user authorization (OAuth) during installation* **unchecked**: it
+makes GitHub redirect installs to the callback URL with a `code` but no OAuth
+`state` (our server never initiated that flow), which the handler rejects. The
+sign-in button performs its own properly-stated OAuth challenge and doesn't need
+it. Optionally set the **Setup URL** to the app's home page so installs land
+back in the app.
+The App's *Client ID* / a generated *client secret* go into
+`GitHub:{Development|Production}:ClientId` / `:ClientSecret` below; sign-in is
+disabled (button throws "No authentication handler is registered for the scheme
+'GitHub'") until they're configured.
+
+Configure secrets (never commit them):
+
+```bash
+cd Coverage
+dotnet user-secrets set "GitHub:Development:ClientId" "Iv1.…"
+dotnet user-secrets set "GitHub:Development:ClientSecret" "…"
+dotnet user-secrets set "GitHub:Development:AppId" "123456"
+dotnet user-secrets set "GitHub:Development:PrivateKeyPath" "C:/path/to/app.private-key.pem"
+dotnet user-secrets set "GitHub:WebhookSecret" "…"
+dotnet user-secrets set "GitHub:SmeeChannelUrl" "https://smee.io/your-channel"
+```
+
+Run:
+
+```bash
+dotnet run --project Coverage --launch-profile https
+```
+
+The host spawns the Angular dev server itself (SPA proxy middleware) — do **not** run
+`ng serve` separately. App: https://localhost:5200.
+
+After changing entities, regenerate the model metadata:
+
+```bash
+dotnet run --project Coverage --launch-profile Synchronize
+```
+
+## Deployment
+
+`docker-compose.yml` runs the app plus a pinned RavenDB on an internal network behind
+Traefik. Every push to `master` tests, publishes `ghcr.io/mintplayer/codecoverage:master`,
+and SSHes into the VPS to pull + restart (`.github/workflows/publish.yml`). The VPS keeps
+**no git checkout**: the deploy refetches `docker-compose.yml` from the repo each time,
+while `.env` and `github-app.pem` in `/var/www/coverage` are **server-managed and never
+touched by deploys**.
+
+One-time VPS setup:
+
+1. `mkdir -p /var/www/coverage`; copy `.env.example` there as `.env` and fill it in
+   (`TRAEFIK_HOST=coverage.mintplayer.com`, GitHub App credentials, …). No trailing
+   slash on the host — it becomes the OIDC audience.
+2. Place the **production** GitHub App's private key at `/var/www/coverage/github-app.pem`,
+   readable by the container's `app` user (UID 1654) — e.g. `chmod 644` or `chown 1654`.
+   Beware: if the file is missing at first `up`, Docker silently creates a *directory*
+   at that path and App auth fails at runtime.
+3. `docker network create web` if it doesn't exist; Traefik must be attached to it, with
+   an entrypoint named `websecure` and an ACME resolver named `letsencrypt` (the compose
+   labels assume those exact names).
+4. DNS A/AAAA record for the subdomain → the VPS, *before* the first deploy (Let's
+   Encrypt won't issue without it).
+5. GitHub side: repository secrets `VPS_HOST`, `VPS_USERNAME`, `VPS_SSH_KEY`
+   (dedicated ed25519 deploy key in the VPS user's `authorized_keys`), optional
+   `VPS_PORT` / `VPS_SSH_KEY_PASSPHRASE`. Verify the ghcr package is **public** after
+   the first publish (the workflow's visibility PATCH is best-effort), or
+   `docker login ghcr.io` on the VPS with a `read:packages` PAT.
+6. Production GitHub App: callback URL `https://<host>/signin-github`, webhook URL
+   `https://<host>/spark/webhooks/github`, same permissions as the dev App.
+
+Manual redeploy: the workflow's `workflow_dispatch` button, or on the VPS
+`cd /var/www/coverage && docker compose pull && docker compose up -d --remove-orphans`
+(always pull-then-up; the compose file has no build block by design).
+
+RavenDB data lives in the `raven-data` named volume — it survives `pull`/`down`/`up`
+deploys; only `docker compose down -v` or a volume prune destroys it. There is no
+automated backup yet; back up the volume out-of-band if the data matters.

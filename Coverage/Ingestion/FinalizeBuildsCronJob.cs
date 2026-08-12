@@ -1,0 +1,57 @@
+using Coverage.Entities;
+using MintPlayer.SourceGenerators.Attributes;
+using MintPlayer.Spark.Cron;
+using Raven.Client.Documents;
+using Raven.Client.Documents.Linq;
+using Raven.Client.Documents.Session;
+
+namespace Coverage.Ingestion;
+
+/// <summary>
+/// Closes open builds nobody finished explicitly: ~2 minutes after the last
+/// upload (debounce — the workflow's jobs are done) or 30 minutes after
+/// creation (timeout — a crashed job must never wedge a build open forever).
+/// Cluster-safe via Spark cron's compare-exchange claim.
+/// </summary>
+public partial class FinalizeBuildsCronJob : ISparkCronJob
+{
+    [Inject] private readonly IAsyncDocumentSession session;
+    [Inject] private readonly ILogger<FinalizeBuildsCronJob> logger;
+
+    public static string CronSchedule => "* * * * *";
+
+    private static readonly TimeSpan DebounceAfterLastUpload = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan TimeoutAfterCreation = TimeSpan.FromMinutes(30);
+
+    public async Task RunAsync(CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        var debounceCutoff = now - DebounceAfterLastUpload;
+        var timeoutCutoff = now - TimeoutAfterCreation;
+
+        var openBuilds = await session.Query<Build>()
+            .Where(b => b.Status == "Open")
+            .Where(b => b.LastUploadAtUtc < debounceCutoff || b.CreatedAtUtc < timeoutCutoff)
+            .Take(128)
+            .ToListAsync(cancellationToken);
+
+        if (openBuilds.Count == 0)
+            return;
+
+        foreach (var build in openBuilds)
+        {
+            // Only debounce once every session is parsed — otherwise the commit
+            // would get a partial summary; the timeout closes regardless.
+            var allParsed = build.Sessions.All(s => s.ParseStatus != "Pending");
+            var timedOut = build.CreatedAtUtc < timeoutCutoff;
+            if (!allParsed && !timedOut)
+                continue;
+
+            var reason = timedOut && !allParsed ? "Timeout" : "Debounce";
+            await BuildFinalizer.Finalize(session, build, reason, cancellationToken);
+            logger.LogInformation("Finalized build {BuildId} ({Reason})", build.Id, reason);
+        }
+
+        await session.SaveChangesAsync(cancellationToken);
+    }
+}

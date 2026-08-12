@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          dotnet-quality: preview
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Restore & build
+        run: dotnet build Coverage.slnx --configuration Release
+
+      - name: Test with coverage
+        run: dotnet test Coverage.Tests/Coverage.Tests.csproj --configuration Release --no-build --collect:"XPlat Code Coverage"
+
+      # Dogfood: upload our own coverage to a deployed Coverage instance,
+      # when one is configured for this repository.
+      - name: Upload coverage
+        if: ${{ vars.COVERAGE_URL != '' }}
+        uses: ./action
+        with:
+          url: ${{ vars.COVERAGE_URL }}
+          token: ${{ secrets.COVERAGE_TOKEN }}
+          flags: unit
+          finish: true
+
+  angular-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build ClientApp
+        working-directory: Coverage/ClientApp
+        run: |
+          npm ci
+          npx ng build
+
+  action-dist-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Rebuild action and verify dist is current
+        working-directory: action
+        run: |
+          npm ci
+          npm run build
+          if [ -n "$(git status --porcelain dist)" ]; then
+            echo "::error::action/dist is stale — run 'npm run build' in action/ and commit the result."
+            git diff --stat dist
+            exit 1
+          fi

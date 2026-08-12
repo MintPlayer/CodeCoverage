@@ -1,0 +1,397 @@
+using Coverage.Entities;
+using Coverage.Services;
+using Microsoft.AspNetCore.Mvc;
+using MintPlayer.SourceGenerators.Attributes;
+using Raven.Client.Documents;
+using Raven.Client.Documents.Linq;
+using Raven.Client.Documents.Session;
+
+namespace Coverage.Controllers;
+
+/// <summary>
+/// Read API for the browse UI: account → repositories → commits → build →
+/// folder tree. Public repositories are world-readable; private ones require
+/// the viewer's GitHub-verified access to the owner (no app-local ACL).
+/// Anonymous requests simply see the public subset.
+/// </summary>
+[ApiController]
+[Route("api/browse")]
+public partial class BrowseController : ControllerBase
+{
+    [Inject] private readonly IAsyncDocumentSession session;
+    [Inject] private readonly IGitHubAccessService gitHubAccess;
+    [Inject] private readonly IGitHubContentService gitHubContent;
+    [Inject] private readonly IConfiguration configuration;
+
+    public sealed record RepoInfo(string Owner, string Name, string FullName, bool IsPrivate, string? DefaultBranch,
+        CoverageSummary? LatestCoverage, string? LatestCoverageSha, bool CanManage, string? BadgeToken, string? BaseUrl);
+    public sealed record CommitInfo(string Sha, string? Branch, int? PullRequestNumber, string? Message,
+        DateTimeOffset? AuthoredAt, CoverageSummary? Coverage);
+    public sealed record BuildInfo(long RunId, int RunAttempt, string Status, string? FinalizeReason,
+        string? WorkflowName, DateTime CreatedAtUtc, CoverageSummary? Coverage, IEnumerable<SessionInfo> Sessions);
+    public sealed record SessionInfo(string SessionId, string? JobName, string[] Flags, string ParseStatus, string? Error, int FilesCount);
+    public sealed record TreeEntry(string Name, string Path, bool IsFile, int LinesCovered, int LinesCoverable);
+    public sealed record TreeResponse(string BuildId, IEnumerable<TreeEntry> Entries, IEnumerable<string> UnmatchedFiles);
+
+    [HttpGet("accounts/{login}/repos")]
+    public async Task<ActionResult<IEnumerable<RepoInfo>>> GetAccountRepos(string login, CancellationToken cancellationToken)
+    {
+        var includePrivate = await gitHubAccess.IsOwnerAllowedAsync(login, cancellationToken);
+
+        var repos = await session.Query<Repository>()
+            .Where(r => r.OwnerLogin == login)
+            .Take(1024)
+            .ToListAsync(cancellationToken);
+
+        return Ok(repos
+            .Where(r => includePrivate || !r.IsPrivate)
+            .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(r => ToRepoInfo(r, includePrivate)));
+    }
+
+    [HttpGet("repos/{owner}/{name}")]
+    public async Task<ActionResult<RepoInfo>> GetRepo(string owner, string name, CancellationToken cancellationToken)
+    {
+        var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
+        if (repository is null) return NotFound();
+        var canManage = await gitHubAccess.IsOwnerAllowedAsync(repository.OwnerLogin, cancellationToken);
+        return Ok(ToRepoInfo(repository, canManage));
+    }
+
+    [HttpGet("repos/{owner}/{name}/commits")]
+    public async Task<ActionResult<IEnumerable<CommitInfo>>> GetCommits(
+        string owner, string name, [FromQuery] string? branch, [FromQuery] bool withCoverageOnly = true,
+        [FromQuery] int skip = 0, [FromQuery] int take = 50, CancellationToken cancellationToken = default)
+    {
+        var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
+        if (repository is null) return NotFound();
+
+        var query = session.Query<Indexes.Commits_ByRepository.Result, Indexes.Commits_ByRepository>()
+            .Where(c => c.Repository == repository.Id);
+        if (!string.IsNullOrEmpty(branch))
+            query = query.Where(c => c.Branch == branch);
+        if (withCoverageOnly)
+            query = query.Where(c => c.HasCoverage);
+
+        var commits = await query
+            .OrderByDescending(c => c.AuthoredAt)
+            .Skip(skip)
+            .Take(Math.Min(take, 200))
+            .OfType<Commit>()
+            .ToListAsync(cancellationToken);
+
+        return Ok(commits.Select(c => new CommitInfo(c.Sha, c.Branch, c.PullRequestNumber, c.Message, c.AuthoredAt, c.Coverage)));
+    }
+
+    public sealed record HistoryPoint(string Sha, DateTimeOffset? Timestamp, int LinesCovered, int LinesCoverable, double Percent);
+
+    /// <summary>
+    /// Coverage over time for one repository (ascending, ready for
+    /// bs-trend-chart). Timestamp is AuthoredAt coalesced with FirstSeenAtUtc
+    /// and may still be null for documents that predate either stamp.
+    /// </summary>
+    [HttpGet("repos/{owner}/{name}/history")]
+    public async Task<ActionResult<IEnumerable<HistoryPoint>>> GetHistory(
+        string owner, string name, [FromQuery] string? branch, [FromQuery] int take = 100, CancellationToken cancellationToken = default)
+    {
+        var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
+        if (repository is null) return NotFound();
+
+        var query = session.Query<Indexes.Commits_ByRepository.Result, Indexes.Commits_ByRepository>()
+            .Where(c => c.Repository == repository.Id && c.HasCoverage);
+        if (!string.IsNullOrEmpty(branch))
+            query = query.Where(c => c.Branch == branch);
+
+        var commits = await query
+            .OrderByDescending(c => c.AuthoredAt)
+            .Take(Math.Clamp(take, 1, 500))
+            .OfType<Commit>()
+            .ToListAsync(cancellationToken);
+
+        commits.Reverse();
+        return Ok(commits
+            .Where(c => c.Coverage is { LinesCoverable: > 0 })
+            .Select(c => new HistoryPoint(c.Sha, c.AuthoredAt ?? c.FirstSeenAtUtc,
+                c.Coverage!.LinesCovered, c.Coverage.LinesCoverable,
+                Math.Round(c.Coverage.LinesCovered * 100.0 / c.Coverage.LinesCoverable, 1))));
+    }
+
+    /// <summary>
+    /// Recent coverage percentages per repository of an account (ascending),
+    /// for table sparklines. One query: the newest ~1000 covered commits
+    /// across the account, grouped per repo — sparsely-uploaded repos may
+    /// show fewer points, which is fine for a sparkline.
+    /// </summary>
+    [HttpGet("accounts/{login}/sparklines")]
+    public async Task<ActionResult<Dictionary<string, double[]>>> GetSparklines(string login, CancellationToken cancellationToken)
+    {
+        var includePrivate = await gitHubAccess.IsOwnerAllowedAsync(login, cancellationToken);
+
+        var repos = await session.Query<Repository>()
+            .Where(r => r.OwnerLogin == login)
+            .Take(1024)
+            .ToListAsync(cancellationToken);
+        var visible = repos.Where(r => includePrivate || !r.IsPrivate).ToDictionary(r => r.Id!, r => r.FullName);
+        if (visible.Count == 0) return Ok(new Dictionary<string, double[]>());
+
+        var repoIds = visible.Keys.ToArray();
+        var commits = await session.Query<Indexes.Commits_ByRepository.Result, Indexes.Commits_ByRepository>()
+            .Where(c => c.Repository.In(repoIds) && c.HasCoverage)
+            .OrderByDescending(c => c.AuthoredAt)
+            .Take(1000)
+            .OfType<Commit>()
+            .ToListAsync(cancellationToken);
+
+        var result = commits
+            .Where(c => c.Repository is not null && c.Coverage is { LinesCoverable: > 0 })
+            .GroupBy(c => c.Repository!)
+            .Where(g => visible.ContainsKey(g.Key))
+            .ToDictionary(
+                g => visible[g.Key],
+                g => g.Take(20)
+                      .Reverse()
+                      .Select(c => Math.Round(c.Coverage!.LinesCovered * 100.0 / c.Coverage.LinesCoverable, 1))
+                      .ToArray());
+
+        return Ok(result);
+    }
+
+    /// <summary>Distinct branches that have commits with coverage, default branch first.</summary>
+    [HttpGet("repos/{owner}/{name}/branches")]
+    public async Task<ActionResult<IEnumerable<string>>> GetBranches(string owner, string name, CancellationToken cancellationToken)
+    {
+        var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
+        if (repository is null) return NotFound();
+
+        var branches = await session.Query<Indexes.Commits_ByRepository.Result, Indexes.Commits_ByRepository>()
+            .Where(c => c.Repository == repository.Id && c.HasCoverage)
+            .Select(c => c.Branch)
+            .Distinct()
+            .Take(200)
+            .ToListAsync(cancellationToken);
+
+        return Ok(branches
+            .Where(b => !string.IsNullOrEmpty(b))
+            .OrderByDescending(b => b == repository.DefaultBranch)
+            .ThenBy(b => b, StringComparer.OrdinalIgnoreCase));
+    }
+
+    [HttpGet("repos/{owner}/{name}/commits/{sha}")]
+    public async Task<ActionResult<object>> GetCommit(string owner, string name, string sha, CancellationToken cancellationToken)
+    {
+        var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
+        if (repository is null) return NotFound();
+
+        var commit = await session.LoadAsync<Commit>(Commit.DocumentId(repository.GitHubId, sha), cancellationToken);
+        if (commit is null) return NotFound();
+
+        var builds = new List<Build>();
+        await using (var stream = await session.Advanced.StreamAsync<Build>(
+            startsWith: $"{Commit.DocumentId(repository.GitHubId, sha)}/builds/", token: cancellationToken))
+        {
+            while (await stream.MoveNextAsync())
+                builds.Add(stream.Current.Document);
+        }
+
+        return Ok(new
+        {
+            commit.Sha,
+            commit.Branch,
+            commit.PullRequestNumber,
+            commit.Message,
+            commit.AuthoredAt,
+            commit.Coverage,
+            commit.LatestBuildId,
+            Builds = builds
+                .OrderByDescending(b => b.CreatedAtUtc)
+                .Select(b => new BuildInfo(b.CiRunId, b.CiRunAttempt, b.Status, b.FinalizeReason, b.WorkflowName,
+                    b.CreatedAtUtc, b.Coverage,
+                    b.Sessions.Select(s => new SessionInfo(s.SessionId, s.JobName, s.Flags, s.ParseStatus, s.Error, s.FilesCount)))),
+        });
+    }
+
+    /// <summary>One folder level of the commit's coverage tree (drill-down UI).</summary>
+    [HttpGet("repos/{owner}/{name}/commits/{sha}/tree")]
+    public async Task<ActionResult<TreeResponse>> GetTree(
+        string owner, string name, string sha, [FromQuery] string? path, CancellationToken cancellationToken)
+    {
+        var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
+        if (repository is null) return NotFound();
+
+        var commit = await session.LoadAsync<Commit>(Commit.DocumentId(repository.GitHubId, sha), cancellationToken);
+        if (commit?.LatestBuildId is null) return NotFound();
+
+        var files = await LoadTreeSummaries(commit.LatestBuildId, cancellationToken);
+
+        var prefix = string.IsNullOrEmpty(path) ? "" : path.TrimEnd('/') + "/";
+        var folders = new Dictionary<string, (int Covered, int Coverable)>(StringComparer.Ordinal);
+        var entries = new List<TreeEntry>();
+
+        foreach (var file in files.Where(f => f.Matched && f.Path.StartsWith(prefix, StringComparison.Ordinal)))
+        {
+            var rest = file.Path[prefix.Length..];
+            var slash = rest.IndexOf('/');
+            if (slash < 0)
+            {
+                entries.Add(new TreeEntry(rest, file.Path, true, file.LinesCovered, file.LinesCoverable));
+            }
+            else
+            {
+                var folder = rest[..slash];
+                var current = folders.GetValueOrDefault(folder);
+                folders[folder] = (current.Covered + file.LinesCovered, current.Coverable + file.LinesCoverable);
+            }
+        }
+
+        var result = folders
+            .Select(kv => new TreeEntry(kv.Key, prefix + kv.Key, false, kv.Value.Covered, kv.Value.Coverable))
+            .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+            .Concat(entries.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase));
+
+        var unmatched = string.IsNullOrEmpty(path)
+            ? files.Where(f => !f.Matched).Select(f => f.Path).Take(50)
+            : Enumerable.Empty<string>();
+
+        return Ok(new TreeResponse(commit.LatestBuildId, result, unmatched));
+    }
+
+    /// <summary>
+    /// The commit's full coverage tree in bs-hierarchy-chart's HierarchyNode
+    /// shape: leaves carry value (coverable lines) + colorValue (covered %);
+    /// folders carry neither — the chart derives folder colors as
+    /// value-weighted means and sizes arcs by summed leaf values.
+    /// </summary>
+    [HttpGet("repos/{owner}/{name}/commits/{sha}/hierarchy")]
+    public async Task<ActionResult<HierarchyNodeDto>> GetHierarchy(string owner, string name, string sha, CancellationToken cancellationToken)
+    {
+        var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
+        if (repository is null) return NotFound();
+
+        var commit = await session.LoadAsync<Commit>(Commit.DocumentId(repository.GitHubId, sha), cancellationToken);
+        if (commit?.LatestBuildId is null) return NotFound();
+
+        var files = await LoadTreeSummaries(commit.LatestBuildId, cancellationToken);
+
+        var root = new HierarchyNodeDto { Id = "/", Name = repository.Name, Children = [] };
+        foreach (var file in files.Where(f => f.Matched).OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase))
+        {
+            var segments = file.Path.Split('/');
+            var current = root;
+            for (var i = 0; i < segments.Length - 1; i++)
+            {
+                var folderPath = string.Join('/', segments[..(i + 1)]);
+                var next = current.Children!.FirstOrDefault(c => c.Id == folderPath);
+                if (next is null)
+                {
+                    next = new HierarchyNodeDto { Id = folderPath, Name = segments[i], Children = [] };
+                    current.Children!.Add(next);
+                }
+                current = next;
+            }
+
+            current.Children!.Add(new HierarchyNodeDto
+            {
+                Id = file.Path,
+                Name = segments[^1],
+                Value = file.LinesCoverable,
+                ColorValue = file.LinesCoverable == 0 ? null
+                    : Math.Round(file.LinesCovered * 100.0 / file.LinesCoverable, 1),
+            });
+        }
+
+        return Ok(root);
+    }
+
+    public sealed class HierarchyNodeDto
+    {
+        public required string Id { get; init; }
+        public required string Name { get; init; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public int? Value { get; init; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public double? ColorValue { get; init; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public List<HierarchyNodeDto>? Children { get; set; }
+    }
+
+    /// <summary>
+    /// One file's line coverage plus its source at that commit (fetched from
+    /// GitHub live — never stored). Source may be null (uninstalled private
+    /// repo, deleted history, binary); the UI then shows coverage-only rows.
+    /// </summary>
+    [HttpGet("repos/{owner}/{name}/commits/{sha}/file")]
+    public async Task<ActionResult<object>> GetFile(
+        string owner, string name, string sha, [FromQuery] string path, CancellationToken cancellationToken)
+    {
+        var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
+        if (repository is null) return NotFound();
+
+        var commit = await session.LoadAsync<Commit>(Commit.DocumentId(repository.GitHubId, sha), cancellationToken);
+        if (commit?.LatestBuildId is null) return NotFound();
+
+        var fileCoverage = await session.LoadAsync<FileCoverage>(
+            FileCoverage.DocumentId(commit.LatestBuildId, path), cancellationToken);
+        if (fileCoverage is null) return NotFound();
+
+        long? installationId = null;
+        if (repository.Account is not null)
+        {
+            var account = await session.LoadAsync<Account>(repository.Account, cancellationToken);
+            installationId = account?.InstallationId;
+        }
+
+        var source = await gitHubContent.GetFileContentAsync(repository, installationId, sha, path, cancellationToken);
+
+        return Ok(new
+        {
+            fileCoverage.Path,
+            Source = source,
+            Lines = fileCoverage.Lines,
+            Branches = fileCoverage.Branches,
+        });
+    }
+
+    /// <summary>
+    /// The build's per-file totals: one point-load of the summary materialized
+    /// at finalize. Builds finalized before the summary existed fall back to
+    /// streaming their FileCoverage documents and deriving it on the fly.
+    /// </summary>
+    private async Task<List<TreeFileSummary>> LoadTreeSummaries(string buildId, CancellationToken cancellationToken)
+    {
+        var summary = await session.LoadAsync<BuildTreeSummary>(BuildTreeSummary.DocumentId(buildId), cancellationToken);
+        if (summary is not null)
+            return summary.Files;
+
+        var files = new List<TreeFileSummary>();
+        await using var stream = await session.Advanced.StreamAsync<FileCoverage>(
+            startsWith: $"{buildId}/files/", token: cancellationToken);
+        while (await stream.MoveNextAsync())
+        {
+            var file = stream.Current.Document;
+            files.Add(new TreeFileSummary
+            {
+                Path = file.Path,
+                Matched = file.Matched,
+                LinesCovered = file.Lines.Count(l => l.Status != LineStatus.NotCovered),
+                LinesCoverable = file.Lines.Count,
+            });
+        }
+        return files;
+    }
+
+    private async Task<Repository?> ResolveVisibleRepository(string owner, string name, CancellationToken cancellationToken)
+    {
+        var repository = await session.Query<Repository>()
+            .Where(r => r.FullName == $"{owner}/{name}")
+            .FirstOrDefaultAsync(cancellationToken);
+        if (repository is null) return null;
+        if (!repository.IsPrivate) return repository;
+        return await gitHubAccess.IsOwnerAllowedAsync(repository.OwnerLogin, cancellationToken) ? repository : null;
+    }
+
+    // BaseUrl rides along so the SPA builds badge markdown against the public
+    // URL rather than location.origin (dead links when copied from localhost).
+    private RepoInfo ToRepoInfo(Repository r, bool canManage)
+        => new(r.OwnerLogin, r.Name, r.FullName, r.IsPrivate, r.DefaultBranch, r.LatestCoverage, r.LatestCoverageSha,
+            canManage, canManage ? r.BadgeToken : null, configuration["Coverage:BaseUrl"]?.TrimEnd('/'));
+}

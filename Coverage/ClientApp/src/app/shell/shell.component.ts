@@ -26,6 +26,17 @@ export class ShellComponent {
 
   shellState = signal<BsShellState>('auto');
   isSidebarVisible = signal<boolean>(false);
+  loginError = signal<string | null>(null);
+
+  /** Server error codes → something a human can act on. */
+  private static readonly loginErrorMessages: Record<string, string> = {
+    email_not_verified: 'GitHub did not attest a verified email for your account. '
+      + 'The GitHub App needs the "Email addresses: Read-only" account permission, '
+      + 'and your GitHub primary email must be verified.',
+    no_login_info: 'The GitHub authorization was cancelled or expired — try again.',
+    account_creation_failed: 'Signing in worked but creating your local account failed — check the server logs.',
+    popup_closed: 'The sign-in popup was closed before completing.',
+  };
 
   constructor() {
     afterNextRender(() => {
@@ -37,12 +48,18 @@ export class ShellComponent {
   // ng-spark-auth 22.1.0 owns the whole popup handshake (blocked, closed and
   // server-refused paths all settle the promise). Fall back to a full-page
   // redirect when a popup blocker interferes — in redirect mode the promise
-  // never settles, since the document is being replaced.
+  // never settles, since the document is being replaced. Every other failure
+  // is surfaced: a popup that closes with no visible effect reads as "broken".
   async loginWithGitHub(): Promise<void> {
+    this.loginError.set(null);
     const result = await this.authService.loginWithProvider('GitHub', { returnUrl: '/home' });
-    if (!result.success && result.error === 'popup_blocked') {
+    if (result.success) return;
+    if (result.error === 'popup_blocked') {
       await this.authService.loginWithProvider('GitHub', { returnUrl: '/home', mode: 'redirect' });
+      return;
     }
+    this.loginError.set(
+      ShellComponent.loginErrorMessages[result.error ?? ''] ?? `Sign-in failed (${result.error ?? 'unknown error'}).`);
   }
 
   async logout(): Promise<void> {

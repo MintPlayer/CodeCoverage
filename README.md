@@ -35,9 +35,15 @@ Create one App per environment (dev + prod). What the app actually uses:
 | Metadata | Read-only | Mandatory on every App; covers repository listings |
 | Pull requests | Read-only | Required to subscribe to `pull_request` events |
 
-No organization or account permissions are needed: the viewer's visibility is
-derived from `GET /user/installations` with the **user's OAuth token**, which
-lists whatever installations that user can access on their own authority.
+**Account permissions**
+
+| Permission | Level | Why |
+|---|---|---|
+| Email addresses | Read-only | First-time sign-in only auto-provisions a local account when GitHub attests a **verified primary email** — Spark reads `GET /user/emails` with the user's token, and for a GitHub App that endpoint needs this permission. Without it the popup completes but sign-in fails with `email_not_verified`. |
+
+No organization permissions are needed: the viewer's visibility is derived
+from `GET /user/installations` with the **user's OAuth token**, which lists
+whatever installations that user can access on their own authority.
 
 Planned upgrades (PLAN M9.11 — PR comments and commit checks) will additionally
 need **Checks: Read & write** and **Pull requests: Read & write**; don't grant

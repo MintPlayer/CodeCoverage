@@ -21,6 +21,7 @@ export default class HomeComponent {
   readonly authService = inject(SparkAuthService);
 
   readonly accounts = signal<AccountInfo[] | null>(null);
+  readonly gitHubAppUrl = signal('https://github.com/apps');
   readonly loading = signal(false);
 
   constructor() {
@@ -36,7 +37,9 @@ export default class HomeComponent {
   private async loadAccounts(): Promise<void> {
     this.loading.set(true);
     try {
-      this.accounts.set(await this.accountsService.getMyAccounts());
+      const response = await this.accountsService.getMyAccounts();
+      this.accounts.set(response.accounts);
+      this.gitHubAppUrl.set(response.gitHubAppUrl);
     } catch {
       this.accounts.set([]);
     } finally {
@@ -47,7 +50,9 @@ export default class HomeComponent {
   async resync(): Promise<void> {
     this.loading.set(true);
     try {
-      this.accounts.set(await this.accountsService.resync());
+      const response = await this.accountsService.resync();
+      this.accounts.set(response.accounts);
+      this.gitHubAppUrl.set(response.gitHubAppUrl);
     } catch {
       // keep the current list on failure
     } finally {

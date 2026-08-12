@@ -16,18 +16,25 @@ public partial class MeController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;
     [Inject] private readonly IGitHubAccessService gitHubAccess;
+    [Inject] private readonly IConfiguration configuration;
+    [Inject] private readonly IWebHostEnvironment environment;
 
     /// <summary>
     /// The accounts (user + organizations) the signed-in user may see, joined
     /// with what we know about them (App installed or not) and an aggregate of
-    /// their repositories' latest coverage.
+    /// their repositories' latest coverage. Carries the environment's GitHub
+    /// App public page (GitHub:{env}:AppSlug) so "install the App" links point
+    /// at the right App per environment.
     /// </summary>
     [HttpGet("accounts")]
-    public async Task<ActionResult<IEnumerable<AccountInfo>>> GetAccounts(CancellationToken cancellationToken)
+    public async Task<ActionResult<AccountsResponse>> GetAccounts(CancellationToken cancellationToken)
     {
+        var appSlug = configuration[$"GitHub:{environment.EnvironmentName}:AppSlug"];
+        var appUrl = string.IsNullOrEmpty(appSlug) ? "https://github.com/apps" : $"https://github.com/apps/{appSlug}";
+
         var owners = await gitHubAccess.GetAllowedOwnersAsync(cancellationToken);
         if (owners.Length == 0)
-            return Ok(Array.Empty<AccountInfo>());
+            return Ok(new AccountsResponse(appUrl, []));
 
         var known = await session.Query<Account>()
             .Where(a => a.Login.In(owners))
@@ -52,9 +59,10 @@ public partial class MeController : ControllerBase
                     ? new AccountInfo(account.Login, account.Type, account.AvatarUrl, account.InstallationId is not null, ownerRepos.Count, aggregate)
                     : new AccountInfo(owner, "User", null, false, ownerRepos.Count, aggregate);
             })
-            .OrderBy(a => a.Login, StringComparer.OrdinalIgnoreCase);
+            .OrderBy(a => a.Login, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
-        return Ok(result);
+        return Ok(new AccountsResponse(appUrl, result));
     }
 
     /// <summary>
@@ -62,11 +70,12 @@ public partial class MeController : ControllerBase
     /// the freshly queried account list (manual counterpart of the 5-min TTL).
     /// </summary>
     [HttpPost("accounts/resync")]
-    public async Task<ActionResult<IEnumerable<AccountInfo>>> Resync(CancellationToken cancellationToken)
+    public async Task<ActionResult<AccountsResponse>> Resync(CancellationToken cancellationToken)
     {
         await gitHubAccess.InvalidateAsync(cancellationToken);
         return await GetAccounts(cancellationToken);
     }
 
+    public sealed record AccountsResponse(string GitHubAppUrl, AccountInfo[] Accounts);
     public sealed record AccountInfo(string Login, string Type, string? AvatarUrl, bool Installed, int RepoCount, double? AggregateCoverage);
 }

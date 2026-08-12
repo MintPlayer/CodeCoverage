@@ -11,16 +11,22 @@ export interface AccountInfo {
   aggregateCoverage?: number;
 }
 
+export interface AccountsResponse {
+  /** Public page of this environment's GitHub App ("install the App" link target). */
+  gitHubAppUrl: string;
+  accounts: AccountInfo[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class AccountsService {
   private readonly http = inject(HttpClient);
 
-  getMyAccounts(): Promise<AccountInfo[]> {
-    return firstValueFrom(this.http.get<AccountInfo[]>('/api/me/accounts'));
+  getMyAccounts(): Promise<AccountsResponse> {
+    return firstValueFrom(this.http.get<AccountsResponse>('/api/me/accounts'));
   }
 
   /** Drops the server's cached GitHub visibility and returns the fresh list. */
-  resync(): Promise<AccountInfo[]> {
-    return firstValueFrom(this.http.post<AccountInfo[]>('/api/me/accounts/resync', {}));
+  resync(): Promise<AccountsResponse> {
+    return firstValueFrom(this.http.post<AccountsResponse>('/api/me/accounts/resync', {}));
   }
 }

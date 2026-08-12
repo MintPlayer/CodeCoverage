@@ -246,5 +246,5 @@ skipped (M8 step 2.3 note).
 | MintPlayer.Spark | M0 (queue-name fix, popup fix, ng-bootstrap bump, R4-H1, doc fixes; ApiTokens→client_credentials) | ✅ [#231](https://github.com/MintPlayer/MintPlayer.Spark/pull/231) |
 | mintplayer-ng-bootstrap | Charts (hierarchy/trend/sparkline + public charts/core) | ✅ [#401](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/401) |
 | mintplayer-ng-bootstrap | Unified code-snippet viewer (M5's component half) | ✅ [#402](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/402) (22.15.0/2.12.0) |
-| Coverage | M1–M8 on `develop`; M10 + M9 (17/28) on `feature/m10-m9-backlog` → PR to `develop` | 🔄 |
+| Coverage | Everything (M1–M8 history + M10 + M9 17/28 + auth/webhook fixes + deploy pipeline) in [PR #2](https://github.com/MintPlayer/CodeCoverage/pull/2) → `master` | 🔄 |
 | coverage-action | Lives in this repo under `action/` (extract only for Marketplace) | ✅ |

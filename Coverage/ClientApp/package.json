@@ -4,8 +4,7 @@
   "private": true,
   "scripts": {
     "start": "ng serve",
-    "build": "ng build",
-    "test": "ng test"
+    "build": "ng build"
   },
   "prettier": {
     "printWidth": 100,

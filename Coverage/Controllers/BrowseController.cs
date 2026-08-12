@@ -221,7 +221,7 @@ public partial class BrowseController : ControllerBase
         var commit = await session.LoadAsync<Commit>(Commit.DocumentId(repository.GitHubId, sha), cancellationToken);
         if (commit?.LatestBuildId is null) return NotFound();
 
-        var files = await LoadBuildFiles(commit.LatestBuildId, cancellationToken);
+        var files = await LoadTreeSummaries(commit.LatestBuildId, cancellationToken);
 
         var prefix = string.IsNullOrEmpty(path) ? "" : path.TrimEnd('/') + "/";
         var folders = new Dictionary<string, (int Covered, int Coverable)>(StringComparer.Ordinal);
@@ -231,16 +231,15 @@ public partial class BrowseController : ControllerBase
         {
             var rest = file.Path[prefix.Length..];
             var slash = rest.IndexOf('/');
-            var covered = file.Lines.Count(l => l.Status != LineStatus.NotCovered);
             if (slash < 0)
             {
-                entries.Add(new TreeEntry(rest, file.Path, true, covered, file.Lines.Count));
+                entries.Add(new TreeEntry(rest, file.Path, true, file.LinesCovered, file.LinesCoverable));
             }
             else
             {
                 var folder = rest[..slash];
                 var current = folders.GetValueOrDefault(folder);
-                folders[folder] = (current.Covered + covered, current.Coverable + file.Lines.Count);
+                folders[folder] = (current.Covered + file.LinesCovered, current.Coverable + file.LinesCoverable);
             }
         }
 
@@ -271,7 +270,7 @@ public partial class BrowseController : ControllerBase
         var commit = await session.LoadAsync<Commit>(Commit.DocumentId(repository.GitHubId, sha), cancellationToken);
         if (commit?.LatestBuildId is null) return NotFound();
 
-        var files = await LoadBuildFiles(commit.LatestBuildId, cancellationToken);
+        var files = await LoadTreeSummaries(commit.LatestBuildId, cancellationToken);
 
         var root = new HierarchyNodeDto { Id = "/", Name = repository.Name, Children = [] };
         foreach (var file in files.Where(f => f.Matched).OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase))
@@ -290,14 +289,13 @@ public partial class BrowseController : ControllerBase
                 current = next;
             }
 
-            var coverable = file.Lines.Count;
             current.Children!.Add(new HierarchyNodeDto
             {
                 Id = file.Path,
                 Name = segments[^1],
-                Value = coverable,
-                ColorValue = coverable == 0 ? null
-                    : Math.Round(file.Lines.Count(l => l.Status != LineStatus.NotCovered) * 100.0 / coverable, 1),
+                Value = file.LinesCoverable,
+                ColorValue = file.LinesCoverable == 0 ? null
+                    : Math.Round(file.LinesCovered * 100.0 / file.LinesCoverable, 1),
             });
         }
 
@@ -353,13 +351,31 @@ public partial class BrowseController : ControllerBase
         });
     }
 
-    private async Task<List<FileCoverage>> LoadBuildFiles(string buildId, CancellationToken cancellationToken)
+    /// <summary>
+    /// The build's per-file totals: one point-load of the summary materialized
+    /// at finalize. Builds finalized before the summary existed fall back to
+    /// streaming their FileCoverage documents and deriving it on the fly.
+    /// </summary>
+    private async Task<List<TreeFileSummary>> LoadTreeSummaries(string buildId, CancellationToken cancellationToken)
     {
-        var files = new List<FileCoverage>();
+        var summary = await session.LoadAsync<BuildTreeSummary>(BuildTreeSummary.DocumentId(buildId), cancellationToken);
+        if (summary is not null)
+            return summary.Files;
+
+        var files = new List<TreeFileSummary>();
         await using var stream = await session.Advanced.StreamAsync<FileCoverage>(
             startsWith: $"{buildId}/files/", token: cancellationToken);
         while (await stream.MoveNextAsync())
-            files.Add(stream.Current.Document);
+        {
+            var file = stream.Current.Document;
+            files.Add(new TreeFileSummary
+            {
+                Path = file.Path,
+                Matched = file.Matched,
+                LinesCovered = file.Lines.Count(l => l.Status != LineStatus.NotCovered),
+                LinesCoverable = file.Lines.Count,
+            });
+        }
         return files;
     }
 

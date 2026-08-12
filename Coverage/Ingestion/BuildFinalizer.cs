@@ -5,7 +5,8 @@ namespace Coverage.Ingestion;
 
 /// <summary>
 /// Closing a Build promotes its merged coverage onto the Commit (which lists,
-/// badges and deltas read). Caller owns SaveChanges.
+/// badges and deltas read) and materializes the per-file tree summary the
+/// browse endpoints serve. Caller owns SaveChanges.
 /// </summary>
 public static class BuildFinalizer
 {
@@ -17,6 +18,9 @@ public static class BuildFinalizer
         build.Status = "Finalized";
         build.FinalizedAtUtc = DateTime.UtcNow;
         build.FinalizeReason = reason;
+
+        if (build.Id is not null)
+            await MaterializeTreeSummary(session, build.Id, cancellationToken);
 
         if (build.Commit is not null)
         {
@@ -43,5 +47,27 @@ public static class BuildFinalizer
                 }
             }
         }
+    }
+
+    private static async Task MaterializeTreeSummary(IAsyncDocumentSession session, string buildId, CancellationToken cancellationToken)
+    {
+        var summary = new BuildTreeSummary { BuildId = buildId };
+        await using (var stream = await session.Advanced.StreamAsync<FileCoverage>(
+            startsWith: $"{buildId}/files/", token: cancellationToken))
+        {
+            while (await stream.MoveNextAsync())
+            {
+                var file = stream.Current.Document;
+                summary.Files.Add(new TreeFileSummary
+                {
+                    Path = file.Path,
+                    Matched = file.Matched,
+                    LinesCovered = file.Lines.Count(l => l.Status != LineStatus.NotCovered),
+                    LinesCoverable = file.Lines.Count,
+                });
+            }
+        }
+
+        await session.StoreAsync(summary, BuildTreeSummary.DocumentId(buildId), cancellationToken);
     }
 }

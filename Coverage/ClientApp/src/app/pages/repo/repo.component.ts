@@ -155,9 +155,12 @@ ${upload(`
       {
         key: 'nx',
         label: 'Nx',
-        note: 'The --coverage flag forwards to vitest/jest through every Nx target shape (no "--" separator). '
-          + 'Run it on the plain test target, not atomized test-ci targets — those run one spec file each '
-          + 'into the same directory and overwrite each other\'s report.',
+        note: 'Prefer run-many over "nx affected" for the coverage run: unaffected projects emit no report, '
+          + 'so an affected upload reads as a coverage drop for everything untouched. The --coverage flag '
+          + 'forwards to vitest/jest through every Nx target shape (no "--" separator) — including non-JS '
+          + 'targets, where it breaks the command (a dotnet test target chokes on it: --exclude those). '
+          + 'And run it on the plain test target, not atomized test-ci targets — those run one spec file '
+          + 'each into the same directory and overwrite each other\'s report.',
         config: {
           note: 'Per project, emit lcov into a stable workspace-level folder AND declare that folder as the '
             + 'target\'s outputs — otherwise a cache-restored test run produces no report to upload. '

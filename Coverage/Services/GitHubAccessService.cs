@@ -48,6 +48,15 @@ public partial class GitHubAccessService : IGitHubAccessService
 
         var installations = await QueryGitHubInstallationsAsync(accessToken, cancellationToken);
         var username = principal.FindFirstValue(ClaimTypes.Name);
+        if (installations is null)
+        {
+            // GitHub unreachable or the token was rejected: visibility
+            // degrades to the user's own repos for this request, but an
+            // unknown answer is neither cached nor used to clear anything —
+            // failure is not absence.
+            return username is not null ? [username] : [];
+        }
+
         await BackfillInstallationIdsAsync(installations, username, cancellationToken);
 
         var owners = installations
@@ -77,7 +86,9 @@ public partial class GitHubAccessService : IGitHubAccessService
             memoryCache.Remove($"github-owners/{user.Id}");
     }
 
-    private async Task<GitHubInstallation[]> QueryGitHubInstallationsAsync(string accessToken, CancellationToken cancellationToken)
+    /// <summary>Null means "don't know" (request failed), which callers must
+    /// treat differently from an empty but successful response.</summary>
+    private async Task<GitHubInstallation[]?> QueryGitHubInstallationsAsync(string accessToken, CancellationToken cancellationToken)
     {
         try
         {
@@ -91,7 +102,7 @@ public partial class GitHubAccessService : IGitHubAccessService
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogWarning("GitHub /user/installations query failed: {StatusCode}", response.StatusCode);
-                return [];
+                return null;
             }
 
             var json = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -100,7 +111,7 @@ public partial class GitHubAccessService : IGitHubAccessService
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to query GitHub installations");
-            return [];
+            return null;
         }
     }
 

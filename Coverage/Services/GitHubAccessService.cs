@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Caching.Memory;
 using MintPlayer.SourceGenerators.Attributes;
 using MintPlayer.Spark.Authorization.Identity;
+using Raven.Client.Documents;
 using Raven.Client.Documents.Session;
 
 namespace Coverage.Services;
@@ -46,8 +47,8 @@ public partial class GitHubAccessService : IGitHubAccessService
         }
 
         var installations = await QueryGitHubInstallationsAsync(accessToken, cancellationToken);
-        await BackfillInstallationIdsAsync(installations, cancellationToken);
         var username = principal.FindFirstValue(ClaimTypes.Name);
+        await BackfillInstallationIdsAsync(installations, username, cancellationToken);
 
         var owners = installations
             .Select(i => i.Login)
@@ -135,15 +136,16 @@ public partial class GitHubAccessService : IGitHubAccessService
     /// GET /user/installations already carries the current installation id per
     /// account — persist it, because the `installation` webhook is the only
     /// other writer and GitHub never redelivers a lost one (which left the
-    /// "App installed" badge permanently grey). Only sets/corrects ids;
-    /// clearing on uninstall stays the webhook's job — an installation absent
-    /// from THIS user's response may simply be invisible to them.
+    /// "App installed" badge permanently grey). Sets/corrects ids for every
+    /// account in the response; clears only the signed-in user's OWN account
+    /// when it is absent — users always see their own installation, so that
+    /// absence is authoritative (a missed uninstall webhook otherwise leaves
+    /// the badge green forever). For orgs, absence may simply mean lost
+    /// visibility, so clearing those stays the webhook's job.
     /// </summary>
-    private async Task BackfillInstallationIdsAsync(GitHubInstallation[] installations, CancellationToken cancellationToken)
+    private async Task BackfillInstallationIdsAsync(GitHubInstallation[] installations, string? username, CancellationToken cancellationToken)
     {
         var active = installations.Where(i => !i.Suspended).ToArray();
-        if (active.Length == 0)
-            return;
 
         try
         {
@@ -166,6 +168,20 @@ public partial class GitHubAccessService : IGitHubAccessService
                     await session.StoreAsync(account, id, cancellationToken);
                 }
                 account.InstallationId = installation.Id;
+            }
+
+            if (username is not null
+                && !active.Any(i => string.Equals(i.Login, username, StringComparison.OrdinalIgnoreCase)))
+            {
+                var own = await session.Query<Account>()
+                    .Where(a => a.Login == username)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (own?.InstallationId is not null)
+                {
+                    own.InstallationId = null;
+                    logger.LogInformation(
+                        "Cleared InstallationId for {Login}: own account absent from /user/installations", username);
+                }
             }
 
             if (session.Advanced.HasChanges)

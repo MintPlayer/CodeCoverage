@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, effect, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, inject, isDevMode, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { BsCardComponent, BsCardHeaderComponent } from '@mintplayer/ng-bootstrap/card';
@@ -21,7 +21,7 @@ export default class HomeComponent {
   readonly authService = inject(SparkAuthService);
 
   readonly accounts = signal<AccountInfo[] | null>(null);
-  readonly gitHubAppUrl = signal('https://github.com/apps');
+  readonly gitHubAppUrl = signal(`https://github.com/apps/${isDevMode() ? 'coveragedevelopment' : 'coverageproduction'}`);
   readonly loading = signal(false);
 
   constructor() {

@@ -23,14 +23,16 @@ public partial class MeController : ControllerBase
     /// The accounts (user + organizations) the signed-in user may see, joined
     /// with what we know about them (App installed or not) and an aggregate of
     /// their repositories' latest coverage. Carries the environment's GitHub
-    /// App public page (GitHub:{env}:AppSlug) so "install the App" links point
-    /// at the right App per environment.
+    /// App public page (GitHub:{env}:AppSlug, defaulting to the well-known
+    /// per-environment slug) so "install the App" links point at the right App.
     /// </summary>
     [HttpGet("accounts")]
     public async Task<ActionResult<AccountsResponse>> GetAccounts(CancellationToken cancellationToken)
     {
         var appSlug = configuration[$"GitHub:{environment.EnvironmentName}:AppSlug"];
-        var appUrl = string.IsNullOrEmpty(appSlug) ? "https://github.com/apps" : $"https://github.com/apps/{appSlug}";
+        if (string.IsNullOrEmpty(appSlug))
+            appSlug = environment.IsDevelopment() ? "coveragedevelopment" : "coverageproduction";
+        var appUrl = $"https://github.com/apps/{appSlug}";
 
         var owners = await gitHubAccess.GetAllowedOwnersAsync(cancellationToken);
         if (owners.Length == 0)

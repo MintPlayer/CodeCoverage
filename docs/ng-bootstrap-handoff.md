@@ -1,87 +1,187 @@
-# Handoff: mintplayer-ng-bootstrap components for the Coverage project
+# Handoff: coverage uploads from mintplayer-ng-bootstrap
 
-> **Status (2026-08-10): §2 RESOLVED** by [ng-bootstrap#401](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/401)
-> (published `22.14.0` / web-components `2.11.0`): `bs-hierarchy-chart` (sunburst/icicle/treemap —
-> replaces the circle-packing idea), `bs-trend-chart`, `bs-sparkline`, public `charts/core`
-> (`arcPath`/`colorScale`). The radial progress ring was **explicitly declined** upstream —
-> Coverage hand-rolls it on `charts/core` (PLAN.md M8.3.2). Chart tooltips use a private
-> shadow-DOM div, not `OverlayController` — accepted deviation.
->
-> **Status update (2026-08-12): §1 RESOLVED** by [ng-bootstrap#402](https://github.com/MintPlayer/mintplayer-ng-bootstrap/pull/402)
-> (published `22.15.0` / web-components `2.12.0`): `bs-code-snippet` was **extended into the
-> viewer** rather than a new `mp-code-viewer` — per-line subgrid DOM, `annotations` API
-> (styled via `::part(annotation-<kind>)`, a deliberate deviation from the CSS-variables ask),
-> `lineNumbers`, `lineHref`, `activeLine` + `scrollToLine()` (fragment hrefs can't scroll into a
-> shadow root), `data-bs-theme`-following theme. Adoption = Coverage PLAN.md M10 (note the
-> `highlight.js@^11.11.1` direct-dependency requirement).
->
-> §3 closed by upstream investigation: `bsShellTopbar` promotion is unnecessary
-> (`<div slot="topbar">` works directly — delete our local directive, M10.3);
-> the `bs-progress-bar` host-class overwrite was measured NOT real.
-> **Only remaining item: the Sass `@import` → `@use` migration noise. Nothing else is upstream.**
+Change set for a session in `C:\Repos\mintplayer-ng-bootstrap`. Goal: run test
+coverage in that repo's CI and upload the lcov reports to the self-hosted
+service at https://coverage.mintplayer.com (first external consumer). The
+Codecov/Codacy GitHub Apps have already been removed from the org.
 
-Work items for a Claude session running in `C:\Repos\mintplayer-ng-bootstrap`.
-Follow that repo's CLAUDE.md conventions strictly (WC-first authoring, codegen-wc after
-SCSS edits, aria conformance suite registration, a11y checklist, demo page with
-ts-dedent snippets). No custom generators exist — copy the `treeview` component's file
-shape (11 files WC-side, 9 Angular-side). No project.json edits needed for plain
-components. React/Vue wrappers optional; flag the deviation in the PR if skipped.
+Everything below was verified against both repos on 2026-08-13.
 
-Consumer: MintPlayer/CodeCoverage (`Coverage/ClientApp`), currently on
-`@mintplayer/ng-bootstrap` ^22.13.0.
+## Prerequisites (server side — mostly done)
 
-## 1. `mp-code-viewer` + `bs-code-viewer` (priority 1)
+- ✅ GitHub App "coverageproduction" is installed on the MintPlayer org, so the
+  repo is already synced server-side (a token upload 404s for unknown repos;
+  this one is known).
+- ⚠️ **Verify the `COVERAGE_TOKEN` org secret**: a `covt_` token is bound to
+  the account page it was created on. It must come from the **org** page
+  https://coverage.mintplayer.com/a/MintPlayer ("Upload tokens" card, scope
+  "All repositories of MintPlayer" or repo-scoped to mintplayer-ng-bootstrap).
+  A token minted on the personal account page (`/a/PieterjanDeClippel`)
+  **cannot** upload for org repos — it fails with a 404 that misleadingly
+  reads like "repository unknown". If in doubt: revoke, re-create on the org
+  page, update the secret. Tokens never expire; rotation is manual (Revoke).
+- Note: since the repo is **public**, OIDC needs no secret at all (see the
+  auth choice below). The token is still the right thing for private repos
+  and non-Actions CI later.
 
-A source-code viewer with a per-line annotation API. Extend/reuse the highlight.js
-integration living in `libs/mintplayer-web-components/code-snippet`
-(`mp-code-snippet.element.ts`) — but as a NEW component (code-snippet's contract stays).
+## 1. Vitest config edits (3 files)
 
-Requirements:
-- Line numbers with per-line ids/anchors (`#L42`-style deep links; expose a
-  `scrollToLine`/`activeLine` property).
-- Generic `lineAnnotations` input: `{ line: number; kind: string; label?: string }[]` —
-  kind maps to a CSS class (`annotation-<kind>`) with theming hooks, label renders in a
-  gutter column. Keep it coverage-agnostic (Coverage feeds kinds covered/partial/uncovered
-  with hit-count labels); document theming via CSS custom properties.
-- Syntax highlighting via highlight.js with language auto-detect + explicit override
-  (same as code-snippet), but **theme must follow `data-bs-theme`** — code-snippet's
-  hard-coded a11y-dark theme needs a light counterpart.
-- Horizontal scroll inside the component; long files: consider virtualization later,
-  plain render is acceptable v1.
-- A11y: the gutter is presentational; annotations need an SR-readable alternative
-  (e.g. aria-label per annotated line); keyboard navigation to the line anchors.
+Ten of the thirteen JS test projects already emit lcov. Three don't — two have
+no `coverage` block, one has a block without a `reporter` (so Vitest's default
+`['text','html','clover','json']` applies and **no lcov.info is written**;
+clover/json don't parse server-side):
 
-Consumer integration (in CodeCoverage repo): replace the hand-rolled renderer in
-`Coverage/ClientApp/src/app/pages/file/file.component.*` — it already produces
-`{ number, text, status, hits, branchInfo }` rows, so the mapping is mechanical.
+**`libs/mintplayer-react-bootstrap/vite.config.mts`** — inside the existing
+`test: { … }` block (after `setupFiles`):
 
-## 2. Circle-packing / sunburst coverage chart + radial progress (priority 2)
+```ts
+    coverage: {
+      provider: 'v8' as const,
+      reporter: ['lcov'],
+      reportsDirectory: '../../coverage/libs/mintplayer-react-bootstrap',
+    },
+```
 
-- `coverage-chart-core` (or `hierarchy-chart-core`): headless, DOM-free layout solver
-  (sunburst arcs and/or circle packing) — pure TS, unit-tested, following the
-  `timeline-core`/`scheduler-core` split convention.
-- `mp-sunburst` (or `mp-circle-pack`) WC + `bs-` wrapper: generic input
-  `{ name, value, color?, children? }` hierarchy; hover tooltips via the shared
-  `OverlayController` (`libs/mintplayer-web-components/overlay/src/overlay-controller.ts`);
-  `segment-click` event with the node path (Coverage navigates the folder tree with it);
-  keyboard-operable (roving focus across segments) + SR alternative (nested list).
-- **Sizing trap** (repo CLAUDE.md): a host with `container-type: inline-size`
-  contributes zero intrinsic inline size and collapses to 0px in shrink-to-fit
-  contexts — the chart must take an explicit inline size from outside.
-- `mp-progress-circle`: radial progress ring (value/min/max/color/label slot) for the
-  headline coverage number. Nothing radial exists in the workspace today (verified —
-  only the color-picker wheel uses conic-gradient).
+**`libs/mintplayer-vue-bootstrap/vite.config.mts`** — same block after its
+`setupFiles`, with `reportsDirectory: '../../coverage/libs/mintplayer-vue-bootstrap'`.
 
-Consumer integration: commit page (`pages/commit/commit.component.*`) — diagram beside
-the folder-tree card, click-through to `openFolder(path)` / file view.
+**`libs/mintplayer-web-components/vite.config.mts`** — the `coverage` object
+exists (~line 76); add one line:
 
-## 3. Small extras noticed while consuming 22.13 (optional)
+```ts
+        reporter: ['lcov'],
+```
 
-- `bsShellTopbar` structural directive: both WebhooksDemo (MintPlayer.Spark) and
-  CodeCoverage carry an identical local copy stamping `slot="topbar"` — its own TODO
-  says "promote to @mintplayer/ng-bootstrap/shell".
-- ng-bootstrap's `_bootstrap.scss` emits Sass `@import` deprecation warnings on every
-  Angular build (routed to stderr, so SPA middlewares log them at fail level) —
-  migrating to `@use` would silence noise in every consumer.
-- `bs-progress-bar` binds its host `class` attribute to the computed color class, so
-  consumer-supplied classes on the element are overwritten — worth a note or fix.
+No `project.json` changes needed anywhere: all 13 test targets already declare
+the coverage dirs as `outputs`, so Nx remote-cache replays restore the lcov
+files too.
+
+## 2. The test command
+
+```
+npx nx run-many --target=test --exclude=api --coverage --parallel=2 --output-style=stream
+```
+
+Two load-bearing choices:
+
+- **`--exclude=api`**: `api:test` is `nx:run-commands` → `dotnet test …`, and
+  run-commands forwards unknown flags verbatim (`forwardAllArgs` defaults to
+  true), so `--coverage` would reach VSTest and fail the step. The API keeps
+  its own dedicated `dotnet test` step that both workflows already have.
+- **`run-many`, not `affected`** for any run that uploads: an affected subset
+  emits lcov for only some projects, which the service records as a coverage
+  collapse for that commit.
+
+Result: 13 lcov files at `coverage/apps/*/lcov.info` + `coverage/libs/*/lcov.info`.
+
+## 3. Workflow edits
+
+### `publish-master.yml` (job `build`) — the primary target
+
+Replace the existing `Test` step (`npx nx affected --target=test --watch=false
+--parallel=true`, ~line 54) and add the upload right after, before "Upload
+dist artifact":
+
+```yaml
+    - name: Test (with coverage)
+      timeout-minutes: 15
+      # run-many, not affected: a partial set reads as a coverage collapse.
+      # --exclude=api: nx:run-commands forwards --coverage verbatim to
+      # `dotnet test` (VSTest), which rejects it; the API has its own step.
+      run: npx nx run-many --target=test --exclude=api --coverage --parallel=2 --output-style=stream
+
+    - name: Upload coverage
+      uses: MintPlayer/CodeCoverage/action@master
+      with:
+        url: https://coverage.mintplayer.com
+        token: ${{ secrets.COVERAGE_TOKEN }}
+        files: |
+          coverage/apps/*/lcov.info
+          coverage/libs/*/lcov.info
+        disable-search: true
+        flags: unit
+        finish: true
+        fail-ci-if-error: true
+```
+
+Notes:
+
+- All matched files go in **one** request (rate limit is 60/min per token —
+  nowhere close).
+- `disable-search: true` matters: with search on, a `files` glob that matches
+  nothing silently falls back to auto-detection, which would also happily
+  upload unparsable stray reports.
+- `fail-ci-if-error: true` while wiring this up (the default silently turns
+  failures into warning annotations). Once stable, consider relaxing it so a
+  coverage-service outage can't block `deploy` (which `needs: build`).
+- `finish: true` finalizes immediately; without it the build closes on its own
+  2 minutes after the last upload.
+
+**Tokenless alternative (recommended eventually)**: the repo is public, so the
+upload can authenticate with the workflow's own OIDC identity — no secret to
+manage. Replace the `token:` line with `use-oidc: true` and give the *job*:
+
+```yaml
+    permissions:
+      contents: read
+      id-token: write
+```
+
+The `url` doubles as the OIDC audience and must be exactly
+`https://coverage.mintplayer.com` (any deviation → 401). Check the job doesn't
+depend on other default permissions before adding the block (a job-level
+`permissions:` replaces the defaults).
+
+### `pull-request.yml` — optional, second step
+
+Leave it alone for the first iteration. If PR coverage is wanted later:
+
+- The `Unit tests` step must switch `affected` → `run-many --exclude=api
+  --coverage` (partial-set problem above), which costs PR time.
+- Fork PRs get neither secrets nor an OIDC token, so guard the upload step:
+  `if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository`.
+- The action automatically sends the PR head SHA + head ref + PR number, so
+  commit association is correct out of the box.
+
+## 4. README badge
+
+`README.md` lines 7–9 ("Version info" table): replace the dead codecov badge
+(`codecov.io/gh/MintPlayer/mintplayer-ng-bootstrap/...`) in the "Code
+coverage" column with:
+
+```markdown
+[![Coverage](https://coverage.mintplayer.com/badge/MintPlayer/mintplayer-ng-bootstrap.svg)](https://coverage.mintplayer.com/r/MintPlayer/mintplayer-ng-bootstrap)
+```
+
+Public repo → no badge token needed. `?branch=…` exists but is unnecessary:
+the plain badge follows the default branch. That was the **only** codecov
+remnant in the repo (no codecov.yml, no workflow steps, no packages — the
+codecov mentions under `docs/prd/*.md` are design prose citing prior art;
+leave those).
+
+The badge shows "unknown" until the first master build finalizes and promotes
+to the repo's latest coverage.
+
+## 5. Verification
+
+1. Merge to master → `publish-master` runs. The upload step logs each file
+   and ends with `202 Accepted`; the action exposes `build-id`/`session-id`
+   outputs.
+2. https://coverage.mintplayer.com/r/MintPlayer/mintplayer-ng-bootstrap — the
+   commit appears immediately; per-file coverage and the tree view appear once
+   parsing finishes (seconds; `finish: true` skips the 2-min debounce).
+3. Badge URL renders a percentage instead of "unknown".
+4. If the upload 404s with "unknown here … or the token doesn't grant it":
+   that's the token-account binding from the prerequisites — re-mint on
+   `/a/MintPlayer`.
+
+## Change list (summary)
+
+| File | Edit |
+|---|---|
+| `libs/mintplayer-react-bootstrap/vite.config.mts` | add `coverage` block (v8, lcov) |
+| `libs/mintplayer-vue-bootstrap/vite.config.mts` | add `coverage` block (v8, lcov) |
+| `libs/mintplayer-web-components/vite.config.mts` | add `reporter: ['lcov']` to existing block |
+| `.github/workflows/publish-master.yml` | Test step → `run-many --exclude=api --coverage`; add upload step (snippet above) |
+| `README.md` (lines 7–9) | codecov badge → coverage.mintplayer.com badge |
+| `pull-request.yml` | leave for iteration 2 (see §3) |

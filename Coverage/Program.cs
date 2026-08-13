@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using Coverage;
 using Coverage.ApiTokens;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using MintPlayer.AspNetCore.SpaServices.Extensions;
@@ -109,6 +110,15 @@ builder.Services.AddSpark(builder.Configuration, spark =>
         // registered below; upstream fix tracked in docs/spark-handoff.md.
     });
 });
+
+// Key ring in RavenDB instead of the container filesystem, where a redeploy
+// destroyed it and signed everyone out (auth + antiforgery cookies both
+// decrypt with these keys). Configured through options so the IDocumentStore
+// that AddSpark registers is resolved lazily, not at registration time.
+builder.Services.AddDataProtection().SetApplicationName("Coverage");
+builder.Services.AddOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>()
+    .Configure<Raven.Client.Documents.IDocumentStore>((options, store) =>
+        options.XmlRepository = new Coverage.Services.RavenDataProtectionKeyRepository(store));
 
 if (!string.IsNullOrEmpty(builder.Configuration["GitHub:SmeeChannelUrl"]))
 {

@@ -101,14 +101,14 @@ jobs:
             # job still reported success (the last line, prune, exited 0).
             set -e
 
-            mkdir -p /var/www/coverage
-            cd /var/www/coverage
+            mkdir -p /var/www/code-coverage
+            cd /var/www/code-coverage
 
             # .env and github-app.pem are server-managed — deploys never write
             # them. Only the compose file is refreshed from the repo, so
             # service/label changes ship with the push.
-            test -f .env || { echo "::error::/var/www/coverage/.env is missing — create it from .env.example (server-managed, never written by deploys)"; exit 1; }
-            test -f github-app.pem || { echo "::error::/var/www/coverage/github-app.pem is missing — the GitHub App private key must be placed there (chmod 644)"; exit 1; }
+            test -f .env || { echo "::error::/var/www/code-coverage/.env is missing — create it from .env.example (server-managed, never written by deploys)"; exit 1; }
+            test -f github-app.pem || { echo "::error::/var/www/code-coverage/github-app.pem is missing — the GitHub App private key must be placed there (chmod 644)"; exit 1; }
 
             rm -f docker-compose.yml
             curl -sf -H "Authorization: token $GITHUB_TOKEN" -o docker-compose.yml https://raw.githubusercontent.com/${{ github.repository }}/master/docker-compose.yml

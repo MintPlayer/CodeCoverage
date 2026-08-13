@@ -7,6 +7,36 @@
 > app-local `covt_` tokens (see PR docs `PRD-CoverageHandoff.md`). Upgrade checklist for this repo
 > lives in the Spark repo's `docs/release-notes-preview-42.md`. Kept for historical context.
 
+## NEW (2026-08-13): bug — a crash mid-handler strands the message in `Processing` forever
+
+Found while diagnosing Coverage's parse-session outage (the outage itself was a
+Coverage bug — request-budget exhaustion — but this adjacent hazard is Spark's).
+
+`MessageSubscriptionWorker.ProcessBatchAsync` sets `Status = Processing` and
+**persists it before the handlers have run** (first pickup saves at the
+"populate handler list" step, `MessageSubscriptionWorker.cs:141`; later saves
+happen between handlers). The subscription that feeds the worker only matches
+`Status = 'Pending'` (`MessageSubscriptionWorker.cs:56`), and RavenDB
+subscriptions only re-send a document when it *changes*. So a process that
+dies between "persisted Processing" and "persisted the terminal status" —
+a deploy during a slow handler is the realistic case — leaves the message in
+`Processing`, where **nothing will ever match it again**: no lease expiry, no
+visibility timeout, no reaper.
+
+Suggested fix (either works):
+- a startup/periodic reaper that flips `Processing` messages older than a
+  lease window back to `Pending` (attempt count already exists to cap redelivery), or
+- include `Processing` with a `PickedUpAtUtc < now - lease` predicate in the
+  subscription query itself.
+
+Coverage's exposure: every deploy tears down the container while
+`coverage-parse-session` may be mid-parse; the stranded message's session then
+never parses (its build shows "Pending" until the finalize-timeout marks it
+Failed). Successors are NOT blocked — the stuck doc simply stops matching the
+subscription, so the queue silently skips it, which also makes the loss easy
+to miss. (Verified against `MintPlayer.Spark` @ preview.42 sources; not yet
+reproduced live.)
+
 ## NEW (2026-08-12): bug — Smee dev tunnel's re-minification breaks installation-event signatures
 
 Filed as [MintPlayer.Spark#232](https://github.com/MintPlayer/MintPlayer.Spark/issues/232)

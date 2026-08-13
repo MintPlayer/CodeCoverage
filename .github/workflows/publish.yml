@@ -96,12 +96,20 @@ jobs:
           passphrase: ${{ secrets.VPS_SSH_KEY_PASSPHRASE }}
           envs: GITHUB_TOKEN
           script: |
+            # Fail the job on the FIRST failing command — without this a
+            # missing .env made all three compose commands no-ops while the
+            # job still reported success (the last line, prune, exited 0).
+            set -e
+
             mkdir -p /var/www/coverage
             cd /var/www/coverage
 
             # .env and github-app.pem are server-managed — deploys never write
             # them. Only the compose file is refreshed from the repo, so
             # service/label changes ship with the push.
+            test -f .env || { echo "::error::/var/www/coverage/.env is missing — create it from .env.example (server-managed, never written by deploys)"; exit 1; }
+            test -f github-app.pem || { echo "::error::/var/www/coverage/github-app.pem is missing — the GitHub App private key must be placed there (chmod 644)"; exit 1; }
+
             rm -f docker-compose.yml
             curl -sf -H "Authorization: token $GITHUB_TOKEN" -o docker-compose.yml https://raw.githubusercontent.com/${{ github.repository }}/master/docker-compose.yml
 
@@ -112,3 +120,4 @@ jobs:
             docker compose --env-file .env up -d --remove-orphans
 
             docker image prune -f
+            docker compose --env-file .env ps

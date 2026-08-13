@@ -2,7 +2,9 @@ using System.Text;
 using Coverage.Entities;
 using Coverage.Ingestion.Parsing;
 using MintPlayer.SourceGenerators.Attributes;
+using MintPlayer.Spark;
 using MintPlayer.Spark.Messaging.Abstractions;
+using Raven.Client.Documents;
 using Raven.Client.Documents.Session;
 
 namespace Coverage.Ingestion;
@@ -16,11 +18,17 @@ namespace Coverage.Ingestion;
 public partial class ParseSessionRecipient : IRecipient<ParseSessionMessage>
 {
     [Inject] private readonly IAsyncDocumentSession session;
+    [Inject] private readonly IDocumentStore documentStore;
     [Inject] private readonly ICoverageParserFactory parserFactory;
     [Inject] private readonly ILogger<ParseSessionRecipient> logger;
 
     public async Task HandleAsync(ParseSessionMessage message, CancellationToken cancellationToken = default)
     {
+        // Attachments alone cost one request per uploaded report, so a
+        // many-report upload can pass Raven's default 30-request budget even
+        // with the batched FileCoverage loads below.
+        using var requestScope = session.IgnoreMaxRequests(logger: logger);
+
         var build = await session.LoadAsync<Build>(message.BuildId, cancellationToken);
         var buildSession = build?.Sessions.FirstOrDefault(s => s.SessionId == message.SessionId);
         if (build is null || buildSession is null)
@@ -57,19 +65,38 @@ public partial class ParseSessionRecipient : IRecipient<ParseSessionMessage>
                 var result = parser.Parse(content);
                 var normalizer = new PathNormalizer(buildSession.RootDir, result.SourceRoots, fileList);
 
-                foreach (var parsedFile in result.Files)
-                {
-                    var (path, matched) = normalizer.Normalize(parsedFile.RawPath);
-                    var documentId = FileCoverage.DocumentId(build.Id!, path);
+                var normalized = result.Files
+                    .Select(parsedFile =>
+                    {
+                        var (path, matched) = normalizer.Normalize(parsedFile.RawPath);
+                        return (parsedFile, path, matched, documentId: FileCoverage.DocumentId(build.Id!, path));
+                    })
+                    .ToList();
 
+                // One round-trip per 512 unseen ids instead of one per file:
+                // a real upload references hundreds of source files, and
+                // per-file loads exhausted the session's request budget ~28
+                // files in — every real-world session parsed zero files.
+                var unseenIds = normalized
+                    .Select(f => f.documentId)
+                    .Where(id => !touched.ContainsKey(id))
+                    .Distinct(StringComparer.Ordinal);
+                foreach (var chunk in unseenIds.Chunk(512))
+                {
+                    var loaded = await session.LoadAsync<FileCoverage>(chunk, cancellationToken);
+                    foreach (var (id, existing) in loaded)
+                    {
+                        if (existing is not null)
+                            touched[id] = existing;
+                    }
+                }
+
+                foreach (var (parsedFile, path, matched, documentId) in normalized)
+                {
                     if (!touched.TryGetValue(documentId, out var fileCoverage))
                     {
-                        fileCoverage = await session.LoadAsync<FileCoverage>(documentId, cancellationToken);
-                        if (fileCoverage is null)
-                        {
-                            fileCoverage = new FileCoverage { BuildId = build.Id!, Path = path, Matched = matched };
-                            await session.StoreAsync(fileCoverage, documentId, cancellationToken);
-                        }
+                        fileCoverage = new FileCoverage { BuildId = build.Id!, Path = path, Matched = matched };
+                        await session.StoreAsync(fileCoverage, documentId, cancellationToken);
                         touched[documentId] = fileCoverage;
                     }
 
@@ -91,15 +118,33 @@ public partial class ParseSessionRecipient : IRecipient<ParseSessionMessage>
             // sessions touched but this one didn't).
             await session.SaveChangesAsync(cancellationToken);
             await RecomputeBuildSummary(build, cancellationToken);
+            await session.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to parse session {SessionId} of {BuildId}", message.SessionId, message.BuildId);
-            buildSession.ParseStatus = "Failed";
-            buildSession.Error = ex.Message;
+            await ReportParseFailure(message, ex, cancellationToken);
         }
+    }
 
-        await session.SaveChangesAsync(cancellationToken);
+    /// <summary>
+    /// Reports through a FRESH session: the scoped one may be the very thing
+    /// that failed (exhausted request budget, faulted connection), and
+    /// reporting through it used to throw again — leaving the session
+    /// "Pending" with error null, a status that reads like "the worker never
+    /// ran" instead of carrying the diagnosis.
+    /// </summary>
+    private async Task ReportParseFailure(ParseSessionMessage message, Exception ex, CancellationToken cancellationToken)
+    {
+        using var freshSession = documentStore.OpenAsyncSession();
+        var build = await freshSession.LoadAsync<Build>(message.BuildId, cancellationToken);
+        var buildSession = build?.Sessions.FirstOrDefault(s => s.SessionId == message.SessionId);
+        if (buildSession is null)
+            return;
+
+        buildSession.ParseStatus = "Failed";
+        buildSession.Error = ex.Message;
+        await freshSession.SaveChangesAsync(cancellationToken);
     }
 
     private async Task RecomputeBuildSummary(Build build, CancellationToken cancellationToken)

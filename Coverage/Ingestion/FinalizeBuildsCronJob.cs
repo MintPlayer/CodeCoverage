@@ -48,6 +48,17 @@ public partial class FinalizeBuildsCronJob : ISparkCronJob
                 continue;
 
             var reason = timedOut && !allParsed ? "Timeout" : "Debounce";
+            if (reason == "Timeout")
+            {
+                // A session still Pending at timeout will never parse — the
+                // worker has long since retried and given up. Label it so the
+                // UI and badge stop implying work is in flight.
+                foreach (var pending in build.Sessions.Where(s => s.ParseStatus == "Pending"))
+                {
+                    pending.ParseStatus = "Failed";
+                    pending.Error = "Never parsed before the build timed out";
+                }
+            }
             await BuildFinalizer.Finalize(session, build, reason, cancellationToken);
             logger.LogInformation("Finalized build {BuildId} ({Reason})", build.Id, reason);
         }

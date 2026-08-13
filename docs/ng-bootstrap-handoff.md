@@ -119,18 +119,17 @@ Notes:
 
 **Tokenless alternative (recommended eventually)**: the repo is public, so the
 upload can authenticate with the workflow's own OIDC identity — no secret to
-manage. Replace the `token:` line with `use-oidc: true` and give the *job*:
+manage. The `build` job's existing `permissions` block **already grants
+`id-token: write`** (it's there for the artifact attestations), so this is a
+one-line difference: replace the `token:` line with `use-oidc: true`. The
+`url` doubles as the OIDC audience and must be exactly
+`https://coverage.mintplayer.com` (any deviation → 401).
 
-```yaml
-    permissions:
-      contents: read
-      id-token: write
-```
-
-The `url` doubles as the OIDC audience and must be exactly
-`https://coverage.mintplayer.com` (any deviation → 401). Check the job doesn't
-depend on other default permissions before adding the block (a job-level
-`permissions:` replaces the defaults).
+Incidental fix that comes free with the step swap: the current `Test` step
+runs `nx affected` with no `--base`/`--head` and **before** any .NET SDK
+setup, so a push whose affected set includes `api` would fail the step before
+the dedicated API test step further down. `run-many --exclude=api` removes
+that hazard.
 
 ### `pull-request.yml` — optional, second step
 

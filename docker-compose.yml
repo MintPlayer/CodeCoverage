@@ -40,7 +40,7 @@ services:
       - Spark__RavenDb__Urls__0=http://coverage-raven:8080
       - Spark__RavenDb__EnsureDatabaseCreated=true
       # OIDC audience: workflows must request an id-token with this audience
-      - Coverage__BaseUrl=https://${TRAEFIK_HOST}
+      - Coverage__BaseUrl=https://coverage.mintplayer.com
       - GitHub__WebhookSecret=${GITHUB_WEBHOOK_SECRET}
       - GitHub__Production__AppId=${GITHUB_APP_ID}
       # Optional: the App's public slug (github.com/apps/<slug>) for "install
@@ -58,7 +58,11 @@ services:
       - ./github-app.pem:/run/secrets/github-app.pem:ro
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.coverage.rule=Host(`${TRAEFIK_HOST}`)"
+      # Hardcoded like every other MintPlayer deployment: interpolating the
+      # host from the server .env produced a non-matching router (empty/CRLF
+      # value -> SNI never matches -> Traefik serves its default cert and
+      # never requests one from Let's Encrypt).
+      - "traefik.http.routers.coverage.rule=Host(`coverage.mintplayer.com`)"
       - "traefik.http.routers.coverage.entrypoints=websecure"
       - "traefik.http.routers.coverage.tls.certresolver=letsencrypt"
       # Pin the upstream port explicitly so Traefik never guesses.

@@ -107,9 +107,13 @@ touched by deploys**.
 
 One-time VPS setup:
 
-1. `mkdir -p /var/www/coverage`; copy `.env.example` there as `.env` and fill it in
-   (`TRAEFIK_HOST=coverage.mintplayer.com`, GitHub App credentials, …). No trailing
-   slash on the host — it becomes the OIDC audience.
+1. `mkdir -p /var/www/coverage`; copy `.env.example` there as `.env` and fill in the
+   GitHub App credentials. The public hostname (`coverage.mintplayer.com`) is hardcoded
+   in `docker-compose.yml` — Traefik Host rule and `Coverage__BaseUrl` (the OIDC
+   audience) — like the other MintPlayer deployments; interpolating it from the server
+   `.env` once produced a non-matching router and Traefik's default self-signed cert.
+   Mind the `.env`'s line endings: it must be LF, a CRLF file poisons every value with
+   an invisible `\r`.
 2. Place the **production** GitHub App's private key at `/var/www/coverage/github-app.pem`,
    readable by the container's `app` user (UID 1654) — e.g. `chmod 644` or `chown 1654`.
    Beware: if the file is missing at first `up`, Docker silently creates a *directory*

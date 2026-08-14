@@ -12,6 +12,22 @@
       </bs-card>
 
       @if (authService.user()?.isAuthenticated) {
+        @if (reauthRequired()) {
+          <bs-alert [type]="warningColor" [announce]="true" class="d-block mt-3">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <span class="me-auto">
+                <i class="bi bi-exclamation-triangle"></i>
+                {{ 'app.reauthBanner' | t }}
+              </span>
+              <button class="btn btn-sm btn-warning text-nowrap" (click)="reconnect()" [disabled]="reconnecting()">
+                <i class="bi bi-github"></i> {{ 'app.reconnectGitHub' | t }}
+              </button>
+            </div>
+            @if (reconnectError(); as err) {
+              <p class="small mb-0 mt-2">{{ err }}</p>
+            }
+          </bs-alert>
+        }
         <bs-card class="mt-3 d-block">
           <bs-card-header>
             <div class="d-flex align-items-center">

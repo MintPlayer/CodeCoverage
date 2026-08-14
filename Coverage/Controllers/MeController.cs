@@ -34,9 +34,13 @@ public partial class MeController : ControllerBase
             appSlug = environment.IsDevelopment() ? "coveragedevelopment" : "coverageproduction";
         var appUrl = $"https://github.com/apps/{appSlug}";
 
-        var owners = await gitHubAccess.GetAllowedOwnersAsync(cancellationToken);
+        var visibility = await gitHubAccess.GetVisibilityAsync(cancellationToken);
+        var owners = visibility.Owners;
+        // Reauth travels as a flag on a 200 — the SPA's auth interceptor
+        // hijacks any non-/spark/auth 401 into a full /login navigation.
+        var reauthRequired = visibility.TokenState == GitHubTokenState.ReauthRequired;
         if (owners.Length == 0)
-            return Ok(new AccountsResponse(appUrl, []));
+            return Ok(new AccountsResponse(appUrl, [], reauthRequired));
 
         var known = await session.Query<Account>()
             .Where(a => a.Login.In(owners))
@@ -64,7 +68,7 @@ public partial class MeController : ControllerBase
             .OrderBy(a => a.Login, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        return Ok(new AccountsResponse(appUrl, result));
+        return Ok(new AccountsResponse(appUrl, result, reauthRequired));
     }
 
     /// <summary>
@@ -78,6 +82,9 @@ public partial class MeController : ControllerBase
         return await GetAccounts(cancellationToken);
     }
 
-    public sealed record AccountsResponse(string GitHubAppUrl, AccountInfo[] Accounts);
+    /// <param name="GitHubReauthRequired">The stored GitHub token is dead and silent refresh
+    /// failed — only a browser round-trip (the "Reconnect GitHub" button) can fix it. While
+    /// set, <paramref name="Accounts"/> is degraded to the user's own account.</param>
+    public sealed record AccountsResponse(string GitHubAppUrl, AccountInfo[] Accounts, bool GitHubReauthRequired = false);
     public sealed record AccountInfo(string Login, string Type, string? AvatarUrl, bool Installed, int RepoCount, double? AggregateCoverage);
 }

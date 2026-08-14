@@ -1,6 +1,11 @@
 # Surviving GitHub user-token expiry — silent refresh + reconnect fallback
 
-Status: **planned** (this document is the PRD + plan; no implementation yet).
+Status: **implemented** (M1 + M2, 2026-08-14, branch `reauth-on-github-401`; M3 remains optional/upstream).
+Verified live in dev: hand-expired token → silent refresh (orgs listed, expiry rotated to +8h);
+corrupted refresh token + restart → banner → Reconnect → silent re-auth, orgs restored.
+One deviation from §M1.1: the single-flight gate also remembers the winner's fresh tokens and the
+last *refused* refresh token — losers can't re-read the winner's save through their stale RavenDB
+session, and a known-dead `ghr_` must not be re-spent against GitHub on every request.
 Companion incident context: the 2026-08-13 "badge never clears" investigation (see git history
 around commits `a05813b` and `3970d22`).
 

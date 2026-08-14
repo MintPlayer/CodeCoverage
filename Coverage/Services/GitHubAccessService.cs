@@ -16,45 +16,63 @@ public partial class GitHubAccessService : IGitHubAccessService
 {
     [Inject] private readonly IHttpContextAccessor httpContextAccessor;
     [Inject] private readonly UserManager<SparkUser> userManager;
+    [Inject] private readonly IGitHubUserTokenService tokenService;
     [Inject] private readonly IHttpClientFactory httpClientFactory;
     [Inject] private readonly IMemoryCache memoryCache;
     [Inject] private readonly IAsyncDocumentSession session;
     [Inject] private readonly ILogger<GitHubAccessService> logger;
 
-    private const string GitHubLoginProvider = "GitHub";
-    private const string AccessTokenName = "access_token";
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
 
     public async Task<string[]> GetAllowedOwnersAsync(CancellationToken cancellationToken = default)
+        => (await GetVisibilityAsync(cancellationToken)).Owners;
+
+    public async Task<GitHubVisibility> GetVisibilityAsync(CancellationToken cancellationToken = default)
     {
         var principal = httpContextAccessor.HttpContext?.User;
         if (principal?.Identity?.IsAuthenticated != true)
-            return [];
+            return new([], GitHubTokenState.Ok);
 
         var user = await userManager.GetUserAsync(principal);
         if (user is null)
-            return [];
+            return new([], GitHubTokenState.Ok);
 
         var cacheKey = $"github-owners/{user.Id}";
         if (memoryCache.TryGetValue<string[]>(cacheKey, out var cached) && cached is not null)
-            return cached;
+            return new(cached, GitHubTokenState.Ok);
 
-        var accessToken = await userManager.GetAuthenticationTokenAsync(user, GitHubLoginProvider, AccessTokenName);
-        if (string.IsNullOrEmpty(accessToken))
+        var username = principal.FindFirstValue(ClaimTypes.Name);
+
+        var token = await tokenService.GetAccessTokenAsync(user, forceRefresh: false, cancellationToken);
+        if (token.State != GitHubTokenState.Ok)
+            return Degraded(username, token.State);
+
+        var (installations, unauthorized) = await QueryGitHubInstallationsAsync(token.AccessToken!, user.Id, username, cancellationToken);
+        if (unauthorized)
         {
-            logger.LogWarning("No GitHub access token found for user {UserId}", user.Id);
-            return [];
+            // The token looked fresh but GitHub refused it (revoked, or expiry
+            // drifted): force exactly one refresh and retry — the same pattern
+            // Spark's installation-token TokenRefreshingHandler uses.
+            token = await tokenService.GetAccessTokenAsync(user, forceRefresh: true, cancellationToken);
+            if (token.State != GitHubTokenState.Ok)
+                return Degraded(username, token.State);
+
+            (installations, unauthorized) = await QueryGitHubInstallationsAsync(token.AccessToken!, user.Id, username, cancellationToken);
+            if (unauthorized)
+            {
+                // A just-refreshed token GitHub still refuses: the
+                // authorization itself is gone. Only a browser fixes this.
+                logger.LogWarning("GitHub refused a freshly refreshed token for user {UserId} ({Login}) — reauth required", user.Id, username);
+                return Degraded(username, GitHubTokenState.ReauthRequired);
+            }
         }
 
-        var installations = await QueryGitHubInstallationsAsync(accessToken, cancellationToken);
-        var username = principal.FindFirstValue(ClaimTypes.Name);
         if (installations is null)
         {
-            // GitHub unreachable or the token was rejected: visibility
-            // degrades to the user's own repos for this request, but an
-            // unknown answer is neither cached nor used to clear anything —
-            // failure is not absence.
-            return username is not null ? [username] : [];
+            // GitHub unreachable: visibility degrades to the user's own repos
+            // for this request, but an unknown answer is neither cached nor
+            // used to clear anything — failure is not absence.
+            return Degraded(username, GitHubTokenState.Unavailable);
         }
 
         await BackfillInstallationIdsAsync(installations, username, cancellationToken);
@@ -66,8 +84,11 @@ public partial class GitHubAccessService : IGitHubAccessService
             .ToArray();
 
         memoryCache.Set(cacheKey, owners, CacheDuration);
-        return owners;
+        return new(owners, GitHubTokenState.Ok);
     }
+
+    private static GitHubVisibility Degraded(string? username, GitHubTokenState state)
+        => new(username is not null ? [username] : [], state);
 
     public async Task<bool> IsOwnerAllowedAsync(string ownerLogin, CancellationToken cancellationToken = default)
     {
@@ -86,9 +107,11 @@ public partial class GitHubAccessService : IGitHubAccessService
             memoryCache.Remove($"github-owners/{user.Id}");
     }
 
-    /// <summary>Null means "don't know" (request failed), which callers must
-    /// treat differently from an empty but successful response.</summary>
-    private async Task<GitHubInstallation[]?> QueryGitHubInstallationsAsync(string accessToken, CancellationToken cancellationToken)
+    /// <summary>Null installations means "don't know" (request failed), which
+    /// callers must treat differently from an empty but successful response.
+    /// Unauthorized is surfaced separately so the caller can refresh and retry.</summary>
+    private async Task<(GitHubInstallation[]? Installations, bool Unauthorized)> QueryGitHubInstallationsAsync(
+        string accessToken, string? userId, string? username, CancellationToken cancellationToken)
     {
         try
         {
@@ -99,19 +122,22 @@ public partial class GitHubAccessService : IGitHubAccessService
             request.Headers.UserAgent.Add(new ProductInfoHeaderValue("Coverage", "1.0"));
 
             var response = await httpClient.SendAsync(request, cancellationToken);
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                return (null, Unauthorized: true);
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning("GitHub /user/installations query failed: {StatusCode}", response.StatusCode);
-                return null;
+                logger.LogWarning("GitHub /user/installations query failed: {StatusCode} for user {UserId} ({Login})",
+                    response.StatusCode, userId, username);
+                return (null, false);
             }
 
             var json = await response.Content.ReadAsStringAsync(cancellationToken);
-            return ParseInstallations(json);
+            return (ParseInstallations(json), false);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to query GitHub installations");
-            return null;
+            logger.LogError(ex, "Failed to query GitHub installations for user {UserId} ({Login})", userId, username);
+            return (null, false);
         }
     }
 

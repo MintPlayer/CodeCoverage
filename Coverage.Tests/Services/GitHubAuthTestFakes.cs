@@ -165,3 +165,13 @@ internal sealed class ScriptedTokenService(Func<bool, GitHubUserToken> script) :
         return Task.FromResult(script(forceRefresh));
     }
 }
+
+/// <summary>Scripted <see cref="IGitHubAccessService"/> for controller tests.</summary>
+internal sealed class ScriptedAccessService(GitHubVisibility visibility) : IGitHubAccessService
+{
+    public Task<GitHubVisibility> GetVisibilityAsync(CancellationToken ct = default) => Task.FromResult(visibility);
+    public async Task<string[]> GetAllowedOwnersAsync(CancellationToken ct = default) => (await GetVisibilityAsync(ct)).Owners;
+    public async Task<bool> IsOwnerAllowedAsync(string ownerLogin, CancellationToken ct = default)
+        => (await GetVisibilityAsync(ct)).Owners.Contains(ownerLogin, StringComparer.OrdinalIgnoreCase);
+    public Task InvalidateAsync(CancellationToken ct = default) => Task.CompletedTask;
+}

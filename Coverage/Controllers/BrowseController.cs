@@ -186,11 +186,20 @@ public partial class BrowseController : ControllerBase
         if (commit is null) return NotFound();
 
         var builds = new List<Build>();
+        var buildsPrefix = $"{Commit.DocumentId(repository.GitHubId, sha)}/builds/";
         await using (var stream = await session.Advanced.StreamAsync<Build>(
-            startsWith: $"{Commit.DocumentId(repository.GitHubId, sha)}/builds/", token: cancellationToken))
+            startsWith: buildsPrefix, token: cancellationToken))
         {
             while (await stream.MoveNextAsync())
-                builds.Add(stream.Current.Document);
+            {
+                // Only DIRECT children of /builds/ are Build documents. Deeper
+                // ids share the prefix — FileCoverage ({buildId}/files/{hash})
+                // and BuildTreeSummary ({buildId}/tree) — and would deserialize
+                // into phantom all-default builds (run "0.0", year-1 dates),
+                // one per covered file.
+                if (stream.Current.Id is { } id && !id.AsSpan(buildsPrefix.Length).Contains('/'))
+                    builds.Add(stream.Current.Document);
+            }
         }
 
         return Ok(new

@@ -15,6 +15,12 @@ export interface AccountsResponse {
   /** Public page of this environment's GitHub App ("install the App" link target). */
   gitHubAppUrl: string;
   accounts: AccountInfo[];
+  /**
+   * The server's stored GitHub token is dead and silent refresh failed — only
+   * the "Reconnect GitHub" browser round-trip can fix it. While set, accounts
+   * is degraded to the user's own account.
+   */
+  gitHubReauthRequired?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })

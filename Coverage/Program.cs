@@ -31,6 +31,7 @@ builder.Services.AddControllers()
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddCoverage();
 builder.Services.AddSpark(builder.Configuration, spark =>
 {

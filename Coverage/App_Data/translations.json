@@ -69,6 +69,16 @@
       "en": "on your account or organization.",
       "fr": "sur votre compte ou organisation.",
       "nl": "op je account of organisatie."
+    },
+    "reauthBanner": {
+      "en": "Coverage lost access to your GitHub account, so some organizations may be missing below. Reconnect to restore them.",
+      "fr": "Coverage a perdu l'accès à votre compte GitHub ; certaines organisations peuvent donc manquer ci-dessous. Reconnectez-vous pour les restaurer.",
+      "nl": "Coverage heeft geen toegang meer tot je GitHub-account, waardoor hieronder mogelijk organisaties ontbreken. Verbind opnieuw om ze te herstellen."
+    },
+    "reconnectGitHub": {
+      "en": "Reconnect GitHub",
+      "fr": "Reconnecter GitHub",
+      "nl": "GitHub opnieuw verbinden"
     }
   }
 }

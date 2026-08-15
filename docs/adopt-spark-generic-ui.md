@@ -203,39 +203,41 @@ document ids to the authorized type. **Carriers: `MintPlayer.Spark 10.0.0-previe
 and *no follow-up issue was filed* despite the PR plan saying there would be. That one blocks M4
 below.
 
-### M2 — Coverage adopts the security seam 🟦
+### M2 — Coverage adopts the security seam 🟦 (✅ BUILT 2026-08-15, on preview.45/Spark#240)
 
-**Goal:** open `/spark` reads safely.
+**Goal:** open `/spark` reads safely. The async-hook dependency
+([Spark#239](https://github.com/MintPlayer/MintPlayer.Spark/issues/239), see
+[spark-async-row-filter.md](spark-async-row-filter.md)) shipped as
+[Spark#240](https://github.com/MintPlayer/MintPlayer.Spark/pull/240) (preview.45), so the rules
+are written async-first against `GetRowFilterAsync`.
 
-0. ⏸ **M2 waits for the async row-filter hook**
-   ([Spark#239](https://github.com/MintPlayer/MintPlayer.Spark/issues/239), expected in
-   preview.45): Coverage's rules need async data (GitHub-backed owners, a Raven query for
-   visible repo ids) and will be written against `GetRowFilterAsync` directly instead of
-   shipping sync-over-async bridges — see [spark-async-row-filter.md](spark-async-row-filter.md).
-   M3 is client-only and proceeds meanwhile.
-1. Upgrade pins first: `MintPlayer.Spark.* 10.0.0-preview.44` (→ .45 when #239 ships),
-   `@mintplayer/ng-spark 22.0.9`.
-   Breaking changes checked: Coverage has no Spark custom actions (the `Submitted*` rename
-   doesn't bite) and uses no lookup references (the new `Read/LookupReferences` requirement
-   doesn't bite).
-2. Add a `security.json` granting `QueryRead` on the four entity types to `Everyone`, and
-   implement `Actions` classes for Account/Repository/Commit/Build over the existing
-   `GitHubAccessService` visibility cache (same semantics as `ResolveVisibleRepository`;
-   WebhooksDemo's `GitHubProjectActions` is the worked example, and `GetRowFilter` keeps it
-   O(page) instead of O(collection) — note the expression's fields must be index-queryable).
-   ⚠️ Known trap from Fleet's CI: an ownership filter also runs as WITH CHECK on create, so an
-   authenticated machine principal with no user id gets 403 — return `null` (unrestricted) for
-   authenticated-but-no-user-id and reserve deny for anonymous.
-3. Hide `BadgeToken` (and review `InstallationId`) for non-managers via
-   `GetProtectedAttributesAsync`.
-4. Declare the related queries in the model (`Account.queries: ["GetRepositories"]`,
-   `Repository.queries: ["GetCommits"]`, `Commit.queries: ["GetBuilds"]`) and verify
-   parent-filtered `executeQuery` returns the right rows; run the model synchronize.
-5. Writes stay denied — the generic New/Edit/Delete buttons must not appear (permissions endpoint
-   returns read-only).
+As built:
 
-**Exit criteria:** `/query/GetRepositories` and `/po/Repository/:id` render real, correctly
-filtered data for anonymous, member, and stranger viewers.
+1. Pins on `10.0.0-preview.45` / `@mintplayer/ng-spark 22.0.9`. Breaking changes checked:
+   no Spark custom actions (`Submitted*` rename inert), no lookup references
+   (`Read/LookupReferences` requirement inert).
+2. `App_Data/security.json`: `QueryRead` on Account/Repository/Commit/Build for `Everyone` —
+   the row filters are the only gate behind that, per the guide's anonymous-read warning.
+3. `Coverage/Services/SparkVisibility.cs` — per-request Task-memoized snapshots (owners via
+   `IGitHubAccessService`, visible repo ids via one Raven query), because the framework memo
+   is per-(type, action): the hook still runs 3× per detail read.
+4. `Coverage/Actions/`: `RepositoryActions` (`!IsPrivate || owners.Contains(OwnerLogin)`
+   pushdown + `BadgeToken` redaction + `Account` include), `AccountActions` (`InstallationId`
+   redaction only — accounts are public), `CommitActions` (pushdown IN over visible repo ids +
+   `Repository` include), `BuildActions` (per-row predicate parsing the commit-id shape
+   `Commits/{repoGitHubId}/{sha}` — no owner fields to push down on; in-memory after the
+   memoized repo-id query, plus `Commit` include). `Enumerable.Contains` used in expressions
+   (translates to RQL `in` AND works compiled in-memory; Raven's `.In()` is query-only).
+5. Writes stay denied at the type level, so the WITH CHECK path is unreachable and the
+   machine-principal trap doesn't apply.
+6. Related-query declarations (`EntityType.queries[]`) deliberately **moved to M4**: declaring
+   them before parent-aware sources exist would make generic detail pages render sub-queries
+   containing the whole (row-filtered but unscoped) collection, since `Database.*` queries
+   drop `parentId` upstream.
+
+**Exit criteria (to verify in the end-of-branch test sweep):** `/query/repositories` and
+`/po/Repository/:id` render real, correctly filtered data for anonymous, member, and stranger
+viewers; `BadgeToken` comes back nulled + invisible for non-managers.
 
 ### M3 — Attribute renderers for coverage visuals 🟦 (🟩 only if a gap shows)
 

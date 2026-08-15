@@ -1,4 +1,5 @@
 using MintPlayer.Spark.Abstractions;
+using Newtonsoft.Json;
 
 namespace Coverage.Entities;
 
@@ -55,12 +56,12 @@ public class Commit
     /// two different things depending on which writer set it — see
     /// docs/roadmap-2026-08.md §7, T2.1.)
     /// <para>
-    /// Only the commits query writes this, onto no-tracking entities, so it
-    /// never reaches the database. Deliberately not marked [IgnoreProperty]:
-    /// this library has no RavenDB dependency and keeping it that way is worth
-    /// more than the attribute.
+    /// [JsonIgnore] keeps it out of the stored document — RavenDB serializes
+    /// through Newtonsoft, so this is the mechanism, not a Spark concern. It
+    /// stays a normal model attribute: the grid's Δ column reads it.
     /// </para>
     /// </summary>
+    [JsonIgnore]
     public double? CoverageDelta { get; set; }
 
     /// <summary>The build whose coverage is shown for this commit (file tree reads its FileCoverage docs).</summary>

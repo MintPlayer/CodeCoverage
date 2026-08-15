@@ -8,6 +8,8 @@ import { provideSparkAttributeRenderers } from '@mintplayer/ng-spark/renderers';
 import { routes } from './app.routes';
 import { CoverageBarRendererComponent } from './spark/coverage-bar-renderer.component';
 import { CoverageSparklineRendererComponent } from './spark/coverage-sparkline-renderer.component';
+import { ShortShaRendererComponent } from './spark/short-sha-renderer.component';
+import { BuildSessionsRendererComponent } from './spark/build-sessions-renderer.component';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -26,6 +28,16 @@ export const appConfig: ApplicationConfig = {
         name: 'coverage-sparkline',
         detailComponent: CoverageSparklineRendererComponent,
         columnComponent: CoverageSparklineRendererComponent,
+      },
+      {
+        name: 'short-sha',
+        detailComponent: ShortShaRendererComponent,
+        columnComponent: ShortShaRendererComponent,
+      },
+      {
+        name: 'build-sessions',
+        detailComponent: BuildSessionsRendererComponent,
+        columnComponent: BuildSessionsRendererComponent,
       },
     ]),
     provideZonelessChangeDetection()

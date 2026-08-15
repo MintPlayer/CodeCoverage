@@ -25,6 +25,21 @@
         "rules": []
       },
       {
+        "id": "9f2e7d10-4b8c-4e35-a1d6-7c3b9e04f512",
+        "name": "Run",
+        "label": {
+          "en": "Run"
+        },
+        "dataType": "string",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": true,
+        "order": 2,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
         "id": "0b98f18b-683a-4599-b52b-7dae6708bcc3",
         "name": "Status",
         "label": {
@@ -40,6 +55,55 @@
         "rules": []
       },
       {
+        "id": "a8c2e25f-432a-4e5b-b46c-2d5b3f90213c",
+        "name": "Sessions",
+        "label": {
+          "en": "Sessions"
+        },
+        "dataType": "AsDetail",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 4,
+        "asDetailType": "Coverage.Entities.BuildSession",
+        "isArray": true,
+        "showedOn": "Query, PersistentObject",
+        "rules": [],
+        "renderer": "build-sessions"
+      },
+      {
+        "id": "e0182f5d-9906-423a-9b6b-ed0d2dda14ef",
+        "name": "Coverage",
+        "label": {
+          "en": "Coverage"
+        },
+        "dataType": "AsDetail",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 5,
+        "asDetailType": "Coverage.Entities.CoverageSummary",
+        "renderer": "coverage-bar",
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "85919c63-245b-4954-876a-10a59165ff46",
+        "name": "CreatedAtUtc",
+        "label": {
+          "en": "Created"
+        },
+        "dataType": "datetime",
+        "isRequired": true,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 6,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
         "id": "b31dad93-2418-4bc6-977d-02f4dfa52cdd",
         "name": "CiRunId",
         "label": {
@@ -49,9 +113,9 @@
         "isRequired": true,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 2,
+        "order": 7,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -64,7 +128,7 @@
         "isRequired": true,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 4,
+        "order": 8,
         "isArray": false,
         "showedOn": "PersistentObject",
         "rules": []
@@ -79,9 +143,9 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 5,
+        "order": 9,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -94,24 +158,9 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 6,
+        "order": 10,
         "isArray": false,
         "showedOn": "PersistentObject",
-        "rules": []
-      },
-      {
-        "id": "85919c63-245b-4954-876a-10a59165ff46",
-        "name": "CreatedAtUtc",
-        "label": {
-          "en": "Created At Utc"
-        },
-        "dataType": "datetime",
-        "isRequired": true,
-        "isVisible": true,
-        "isReadOnly": false,
-        "order": 7,
-        "isArray": false,
-        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {
@@ -124,7 +173,7 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 8,
+        "order": 11,
         "isArray": false,
         "showedOn": "PersistentObject",
         "rules": []
@@ -139,9 +188,9 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 9,
+        "order": 12,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -154,42 +203,9 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 10,
+        "order": 13,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
-        "rules": []
-      },
-      {
-        "id": "a8c2e25f-432a-4e5b-b46c-2d5b3f90213c",
-        "name": "Sessions",
-        "label": {
-          "en": "Sessions"
-        },
-        "dataType": "AsDetail",
-        "isRequired": false,
-        "isVisible": true,
-        "isReadOnly": false,
-        "order": 11,
-        "asDetailType": "Coverage.Entities.BuildSession",
-        "isArray": true,
         "showedOn": "PersistentObject",
-        "rules": []
-      },
-      {
-        "id": "e0182f5d-9906-423a-9b6b-ed0d2dda14ef",
-        "name": "Coverage",
-        "label": {
-          "en": "Coverage"
-        },
-        "dataType": "AsDetail",
-        "isRequired": false,
-        "isVisible": true,
-        "isReadOnly": false,
-        "order": 12,
-        "asDetailType": "Coverage.Entities.CoverageSummary",
-        "renderer": "coverage-bar",
-        "isArray": false,
-        "showedOn": "Query, PersistentObject",
         "rules": []
       }
     ],

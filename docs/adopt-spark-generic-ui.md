@@ -304,11 +304,43 @@ Original goal (scope fixed by D2–D4):
 `spark-sub-query`; `BrowseController` endpoints that became redundant are deleted (endpoints
 still consumed elsewhere — e.g. the repos list feeding the token-scope dropdown — stay).
 
-### M5 (optional) — Row-link seam in ng-spark 🟩
+### ~~M5 (optional) — Row-link seam in ng-spark 🟩~~ (DROPPED per D2, 2026-08-15)
 
-**Goal:** if D2 lands on "grids must link to vanity URLs": upstream a link-resolver injection
-token (default: current `/po/...` behavior) consumed by query-list, sub-query, and
-`referenceLinkRoute`. Unlocks dropping more of the custom link plumbing.
+The user accepted `/po/...` Spark routes as the grid link targets, so no link seam is needed.
+(An implementation-ready design was produced during the investigation — `provideSparkLinks` +
+`SparkLinkService` over a `SPARK_LINK_RESOLVERS` token, covering the three grid anchors,
+`referenceLinkRoute`, and post-save navigation — and can be revived if that decision ever flips.)
+
+### M6 — Grid parity with the master-branch cards 🟦 (🟩 row-context seam filed upstream)
+
+**Finding (user, 2026-08-15, vs coverage.mintplayer.com):** replacing the hand-written cards
+changed their shape. Master's account card shows **Repository (name + inline "private" badge) ·
+Coverage (bar) · Trend (sparkline) · Latest commit (7-char sha link)**; master's builds card shows
+**Run (`runId.attempt`) · Status (+ finalize reason) · Sessions (job + parse badges) · Coverage ·
+Created**. The generic grids showed raw schema columns instead. The cards/grids/columns must match
+master; the `/po` links inside them are fine (D2).
+
+**Coverage-side (now):**
+1. Model JSON: relabel + reorder + re-trim `showedOn` so the Query columns are exactly master's
+   sets — Repository card: `Name`("Repository"), `LatestCoverage`("Coverage"), `FullName`("Trend"),
+   `LatestCoverageSha`("Latest commit"); Build card: `CiRunId`("Run"), `Status`, `Sessions`,
+   `Coverage`, `CreatedAtUtc`("Created"). `OwnerLogin`/`IsPrivate`/`WorkflowName`/
+   `FinalizedAtUtc`/`FinalizeReason` become detail-only.
+2. New value-only renderers, registered alongside the existing two: `short-sha` (7-char monospace,
+   on `LatestCoverageSha`) and `build-sessions` (on the `Sessions` AsDetail array — renders the
+   per-session job/parse badges once the value arrives, "—" until then).
+3. Coverage bars and Sessions cells light up when
+   [Spark#241](https://github.com/MintPlayer/MintPlayer.Spark/issues/241) ships (AsDetail
+   renderer value).
+
+**Upstream (filed):** the row-context-for-renderers seam — optional `item` input on the renderer
+contracts, passed only when declared via a `reflectComponentType` filter (which also fixes a
+latent upstream bug: a renderer omitting any of the current inputs throws at `NgComponentOutlet`
+binding time). Unlocks the remaining master-parity cells: the inline "private" badge next to the
+name, the `runId.attempt` composite, and a linkable latest-commit cell.
+
+**Exit criteria:** the account and commit cards show master's exact column sets/labels/orders;
+short-sha renders; the remaining cells upgrade automatically as the upstream pieces ship.
 
 ### Sequencing
 
@@ -335,7 +367,7 @@ the end of each milestone per the global test policy.
 | # | Decision | Resolution (implementation defaults, 2026-08-15 — each cheap to reverse) |
 |---|---|---|
 | D1 | ~~Shape of the upstream row-security hook~~ | Moved to [Spark#236](https://github.com/MintPlayer/MintPlayer.Spark/issues/236), shipped in PR #237: both hooks, with derivation (expression is source of truth when present; predicate refines) |
-| D2 | Row links from generic grids | **Accept `/po/...` links inside generic grids for now.** Vanity URLs stay the primary navigation; the upstream link-resolver seam (M5) remains optional future work |
+| D2 | Row links from generic grids | **RESOLVED by the user (2026-08-15): `/po/...` Spark routes are accepted as the grid link targets — permanently, not as an interim.** The link-resolver seam (old M5) is dropped; a full implementation-ready design for it exists in the investigation record should it ever be wanted. What must match master instead is the **visual grid parity** (M6) |
 | D3 | Sparkline + Δ columns | **Sparkline survives** via a column renderer on `FullName` that batch-fetches `/api/browse/accounts/{login}/sparklines` (renderers are Angular components — they can inject services). **Δ stays hand-written** (cross-row computation, see D4) |
 | D4 | Branch filter on commits | **Keep hand-written** — the repo page's commits table is out of M4 scope (branch filter + Δ have no generic home) |
 | D5 | Generic surface user-facing or admin-only? | **User-facing**: `spark-sub-query` grids become part of the product pages; `/po`/`/query` routes are a legitimate secondary surface now that rows are secured |

@@ -22,6 +22,13 @@ public class Build
 
     public int CiRunAttempt { get; set; }
 
+    /// <summary>
+    /// Computed "runId.attempt" display value for the generic grids (master-parity
+    /// "Run" column). Deterministic from the two stored fields; get-only, so the
+    /// Spark mapper serves it as an attribute without any Actions-class code.
+    /// </summary>
+    public string Run => $"{CiRunId}.{CiRunAttempt}";
+
     public string? WorkflowName { get; set; }
 
     public string? EventName { get; set; }

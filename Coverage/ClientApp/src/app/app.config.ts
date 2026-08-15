@@ -7,6 +7,7 @@ import { provideSparkAttributeRenderers } from '@mintplayer/ng-spark/renderers';
 
 import { routes } from './app.routes';
 import { CoverageBarRendererComponent } from './spark/coverage-bar-renderer.component';
+import { CoverageSummaryDetailRendererComponent } from './spark/coverage-summary-detail-renderer.component';
 import { CoverageSparklineRendererComponent } from './spark/coverage-sparkline-renderer.component';
 import { ShortShaRendererComponent } from './spark/short-sha-renderer.component';
 import { BuildSessionsRendererComponent } from './spark/build-sessions-renderer.component';
@@ -22,7 +23,7 @@ export const appConfig: ApplicationConfig = {
     provideSparkAttributeRenderers([
       {
         name: 'coverage-bar',
-        detailComponent: CoverageBarRendererComponent,
+        detailComponent: CoverageSummaryDetailRendererComponent,
         columnComponent: CoverageBarRendererComponent,
       },
       {

@@ -1,7 +1,6 @@
 import { ChangeDetectionStrategy, Component, effect, inject, input, signal, computed } from '@angular/core';
 import { BsCardComponent, BsCardHeaderComponent, BsCardBodyComponent } from '@mintplayer/ng-bootstrap/card';
 import { BrowseService, RepoInfo } from '../../services/browse.service';
-import { CoverageBarComponent } from '../coverage-bar/coverage-bar.component';
 
 /**
  * "Coverage badge" card for the generic /po Repository detail page: latest
@@ -11,15 +10,14 @@ import { CoverageBarComponent } from '../coverage-bar/coverage-bar.component';
  */
 @Component({
   selector: 'app-repo-badge-panel',
-  imports: [BsCardComponent, BsCardHeaderComponent, BsCardBodyComponent, CoverageBarComponent],
+  imports: [BsCardComponent, BsCardHeaderComponent, BsCardBodyComponent],
   template: `
     @if (repo(); as r) {
       <bs-card class="mt-3 d-block">
         <bs-card-header><i class="bi bi-patch-check"></i> Coverage badge</bs-card-header>
         <bs-card-body>
           <div class="d-flex align-items-center gap-3">
-            <span class="text-muted">Latest coverage ({{ r.defaultBranch ?? 'default branch' }}):</span>
-            <app-coverage-bar [summary]="r.latestCoverage" />
+            <span class="text-muted">Default branch ({{ r.defaultBranch ?? 'unknown' }}):</span>
             <img [src]="badgeUrl()" alt="coverage badge" height="20">
           </div>
 

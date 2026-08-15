@@ -408,6 +408,31 @@ repos, so no trend chart renders there — on **either** page (the local vanity 
 empty trend). On a repo with data (`/r/acme/demo`, 50%) the full chart renders. The difference vs
 production is data, not code.
 
+### M9 — The generic detail page *is* the repository/commit page 🟦 (✅ BUILT 2026-08-15)
+
+**Decision (user):** now that Spark renders custom cells (renderers), computed attributes, curated
+columns and sub-queries, the hand-written pages should go — reuse `spark-po-detail` and keep only
+what the framework genuinely can't express. URLs are free to change.
+
+**As built — M8 inverted.** Repositories and commits *are* the generic Spark detail pages:
+- **Deleted** `pages/repo/*` and `pages/commit/*` (the hand-written header cards, commits table
+  with branch filter + Δ, badge markdown block, files tree wiring) — ~270 lines.
+- `/r/{owner}/{name}` and `/r/{owner}/{name}/c/{sha}` survive as **`CanActivateFn` guards** (no
+  components) that resolve the document id and forward into `/po/…`; README badge markdown and
+  existing shared links keep working. `RepoInfo` gained `Id` for that lookup.
+- The coverage **ring** survives as the renderer's *detail slot*
+  (`CoverageSummaryDetailRendererComponent`: ring + bar + "x/y lines · a/b branches · n files"),
+  with the compact bar staying the *column slot* — the framework's own two-slot design replacing
+  hand-written markup.
+- What remains custom is only what Spark can't express: the badge/trend/setup panels and the
+  commit file tree (mounted through `extraContentTemplate`), the code viewer page (no PO of its
+  own), the account page (upload-token management) and the home page.
+- `vanity-routes.ts` now forwards **Account only**; Repository/Commit deliberately absent (they'd
+  loop against the guards above).
+
+**Knowingly dropped with the old pages:** the commits branch filter (no generic query-parameter
+UI — D4) and the Δ-vs-previous column (cross-row computation — D3).
+
 **Possible future upstream refinements (not filed):** (a) the link-resolver seam
 (`provideSparkLinks`, designed during this work) would let grids emit the canonical URL directly
 and make this forwarding unnecessary; (b) a registered per-entity-type *detail panel* seam

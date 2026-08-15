@@ -23,7 +23,7 @@ public partial class BrowseController : ControllerBase
     [Inject] private readonly IGitHubContentService gitHubContent;
     [Inject] private readonly IConfiguration configuration;
 
-    public sealed record RepoInfo(string Owner, string Name, string FullName, bool IsPrivate, string? DefaultBranch,
+    public sealed record RepoInfo(string Id, string Owner, string Name, string FullName, bool IsPrivate, string? DefaultBranch,
         CoverageSummary? LatestCoverage, string? LatestCoverageSha, bool CanManage, string? BadgeToken, string? BaseUrl);
     public sealed record CommitInfo(string Sha, string? Branch, int? PullRequestNumber, string? Message,
         DateTimeOffset? AuthoredAt, CoverageSummary? Coverage);
@@ -420,6 +420,8 @@ public partial class BrowseController : ControllerBase
     // BaseUrl rides along so the SPA builds badge markdown against the public
     // URL rather than location.origin (dead links when copied from localhost).
     private RepoInfo ToRepoInfo(Repository r, bool canManage)
-        => new(r.OwnerLogin, r.Name, r.FullName, r.IsPrivate, r.DefaultBranch, r.LatestCoverage, r.LatestCoverageSha,
+        // Id first: the /r/{owner}/{name} route resolves it to forward into the
+        // generic Spark detail page.
+        => new(r.Id!, r.OwnerLogin, r.Name, r.FullName, r.IsPrivate, r.DefaultBranch, r.LatestCoverage, r.LatestCoverageSha,
             canManage, canManage ? r.BadgeToken : null, configuration["Coverage:BaseUrl"]?.TrimEnd('/'));
 }

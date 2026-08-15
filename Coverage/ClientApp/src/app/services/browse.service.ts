@@ -11,6 +11,8 @@ export interface CoverageSummary {
 }
 
 export interface RepoInfo {
+  /** Repository document id — the /r route forwards to the generic Spark page with it. */
+  id: string;
   owner: string;
   name: string;
   fullName: string;

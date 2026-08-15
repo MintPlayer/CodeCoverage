@@ -13,6 +13,7 @@ import { ShortShaRendererComponent } from './spark/short-sha-renderer.component'
 import { BuildSessionsRendererComponent } from './spark/build-sessions-renderer.component';
 import { RepoNameRendererComponent } from './spark/repo-name-renderer.component';
 import { DateTimeRendererComponent } from './spark/date-time-renderer.component';
+import { CoverageDeltaRendererComponent } from './spark/coverage-delta-renderer.component';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -51,6 +52,11 @@ export const appConfig: ApplicationConfig = {
         name: 'date-time',
         detailComponent: DateTimeRendererComponent,
         columnComponent: DateTimeRendererComponent,
+      },
+      {
+        name: 'coverage-delta',
+        detailComponent: CoverageDeltaRendererComponent,
+        columnComponent: CoverageDeltaRendererComponent,
       },
     ]),
     provideZonelessChangeDetection()

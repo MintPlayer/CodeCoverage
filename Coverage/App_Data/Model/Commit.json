@@ -76,6 +76,22 @@
         "rules": []
       },
       {
+        "id": "b8d4f2a1-7c39-4e60-9d18-2f5a6b0c3e77",
+        "name": "CoverageDelta",
+        "label": {
+          "en": "Δ"
+        },
+        "dataType": "number",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": true,
+        "order": 5,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": [],
+        "renderer": "coverage-delta"
+      },
+      {
         "id": "4e7b2c90-1a6d-4f83-9b25-8c0d7a3e5f14",
         "name": "Date",
         "label": {
@@ -85,7 +101,7 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": true,
-        "order": 5,
+        "order": 6,
         "isArray": false,
         "showedOn": "Query, PersistentObject",
         "rules": [],
@@ -101,7 +117,7 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 6,
+        "order": 7,
         "isArray": false,
         "showedOn": "PersistentObject",
         "rules": []
@@ -116,7 +132,7 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 6,
+        "order": 8,
         "isArray": false,
         "showedOn": "PersistentObject",
         "rules": []
@@ -131,7 +147,7 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 7,
+        "order": 9,
         "isArray": false,
         "showedOn": "PersistentObject",
         "rules": []
@@ -146,7 +162,7 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 8,
+        "order": 10,
         "isArray": false,
         "showedOn": "PersistentObject",
         "rules": []
@@ -161,7 +177,7 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 9,
+        "order": 11,
         "isArray": false,
         "showedOn": "PersistentObject",
         "rules": []
@@ -176,7 +192,7 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 10,
+        "order": 12,
         "isArray": false,
         "showedOn": "PersistentObject",
         "rules": []

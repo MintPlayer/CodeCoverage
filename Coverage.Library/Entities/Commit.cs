@@ -46,6 +46,14 @@ public class Commit
     /// <summary>Merged coverage of the latest finalized build, denormalized for lists/badges.</summary>
     public CoverageSummary? Coverage { get; set; }
 
+    /// <summary>
+    /// Line-coverage change in percentage points versus the parent commit,
+    /// stamped when a build finalizes. Null when the parent is unknown, absent
+    /// from the database, or has no coverage yet — a delta that can't be
+    /// computed is shown as nothing rather than as zero.
+    /// </summary>
+    public double? CoverageDelta { get; set; }
+
     /// <summary>The build whose coverage is shown for this commit (file tree reads its FileCoverage docs).</summary>
     public string? LatestBuildId { get; set; }
 

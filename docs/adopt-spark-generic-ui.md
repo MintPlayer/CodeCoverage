@@ -433,6 +433,38 @@ what the framework genuinely can't express. URLs are free to change.
 **Knowingly dropped with the old pages:** the commits branch filter (no generic query-parameter
 UI — D4) and the Δ-vs-previous column (cross-row computation — D3).
 
+### M10 — Cell fidelity: coverage bar, Δ, formatted dates 🟦 (✅ BUILT 2026-08-15)
+
+**Finding (user):** the generic grids still read thinner than master's table — coverage should be
+a `bs-progress` with the percentage beside it, the Δ column was gone, and dates showed as raw ISO
+strings.
+
+**As built:**
+- **Coverage bar** — already correct (`coverage-bar` column renderer draws `bs-progress` + "82.4%");
+  it only looked absent because the local database had no coverage. Seeded realistic history into
+  RavenDB to confirm. The *detail* slot draws the ring + bar + "3888/4718 lines · 1633/2595
+  branches · 194 files".
+- **Δ** — a cell can't see its neighbours, so the delta is now **domain data**: `Commit.CoverageDelta`,
+  stamped in `BuildFinalizer` against the **parent commit** (`ParentSha`, already populated from
+  push webhooks and uploads), rendered by a `coverage-delta` renderer (+green / −red / neutral
+  zero, one decimal — master's exact formatting). Unknown parent or a parent without coverage
+  leaves it null, which renders as nothing rather than a fake 0. Known limitation: a parent that
+  finalizes *later* does not retro-stamp its children.
+- **Dates** — `Commit.Date` (computed `AuthoredAt ?? FirstSeenAtUtc`, since upload-only commits
+  have no `AuthoredAt`) rendered by a `date-time` renderer → "Aug 15, 2026, 10:14:49 PM";
+  `rendererOptions.format` overrides. The commits sub-query sorts through
+  `Commits_ByRepository`, whose `AuthoredAt` field already coalesces the same way — a computed CLR
+  property is renderable but **not sortable** in RavenDB.
+
+**🐛 Upstream gap filed: [Spark#252](https://github.com/MintPlayer/MintPlayer.Spark/issues/252)** —
+ng-spark has *no value-formatting layer at all* (`AttributeValuePipe` branches only on breadcrumb /
+AsDetail / lookup / boolean, then returns the raw value; zero hits repo-wide for `DatePipe`,
+`Intl`, `LOCALE_ID`; no `format`/type-hint field on the attribute model). Proposed a
+`SPARK_VALUE_FORMATTERS` token with built-in `datetime`/`date` defaults keyed on the Spark
+language signal via `Intl` — when it ships, Coverage's `date-time` renderer becomes deletable.
+The issue also notes a one-line bug it turned up: `spark-sub-query` is missing the
+`[indeterminate]` binding the other two hosts have, so a null boolean reads as `false` there.
+
 **Possible future upstream refinements (not filed):** (a) the link-resolver seam
 (`provideSparkLinks`, designed during this work) would let grids emit the canonical URL directly
 and make this forwarding unnecessary; (b) a registered per-entity-type *detail panel* seam

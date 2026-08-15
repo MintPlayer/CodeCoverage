@@ -24,12 +24,10 @@ public partial class RepositoryActions : DefaultPersistentObjectActions<Reposito
 
     public override async Task<Expression<Func<Repository, bool>>?> GetRowFilterAsync(string action)
     {
-        // This surface is read-only: no row is writable regardless of viewer.
-        // Also keeps the per-row `can` block honest — upstream computes it from
-        // the row rule alone, without intersecting type-level rights (Spark#243).
-        if (action is "Edit" or "Delete" or "New")
-            return r => false;
-
+        // One visibility rule for every action: writes are denied at the type
+        // level (no Edit/New/Delete right in security.json), and since Spark#244
+        // the per-row `can` block intersects type-level rights, so no
+        // write-action special-casing is needed here.
         // Empty for anonymous viewers → the filter reduces to "public only".
         // Raven's .In() is the list-membership shape its provider translates
         // inside an OrElse (Contains fails: MemoryExtensions binding on .NET 10,

@@ -244,12 +244,14 @@ Two findings fixed during verification:
    binds to span-based `MemoryExtensions.Contains`, and even `List<string>.Contains` inside
    `!x || list.Contains(y)` throws `TypedParameterExpression`. Raven's `.In()` is the shape that
    both translates and (verified live) evaluates in-memory for the compiled single-row checks.
-2. **The per-row `can` block overclaims upstream** — computed from the row rule alone, never
+2. **The per-row `can` block overclaimed upstream** — computed from the row rule alone, never
    intersected with type-level rights, so anonymous viewers got `can: {edit, delete} = true` and
    Edit/Delete buttons on the generic detail page. Filed as
-   [Spark#243](https://github.com/MintPlayer/MintPlayer.Spark/issues/243); Coverage-side fix
-   (correct regardless): the row rule returns `x => false` for `"Edit"/"Delete"/"New"` — this
-   surface is read-only. Verified: `can` now `{edit: false, delete: false}`, buttons gone.
+   [Spark#243](https://github.com/MintPlayer/MintPlayer.Spark/issues/243), **fixed upstream by
+   [Spark#244](https://github.com/MintPlayer/MintPlayer.Spark/pull/244) (preview.46)** — the
+   block now intersects type-level rights server-side. Coverage's interim `x => false`
+   write-action guard was removed again with the preview.46 bump; the rules are back to a single
+   visibility expression per type.
 
 ### M3 — Attribute renderers for coverage visuals 🟦 (✅ BUILT 2026-08-15 — 🟩 gap found and filed)
 

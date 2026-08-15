@@ -18,10 +18,6 @@ public partial class CommitActions : DefaultPersistentObjectActions<Commit>
 
     public override async Task<Expression<Func<Commit, bool>>?> GetRowFilterAsync(string action)
     {
-        // Read-only surface (see RepositoryActions for the Spark#243 note).
-        if (action is "Edit" or "Delete" or "New")
-            return c => false;
-
         // Raven's .In() — see RepositoryActions.GetRowFilterAsync for why not Contains.
         var repoIds = await visibility.GetVisibleRepositoryIdsAsync();
         return c => c.Repository!.In(repoIds);

@@ -52,7 +52,8 @@
         "order": 3,
         "isArray": false,
         "showedOn": "Query, PersistentObject",
-        "rules": []
+        "rules": [],
+        "renderer": "repo-name"
       },
       {
         "id": "a5dab619-07dd-4a7a-ba95-d7966cee3f30",

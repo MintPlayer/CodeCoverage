@@ -342,6 +342,17 @@ name, the `runId.attempt` composite, and a linkable latest-commit cell.
 **Exit criteria:** the account and commit cards show master's exact column sets/labels/orders;
 short-sha renders; the remaining cells upgrade automatically as the upstream pieces ship.
 
+**✅ COMPLETE (2026-08-15):** [Spark#250](https://github.com/MintPlayer/MintPlayer.Spark/pull/250)
+shipped #241 + #245 as `@mintplayer/ng-spark 22.0.11` (implemented from the PRD posted on #241).
+Coverage adopted it: `rendererValue`/`item` verified live — the generic commit detail renders the
+Coverage bar (50.0% on the seeded JObject commit), the auto-rendered Builds sub-query shows
+**Run (`302.1`, the computed property) | Status | Sessions ("… Parsed" badges via the
+build-sessions renderer) | Coverage (bars) | Created**, and two new `item`-consuming renderers
+complete the parity cells: `repo-name` (inline "private" badge next to the name) and the upgraded
+`short-sha` (links to the vanity commit page derived from the row's FullName). Every open
+upstream issue from this adoption is now closed (#236→#237, #239→#240, #243→#244, #241+#245→#250);
+only #242 (Database.* parentId — worked around with Custom.* sources) remains open.
+
 ### Sequencing
 
 M1 → M2 strictly ordered; M3 can start in parallel with M2 (renderer registration is client-only);

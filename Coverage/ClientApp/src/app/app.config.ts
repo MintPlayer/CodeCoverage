@@ -10,6 +10,7 @@ import { CoverageBarRendererComponent } from './spark/coverage-bar-renderer.comp
 import { CoverageSparklineRendererComponent } from './spark/coverage-sparkline-renderer.component';
 import { ShortShaRendererComponent } from './spark/short-sha-renderer.component';
 import { BuildSessionsRendererComponent } from './spark/build-sessions-renderer.component';
+import { RepoNameRendererComponent } from './spark/repo-name-renderer.component';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -38,6 +39,11 @@ export const appConfig: ApplicationConfig = {
         name: 'build-sessions',
         detailComponent: BuildSessionsRendererComponent,
         columnComponent: BuildSessionsRendererComponent,
+      },
+      {
+        name: 'repo-name',
+        detailComponent: RepoNameRendererComponent,
+        columnComponent: RepoNameRendererComponent,
       },
     ]),
     provideZonelessChangeDetection()

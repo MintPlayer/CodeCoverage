@@ -4,6 +4,7 @@ import type { PersistentObject } from '@mintplayer/ng-spark/models';
 import { RepoBadgePanelComponent } from '../components/repo-badge-panel/repo-badge-panel.component';
 import { RepoTrendPanelComponent } from '../components/repo-trend-panel/repo-trend-panel.component';
 import { RepoSetupPanelComponent } from '../components/repo-setup-panel/repo-setup-panel.component';
+import { CommitFilesExtrasComponent } from './commit-files-extras.component';
 import { rowAttr } from './row-attr';
 
 /**
@@ -15,24 +16,26 @@ import { rowAttr } from './row-attr';
  */
 @Component({
   selector: 'app-po-detail-page',
-  imports: [SparkPoDetailComponent, RepoBadgePanelComponent, RepoTrendPanelComponent, RepoSetupPanelComponent],
+  imports: [SparkPoDetailComponent, RepoBadgePanelComponent, RepoTrendPanelComponent, RepoSetupPanelComponent, CommitFilesExtrasComponent],
   template: `
     <spark-po-detail [extraContentTemplate]="extras" />
 
     <ng-template #extras let-po let-entityType="entityType">
       @if (entityType.name === 'Repository') {
-        @if (ownerName(po); as repo) {
+        @if (repoOf(po); as repo) {
           <app-repo-badge-panel [owner]="repo.owner" [name]="repo.name" />
           <app-repo-trend-panel [owner]="repo.owner" [name]="repo.name" />
           <app-repo-setup-panel />
         }
+      } @else if (entityType.name === 'Commit') {
+        <app-commit-files-extras [po]="po" />
       }
     </ng-template>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export default class PoDetailPageComponent {
-  ownerName(po: PersistentObject): { owner: string; name: string } | null {
+  repoOf(po: PersistentObject): { owner: string; name: string } | null {
     const fullName = rowAttr(po, 'FullName');
     if (typeof fullName !== 'string') return null;
     const [owner, name] = fullName.split('/');

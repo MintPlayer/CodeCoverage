@@ -77,12 +77,10 @@
             @for (commit of list; track commit.sha; let i = $index) {
               <tr>
                 <td>
-                  <a [routerLink]="['/r', owner(), name(), 'c', commit.sha]" class="font-monospace">
+                  <a [routerLink]="['/r', owner(), name(), 'c', commit.sha]" class="font-monospace"
+                     [title]="commit.message || ''">
                     {{ commit.sha.substring(0, 7) }}
                   </a>
-                  @if (commit.message) {
-                    <span class="text-muted small ms-2">{{ commit.message.substring(0, 72) }}</span>
-                  }
                 </td>
                 <td>
                   @if (commit.branch) {

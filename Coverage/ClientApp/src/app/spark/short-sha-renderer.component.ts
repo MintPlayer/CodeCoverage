@@ -16,9 +16,9 @@ import { rowAttr } from './row-attr';
   template: `
     @if (shortSha(); as sha) {
       @if (commitRoute(); as route) {
-        <a [routerLink]="route" class="font-monospace small">{{ sha }}</a>
+        <a [routerLink]="route" class="font-monospace small" [title]="tooltip() ?? ''">{{ sha }}</a>
       } @else {
-        <span class="font-monospace small">{{ sha }}</span>
+        <span class="font-monospace small" [title]="tooltip() ?? ''">{{ sha }}</span>
       }
     }
   `,
@@ -34,6 +34,14 @@ export class ShortShaRendererComponent implements SparkAttributeColumnRenderer, 
   readonly shortSha = computed(() => {
     const value = this.value();
     return typeof value === 'string' && value.length > 0 ? value.substring(0, 7) : null;
+  });
+
+  /** rendererOptions.titleAttribute names a sibling attribute whose value becomes the tooltip (e.g. the commit message). */
+  readonly tooltip = computed(() => {
+    const titleAttribute = this.options()?.['titleAttribute'];
+    if (typeof titleAttribute !== 'string') return null;
+    const title = rowAttr(this.item(), titleAttribute);
+    return typeof title === 'string' && title ? title : null;
   });
 
   readonly commitRoute = computed(() => {

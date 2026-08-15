@@ -21,14 +21,14 @@
         "query": "GetRepositories",
         "referenceType": "Coverage.Entities.Repository",
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
         "id": "5ceeda88-3885-4697-9cb4-000d51c15b1b",
         "name": "Sha",
         "label": {
-          "en": "Sha"
+          "en": "Commit"
         },
         "dataType": "string",
         "isRequired": false,
@@ -37,7 +37,11 @@
         "order": 2,
         "isArray": false,
         "showedOn": "Query, PersistentObject",
-        "rules": []
+        "rules": [],
+        "renderer": "short-sha",
+        "rendererOptions": {
+          "titleAttribute": "Message"
+        }
       },
       {
         "id": "eee6f50d-e887-4c84-9697-c479730de0b0",
@@ -55,6 +59,38 @@
         "rules": []
       },
       {
+        "id": "98971124-8b79-43ed-951c-29110c46577f",
+        "name": "Coverage",
+        "label": {
+          "en": "Coverage"
+        },
+        "dataType": "AsDetail",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 4,
+        "asDetailType": "Coverage.Entities.CoverageSummary",
+        "renderer": "coverage-bar",
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "77203692-9b28-495d-913f-c8b34f038564",
+        "name": "AuthoredAt",
+        "label": {
+          "en": "Date"
+        },
+        "dataType": "datetime",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 5,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
         "id": "de160dcb-97ee-4254-aab4-4d70cc2aa5db",
         "name": "PullRequestNumber",
         "label": {
@@ -64,9 +100,9 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 4,
+        "order": 6,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -79,7 +115,7 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 5,
+        "order": 7,
         "isArray": false,
         "showedOn": "PersistentObject",
         "rules": []
@@ -94,24 +130,9 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 6,
+        "order": 8,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
-        "rules": []
-      },
-      {
-        "id": "77203692-9b28-495d-913f-c8b34f038564",
-        "name": "AuthoredAt",
-        "label": {
-          "en": "Authored At"
-        },
-        "dataType": "datetime",
-        "isRequired": false,
-        "isVisible": true,
-        "isReadOnly": false,
-        "order": 7,
-        "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -124,26 +145,9 @@
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 8,
+        "order": 9,
         "isArray": false,
         "showedOn": "PersistentObject",
-        "rules": []
-      },
-      {
-        "id": "98971124-8b79-43ed-951c-29110c46577f",
-        "name": "Coverage",
-        "label": {
-          "en": "Coverage"
-        },
-        "dataType": "AsDetail",
-        "isRequired": false,
-        "isVisible": true,
-        "isReadOnly": false,
-        "order": 9,
-        "asDetailType": "Coverage.Entities.CoverageSummary",
-        "renderer": "coverage-bar",
-        "isArray": false,
-        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {

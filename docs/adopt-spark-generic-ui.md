@@ -371,6 +371,22 @@ the generic detail its Commits card automatically. Verified live on `/po/reposit
 acme/demo): attribute card with bar/sparkline/sha-link renderers → Commits sub-query → Coverage
 badge card → interactive Coverage-over-time chart → Set up coverage uploads tabs.
 
+**Extended same day — Commit parity + polish (user goal: clicking a repo from the account page
+must land on the full master-like content, URL free to differ):**
+- The commit page's Files card (sunburst + drill-down folder list) extracted into shared
+  `CommitFilesPanelComponent`; the vanity `/r/…/c/:sha` page uses it unchanged, and the generic
+  `/po/commit/…` renders it via a `CommitFilesExtrasComponent` that resolves owner/name by
+  **loading the referenced Repository PO** (deliberately not the reference breadcrumb — see below).
+- Commits grids: message moved out of the cell into a `title` tooltip on the sha link — on the
+  vanity repo page's table and, generically, via `rendererOptions: { "titleAttribute": "Message" }`
+  on `Commit.Sha`'s `short-sha` renderer (verified live: each sha cell carries its message).
+  Commit's Query columns are now master's set: Commit (sha + tooltip) | Branch | Coverage | Date.
+- 🐛 Found upstream while wiring this:
+  [Spark#251](https://github.com/MintPlayer/MintPlayer.Spark/issues/251) — a Reference
+  attribute's resolved breadcrumb can name the wrong document (`Repositories/999001` →
+  "JObject", a repo that doesn't even exist, while the doc's own breadcrumb is "acme/demo").
+  Coverage sidesteps it by loading the referenced PO.
+
 **Possible future upstream refinement (not filed):** a registered per-entity-type *detail panel*
 seam in ng-spark (`provideSparkDetailPanels([{ type, component }])`, mirroring the attribute
 renderers) would make even the thin `poDetail` wrapper unnecessary — worth an issue if more panel

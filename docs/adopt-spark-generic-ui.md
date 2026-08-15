@@ -490,8 +490,12 @@ opposite risk: nothing stops RavenDB persisting it if a tracked `Commit` is ever
 Filed upstream as [Spark#253](https://github.com/MintPlayer/MintPlayer.Spark/issues/253):
 `[SparkIgnore]` (keep a property out of the model), `[NotPersisted]` (keep it out of the database
 without forcing a RavenDB dependency on entity libraries), and emitting get-only properties as
-`isReadOnly: true`. **Until it ships: do not run `--spark-synchronize-model` without
-re-adding those three attributes afterwards** (diff the model JSON against this branch).
+`isReadOnly: true`. The maintainer confirmed the deletion itself is a **bug, not policy** —
+synchronize is meant to add or modify only — so preserving orphaned attributes (plus a log line)
+is folded into the same issue
+([comment](https://github.com/MintPlayer/MintPlayer.Spark/issues/253#issuecomment-5304445841)).
+**Until it ships: do not run `--spark-synchronize-model` without re-adding those three attributes
+afterwards** (diff the model JSON against this branch).
 
 **Possible future upstream refinements (not filed):** (a) the link-resolver seam
 (`provideSparkLinks`, designed during this work) would let grids emit the canonical URL directly

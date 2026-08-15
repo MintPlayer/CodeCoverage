@@ -15,7 +15,10 @@ export const routes: Routes = [
       { path: 'r/:owner/:repo', loadComponent: () => import('./pages/repo/repo.component') },
       { path: 'r/:owner/:repo/c/:sha', loadComponent: () => import('./pages/commit/commit.component') },
       { path: 'r/:owner/:repo/c/:sha/f', loadComponent: () => import('./pages/file/file.component') },
-      ...sparkRoutes()
+      // poDetail override: the generic detail page plus the rich Repository
+      // panels (badge / trend graph / setup), so /po/repository/... renders
+      // the same panels as the vanity /r page.
+      ...sparkRoutes({ poDetail: () => import('./spark/po-detail-page.component') })
     ]
   }
 ];

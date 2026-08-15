@@ -195,7 +195,9 @@
         "rules": []
       }
     ],
-    "queries": []
+    "queries": [
+      "repository-commits"
+    ]
   },
   "queries": [
     {

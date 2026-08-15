@@ -353,6 +353,29 @@ complete the parity cells: `repo-name` (inline "private" badge next to the name)
 upstream issue from this adoption is now closed (#236→#237, #239→#240, #243→#244, #241+#245→#250);
 only #242 (Database.* parentId — worked around with Custom.* sources) remains open.
 
+### M7 — Rich detail-page parity on the generic surface 🟦 (✅ BUILT 2026-08-15)
+
+**Finding (user):** `/po/repository/...` rendered only the attribute card, while master's
+`/r/{owner}/{name}` has the badge, the interactive coverage-over-time graph, commits, and setup
+instructions. Requirement: both URLs render the same panels, staying on the **generic Spark
+pages** customized only through framework seams.
+
+**As built:** the repo page's panels were extracted into shared standalone components
+(`RepoTrendPanelComponent`, `RepoSetupPanelComponent`, new `RepoBadgePanelComponent`) — the vanity
+`/r` page renders identically through them — and the app now overrides
+`sparkRoutes({ poDetail })` with a thin `PoDetailPageComponent` that renders the stock
+`<spark-po-detail>` plus, via its `extraContentTemplate` slot, the three panels when the entity
+type is Repository (owner/name derived from the PO's FullName). A parent-scoped
+`Custom.Repository_Commits` query declared as `Repository.queries: ["repository-commits"]` gives
+the generic detail its Commits card automatically. Verified live on `/po/repository/…` (seeded
+acme/demo): attribute card with bar/sparkline/sha-link renderers → Commits sub-query → Coverage
+badge card → interactive Coverage-over-time chart → Set up coverage uploads tabs.
+
+**Possible future upstream refinement (not filed):** a registered per-entity-type *detail panel*
+seam in ng-spark (`provideSparkDetailPanels([{ type, component }])`, mirroring the attribute
+renderers) would make even the thin `poDetail` wrapper unnecessary — worth an issue if more panel
+types accumulate.
+
 ### Sequencing
 
 M1 → M2 strictly ordered; M3 can start in parallel with M2 (renderer registration is client-only);

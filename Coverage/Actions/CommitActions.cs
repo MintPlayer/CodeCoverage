@@ -3,7 +3,9 @@ using Coverage.Entities;
 using Coverage.Services;
 using MintPlayer.SourceGenerators.Attributes;
 using MintPlayer.Spark.Actions;
+using MintPlayer.Spark.Queries;
 using Raven.Client.Documents.Linq;
+using Raven.Client.Documents.Session;
 
 namespace Coverage.Actions;
 
@@ -15,6 +17,7 @@ namespace Coverage.Actions;
 public partial class CommitActions : DefaultPersistentObjectActions<Commit>
 {
     [Inject] private readonly ISparkVisibility visibility;
+    [Inject] private readonly IAsyncDocumentSession session;
 
     public override async Task<Expression<Func<Commit, bool>>?> GetRowFilterAsync(string action)
     {
@@ -24,4 +27,15 @@ public partial class CommitActions : DefaultPersistentObjectActions<Commit>
     }
 
     public override IReadOnlyCollection<string>? GetDefaultIncludes() => [nameof(Commit.Repository)];
+
+    /// <summary>
+    /// Custom query: commits of a repository, parent-scoped. Source:
+    /// "Custom.Repository_Commits". A Custom.* source because Database.*
+    /// queries drop parentId upstream (Spark#242).
+    /// </summary>
+    public IRavenQueryable<Commit> Repository_Commits(CustomQueryArgs args)
+    {
+        args.EnsureParent("Repository");
+        return session.Query<Commit>().Where(c => c.Repository == args.Parent!.Id);
+    }
 }

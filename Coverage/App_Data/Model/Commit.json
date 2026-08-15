@@ -181,6 +181,25 @@
       "useProjection": false,
       "entityType": "Commit",
       "isStreamingQuery": false
+    },
+    {
+      "id": "6c1f8a52-9d3e-4b70-8e21-5a7d4c9b0e63",
+      "name": "Repository_Commits",
+      "description": {
+        "en": "Commits"
+      },
+      "source": "Custom.Repository_Commits",
+      "sortColumns": [
+        {
+          "property": "AuthoredAt",
+          "direction": "desc"
+        }
+      ],
+      "renderMode": "Pagination",
+      "useProjection": false,
+      "entityType": "Commit",
+      "isStreamingQuery": false,
+      "alias": "repository-commits"
     }
   ]
 }

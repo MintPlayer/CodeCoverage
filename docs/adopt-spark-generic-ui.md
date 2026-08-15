@@ -477,6 +477,22 @@ language signal via `Intl` — when it ships, Coverage's `date-time` renderer be
 The issue also notes a one-line bug it turned up: `spark-sub-query` is missing the
 `[indeterminate]` binding the other two hosts have, so a null boolean reads as `false` there.
 
+### ⚠️ Hazard: `--spark-synchronize-model` will delete our computed attributes
+
+Three attributes in `App_Data/Model/*.json` are **hand-added and unreproducible by synchronize**:
+`Build.Run`, `Commit.Date` (both get-only computed CLR properties) and `Commit.CoverageDelta`
+(transient, filled per request by the commits query). `ModelSynchronizer` only emits properties
+that are `CanRead && CanWrite`, and it **rebuilds the attribute array from CLR properties on every
+run** — so the first two are silently deleted the next time anyone runs the Synchronize profile,
+and the grids lose the Run/Date columns. `CoverageDelta` survives (it has a setter) but is at the
+opposite risk: nothing stops RavenDB persisting it if a tracked `Commit` is ever saved.
+
+Filed upstream as [Spark#253](https://github.com/MintPlayer/MintPlayer.Spark/issues/253):
+`[SparkIgnore]` (keep a property out of the model), `[NotPersisted]` (keep it out of the database
+without forcing a RavenDB dependency on entity libraries), and emitting get-only properties as
+`isReadOnly: true`. **Until it ships: do not run `--spark-synchronize-model` without
+re-adding those three attributes afterwards** (diff the model JSON against this branch).
+
 **Possible future upstream refinements (not filed):** (a) the link-resolver seam
 (`provideSparkLinks`, designed during this work) would let grids emit the canonical URL directly
 and make this forwarding unnecessary; (b) a registered per-entity-type *detail panel* seam

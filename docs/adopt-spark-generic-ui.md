@@ -444,12 +444,24 @@ strings.
   it only looked absent because the local database had no coverage. Seeded realistic history into
   RavenDB to confirm. The *detail* slot draws the ring + bar + "3888/4718 lines · 1633/2595
   branches · 194 files".
-- **Δ** — a cell can't see its neighbours, so the delta is now **domain data**: `Commit.CoverageDelta`,
-  stamped in `BuildFinalizer` against the **parent commit** (`ParentSha`, already populated from
-  push webhooks and uploads), rendered by a `coverage-delta` renderer (+green / −red / neutral
-  zero, one decimal — master's exact formatting). Unknown parent or a parent without coverage
-  leaves it null, which renders as nothing rather than a fake 0. Known limitation: a parent that
-  finalizes *later* does not retro-stamp its children.
+- **Δ** — a cell can't see its neighbours, so the delta is computed **server-side in the query**:
+  `CommitActions.Repository_Commits` materializes the repository's commits in index order
+  (`AuthoredAt` coalesced with `FirstSeenAtUtc`), walks the sequence pairwise, and fills a
+  transient `Commit.CoverageDelta`; a `coverage-delta` renderer draws it (+green / −red / neutral
+  zero, one decimal — master's exact formatting). No coverage on either side of a pair → no delta,
+  rather than a fake 0. Costs nothing extra: Spark materializes every custom query in full before
+  paging anyway. Row security is unaffected (element type stays `Commit`, so the row filter still
+  composes). The value is `showedOn: "Query"` only — a list-relative number is meaningless on a
+  detail page.
+
+  ⚠️ **Rejected: stamping a stored delta at finalize time against `ParentSha`** (built first, then
+  reverted). `ParentSha` is a *documented live defect* — the push webhook writes `evt.Before` (the
+  previous ref tip) unconditionally while uploads write the PR base with `??=`, so a later push
+  clobbers a PR base (`roadmap-2026-08.md` §7 T2.1: "a trap armed for the first consumer"). A
+  delta on top of it would have been that first consumer. It also needs a parent *document*, which
+  usually doesn't exist (a five-commit push creates one commit — the head), and it answers a
+  different question than the deleted UI did (graph-relative vs list-relative). A commit-graph
+  delta belongs to T2.1 patch coverage, with its own explicit `BaseSha`.
 - **Dates** — `Commit.Date` (computed `AuthoredAt ?? FirstSeenAtUtc`, since upload-only commits
   have no `AuthoredAt`) rendered by a `date-time` renderer → "Aug 15, 2026, 10:14:49 PM";
   `rendererOptions.format` overrides. The commits sub-query sorts through

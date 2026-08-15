@@ -47,10 +47,19 @@ public class Commit
     public CoverageSummary? Coverage { get; set; }
 
     /// <summary>
-    /// Line-coverage change in percentage points versus the parent commit,
-    /// stamped when a build finalizes. Null when the parent is unknown, absent
-    /// from the database, or has no coverage yet — a delta that can't be
-    /// computed is shown as nothing rather than as zero.
+    /// Line-coverage change in percentage points versus the chronologically
+    /// previous commit that has coverage. Computed per request by the commits
+    /// query over the whole ordered sequence and never persisted — a
+    /// list-relative number is meaningless outside the list that produced it.
+    /// (A commit-graph delta would need an explicit base sha: ParentSha means
+    /// two different things depending on which writer set it — see
+    /// docs/roadmap-2026-08.md §7, T2.1.)
+    /// <para>
+    /// Only the commits query writes this, onto no-tracking entities, so it
+    /// never reaches the database. Deliberately not marked [IgnoreProperty]:
+    /// this library has no RavenDB dependency and keeping it that way is worth
+    /// more than the attribute.
+    /// </para>
     /// </summary>
     public double? CoverageDelta { get; set; }
 

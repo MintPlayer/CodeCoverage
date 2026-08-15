@@ -33,8 +33,6 @@ public static class BuildFinalizer
                 if (commit.Repository is not null)
                 {
                     var repository = await session.LoadAsync<Repository>(commit.Repository, cancellationToken);
-
-                    await StampCoverageDelta(session, commit, repository, cancellationToken);
                     // Repo-level coverage tracks the default branch; a repo that
                     // never had data accepts any branch rather than showing nothing.
                     if (repository is not null
@@ -50,34 +48,6 @@ public static class BuildFinalizer
             }
         }
     }
-
-    /// <summary>
-    /// Records the commit's coverage change versus its parent. Both sides must
-    /// be known — an unseen parent, or one whose own build hasn't finalized
-    /// yet, leaves the delta null rather than implying a change from zero.
-    /// (A parent that finalizes later does not retro-stamp its children; those
-    /// keep showing no delta until their own next build.)
-    /// </summary>
-    private static async Task StampCoverageDelta(
-        IAsyncDocumentSession session, Commit commit, Repository? repository, CancellationToken cancellationToken)
-    {
-        commit.CoverageDelta = null;
-        if (repository is null || string.IsNullOrEmpty(commit.ParentSha))
-            return;
-
-        var parent = await session.LoadAsync<Commit>(
-            Commit.DocumentId(repository.GitHubId, commit.ParentSha), cancellationToken);
-
-        var current = Percent(commit.Coverage);
-        var previous = Percent(parent?.Coverage);
-        if (current is not null && previous is not null)
-            commit.CoverageDelta = current - previous;
-    }
-
-    private static double? Percent(CoverageSummary? summary)
-        => summary is { LinesCoverable: > 0 }
-            ? summary.LinesCovered * 100d / summary.LinesCoverable
-            : null;
 
     private static async Task MaterializeTreeSummary(IAsyncDocumentSession session, string buildId, CancellationToken cancellationToken)
     {

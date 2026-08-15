@@ -87,7 +87,7 @@
         "isReadOnly": true,
         "order": 5,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "Query",
         "rules": [],
         "renderer": "coverage-delta"
       },
@@ -227,7 +227,7 @@
       "source": "Custom.Repository_Commits",
       "sortColumns": [
         {
-          "property": "AuthoredAt",
+          "property": "Date",
           "direction": "desc"
         }
       ],

@@ -387,10 +387,32 @@ must land on the full master-like content, URL free to differ):**
   "JObject", a repo that doesn't even exist, while the doc's own breadcrumb is "acme/demo").
   Coverage sidesteps it by loading the referenced PO.
 
-**Possible future upstream refinement (not filed):** a registered per-entity-type *detail panel*
-seam in ng-spark (`provideSparkDetailPanels([{ type, component }])`, mirroring the attribute
-renderers) would make even the thin `poDetail` wrapper unnecessary — worth an issue if more panel
-types accumulate.
+### M8 — Canonical-route forwarding from the generic grids 🟦 (✅ BUILT 2026-08-15)
+
+**Finding (user):** clicking a repository in the account grid still landed on
+`/po/repository/…`, which — even with M7's panels — is not the product page, and Spark has no
+link-resolver seam to point grid rows elsewhere (D2's consequence).
+
+**As built (downstream-only, no upstream dependency):** the `poDetail` override now *forwards*.
+`spark/vanity-routes.ts` maps the entity types that own a purpose-built page to their canonical
+route — Repository → `/r/{owner}/{name}`, Commit → `/r/{owner}/{name}/c/{sha}` (repository
+resolved by **loading the referenced PO**, not the breadcrumb — Spark#251), Account → `/a/{login}`
+— and `PoDetailPageComponent` navigates there with `replaceUrl: true` (so Back returns to the
+grid). Types with no vanity page (Build) and any object whose canonical route can't be derived
+fall through to the stock generic detail, still enriched by M7's `extraContentTemplate` panels.
+Verified live: clicking CodeCoverage in `/a/MintPlayer` lands on `/r/MintPlayer/CodeCoverage`;
+`/po/commit/…` lands on `/r/acme/demo/c/abc1234…` with the coverage ring and Files panel.
+
+**Note on the "missing graph":** the local database has no coverage history for the MintPlayer
+repos, so no trend chart renders there — on **either** page (the local vanity page shows the same
+empty trend). On a repo with data (`/r/acme/demo`, 50%) the full chart renders. The difference vs
+production is data, not code.
+
+**Possible future upstream refinements (not filed):** (a) the link-resolver seam
+(`provideSparkLinks`, designed during this work) would let grids emit the canonical URL directly
+and make this forwarding unnecessary; (b) a registered per-entity-type *detail panel* seam
+(`provideSparkDetailPanels([{ type, component }])`, mirroring the attribute renderers) would make
+even the thin `poDetail` wrapper unnecessary.
 
 ### Sequencing
 

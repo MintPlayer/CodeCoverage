@@ -1,0 +1,291 @@
+# Adopting ng-spark's generic UI — PRD & plan
+
+Status: **proposed**
+
+Every ClientApp page today is hand-written: it fetches from the bespoke `/api` controllers and
+renders its own `<bs-table>`, instead of reusing the generic renderer components shipped in
+`@mintplayer/ng-spark`. This document records what the library actually ships, classifies every
+page (drop entirely / recompose from library parts / keep custom), names the blockers that make
+"just drop the page" impossible today, and lays out the phased plan — including the upstream Spark
+work required first.
+
+> Companion documents: [PRD.md](PRD.md) §2 (hard architectural rule: generic code goes upstream),
+> [PLAN.md](PLAN.md), and in MintPlayer.Spark: `docs/PRD-CoverageHandoff.md` (which already
+> observed that `sparkRoutes()` is "mounted but unreachable").
+>
+> Research basis: a three-agent investigation (2026-08-14) — ng-spark library API inventory,
+> Coverage backend Spark-model/controller audit, and a MintPlayer.Spark documentation survey —
+> plus a hand-read census of all five pages. Claims carry `file:line` evidence.
+
+---
+
+## 1. The finding
+
+The app is Spark-native in plumbing only. `app.routes.ts:11,18` spreads `sparkAuthRoutes()` and
+`sparkRoutes()`, `app.ts` mounts `<spark-retry-action-modal>`, and pages import only
+`SparkLanguageService`, the `t`/`resolveTranslation` pipes, and `SparkAuthService`. **No page uses
+`spark-query-list`, `spark-po-detail`, `spark-sub-query`, or `spark-po-form`. No page calls
+`SparkService` for data.** All data flows through hand-written `[ApiController]`s
+(`Coverage/Controllers/*.cs`) over raw `IAsyncDocumentSession`.
+
+That is not an accident. `Program.cs:36-44` deliberately runs Spark authorization in **DenyAll**
+mode (no `security.json` exists in the repo):
+
+```csharp
+// Deliberately DenyAll (no security.json): Spark's generic data endpoints are
+// fully denied. All data access goes through our own /api controllers, which
+// mirror the viewer's GitHub permissions. This also sidesteps the open
+// R4-H1 finding (row-level auth missing on query-execute/stream endpoints.
+```
+
+So the generic `/query/:queryId` and `/po/:type/...` routes are routable but return denied for
+every entity, and nothing links to them. **Any adoption of the generic UI is blocked on
+authorization first, rendering second.** The rest of this document is structured around that fact.
+
+---
+
+## 2. What `@mintplayer/ng-spark` ships (verified against 22.0.8)
+
+Full inventory in the research; the parts that matter for this plan, by composability tier:
+
+### Tier A — drop-in anywhere (plain inputs, no route dependency)
+
+| Component | Inputs | What it renders |
+|---|---|---|
+| `spark-sub-query` | `queryId`, `parentId`, `parentType` (all required) | `bs-card` + server-fetched sortable `bs-datatable` of a query filtered by parent; honors `renderMode`, custom cell renderers; first cell links to `/po/:type/:id`. No action bar/search/create. |
+| `spark-po-form` | `entityType`, `[(formData)]`, `validationErrors`, `showButtons`, `isSaving`, `parentId?`, `parentType?` | Full create/edit form: tabs/groups/columnSpan, per-datatype editors, Reference/Lookup pickers, AsDetail inline/modal, drag-reorder, inline validation. Bridge with `nestedPoToDict`/`dictToNestedPo`. |
+| `spark-reference-picker`, `spark-lookup-picker` | value/options | standalone pickers |
+| 23 pipes (`attributeValue`, `referenceLinkRoute`, `asDetailColumns`, …) | — | per-cell/field formatting reusable from any hand-written template |
+
+### Tier B — route-driven generic pages (already mounted via `sparkRoutes()`)
+
+`spark-query-list`, `spark-po-detail`, `spark-po-create`, `spark-po-edit` read `:queryId`/`:type`/
+`:id` from `ActivatedRoute` — **they take no id inputs**, so they can't be embedded in a bespoke
+page. Customization: `showCustomActions`, `extraActionsTemplate`, and (detail only)
+`extraContentTemplate` (receives `$implicit: PersistentObject` + `entityType`).
+`spark-po-detail` auto-renders one `spark-sub-query` per entry in `EntityType.queries[]`.
+`sparkRoutes(SparkRouteConfig)` can swap each `loadComponent` (shipped but undocumented upstream).
+
+### Tier C — the extension seam: attribute renderers
+
+`provideSparkAttributeRenderers([{ name, detailComponent, columnComponent, editComponent? }])`
+plus `renderer`/`rendererOptions` on the attribute in the model JSON injects a custom cell/field
+component into **all four generic hosts** (query list, detail, sub-query, form) via
+`NgComponentOutlet`. This — not a hand-written page — is the intended way to get custom visuals
+like a coverage bar into a generic grid.
+
+### Not shipped (would stay ours or go upstream)
+
+No standalone action bar, no breadcrumb-trail component, no nav-menu component, and — critically —
+**no way to customize the row links** the grids emit: they hardcode
+`['/po', entityType.alias || entityType.id, row.id]` (query-list, sub-query, and the
+`referenceLinkRoute` pipe alike).
+
+---
+
+## 3. Page census
+
+Routes from `Coverage/ClientApp/src/app/app.routes.ts:6-21`. All five pages follow the same
+pattern: subscribe to route params, `await` a `BrowseService`/`AccountsService`/`TokensService`
+call (plain `HttpClient` → `/api/...`), render manually.
+
+| Page | Route | Classification | Spark-shaped parts rendered by hand |
+|---|---|---|---|
+| home | `/home` | **fully custom** | none — the accounts list is GitHub-installation data (`/api/me/accounts`: installed badge, repo count, aggregate coverage, reauth banner), not a Spark query |
+| account | `/a/:login` | **partially generic** | Card 1 (`account.component.html:10-47`): a `<bs-table>` of the account's repositories = the `Account → GetRepositories` relation rendered by hand. Card 2 (upload tokens) is fully custom — `ApiToken` is deliberately not in the Spark model |
+| repo | `/r/:owner/:repo` | **partially generic** | Commits card (`repo.component.html:79-121`): `<bs-table>` = `Repository → GetCommits` by hand, plus branch filter, Δ-vs-previous column, coverage bar. Badge management, trend chart, CI-examples tabs are custom |
+| commit | `/r/:owner/:repo/c/:sha` | **partially generic** | Builds table (`commit.component.html:35-73`): `Commit → GetBuilds` with `Sessions` AsDetail by hand — structurally the closest match to `spark-sub-query`. Folder tree + sunburst + breadcrumb are custom (backed by `BuildTreeSummary`/`FileCoverage`, deliberately outside the model) |
+| file | `/r/…/c/:sha/f` | **fully custom** | none — line-by-line `bs-code-snippet` viewer over `FileCoverage`, not modeled in Spark |
+
+**Pages droppable entirely today: none.** And the question is subtler than "drop the page": the
+generic equivalents (`/po/Account/:id`, `/query/GetRepositories`) are *already mounted* — they are
+just denied, unlinked, and would render the wrong thing (see §4). The realistic wins are
+(a) making the generic routes actually work as a secondary/admin surface, and (b) recomposing the
+three hand-rolled query tables onto `spark-sub-query` + attribute renderers.
+
+---
+
+## 4. Why nothing can be dropped today — the gap list
+
+1. **DenyAll authorization (the hard blocker — smaller than first thought).** Every Spark data
+   component fetches through `SparkService` → `/spark/queries/...` / `/spark/po/...`, which deny
+   everything (`Program.cs:36-44`). *Correction after the follow-up Spark investigation
+   (2026-08-14):* the `Program.cs` comment cites "R4-H1", but per Spark's
+   `docs/prd/PRD-SecurityAudit.md` that identifier is fabricated and the real findings (H-2/H-2a)
+   were **resolved in Spark M5 (2026-08-09)** — row-level security ships in Spark core today as
+   `IRowSecurity` + `DefaultPersistentObjectActions<T>.IsAllowedAsync(action, entity)`, enforced
+   on every read path and on Edit/Delete. WebhooksDemo's `GitHubProjectActions` already implements
+   almost exactly Coverage's rule (GitHub org membership). What genuinely remains upstream is
+   tracked in [Spark#236](https://github.com/MintPlayer/MintPlayer.Spark/issues/236): a
+   projection-path batching bug, expression pushdown (today's filter is post-materialization,
+   O(collection) — a real problem for Coverage's commit/build volumes), create-side WITH CHECK,
+   custom-action row gating, per-viewer attribute redaction, and per-row permissions for the UI.
+2. **Anonymous read.** Public-repo browsing works logged-out (`BrowseController` has no
+   `[Authorize]`). Expressible today: grant `Query`/`Read` to the `Everyone` group in
+   `security.json` and let the row filter narrow to public rows (Spark#236 open question 2 asks
+   to bless and document exactly this pattern).
+3. **Secret leakage in the model.** `Repository.BadgeToken` is `isVisible: true`,
+   `showedOn: "Query, PersistentObject"` (`App_Data/Model/Repository.json:133-146`). Harmless
+   while DenyAll; the moment queries open, every viewer of a repo row sees its badge token.
+   Same review needed for `Account.InstallationId`. Visibility must become per-viewer (the
+   `canManage` notion), which today Spark's static model can't express — `IsVisible` is
+   outbound-advisory only (the value still ships in JSON). Per-viewer attribute redaction is
+   G4 of [Spark#236](https://github.com/MintPlayer/MintPlayer.Spark/issues/236).
+4. **Row links are hardcoded to `/po/...`.** Coverage's canonical URLs are `/a/:login`,
+   `/r/:owner/:repo`, `/r/…/c/:sha`. A `spark-sub-query` of repositories would link its rows to
+   `/po/Repository/:id`. Either those generic routes become acceptable secondary destinations, or
+   ng-spark needs a link-mapping seam (upstream).
+5. **Empty `queries[]` on every entity type — and parent scoping doesn't exist upstream.**
+   `App_Data/Model/*.json` declare `persistentObject.queries: []` everywhere, so no parent→child
+   relation is modeled: a generic Account detail page would show no repositories subquery.
+   Worse, the follow-up investigation found that for `Database.*` queries the server **validates
+   `parentId`/`parentType` and then ignores them** (`Execute.cs:97-109` → `QueryExecutor.cs:36-44`)
+   — only `Custom.*` sources can scope to a parent, so a `spark-sub-query` over a `Database.*`
+   query would return the whole collection. Flagged in Spark#236 as a related finding needing its
+   own upstream issue before Coverage's M4 recomposition can use model-declared relations.
+   *Status after Spark PR #237 (2026-08-15): still unfixed, and the follow-up issue the PR plan
+   promised was never filed — this is currently tracked nowhere upstream.* Interim option:
+   declare the sub-queries as `Custom.*` sources reading `args.Parent`.
+6. **Custom columns exceed the generic cell model.**
+   - *Coverage bar* (`app-coverage-bar` over a `CoverageSummary` AsDetail): expressible today as a
+     registered `columnComponent`/`detailComponent` attribute renderer — this one is pure win.
+   - *Sparkline* (account page): data comes from a separate batched endpoint
+     (`/api/browse/accounts/{login}/sparklines`), not from the row. Needs a server-computed
+     attribute (index-stored recent-percentages array) + a column renderer, or stays custom.
+   - *Δ vs previous commit* (repo page): cross-row computation (`repo.component.ts:235-242`);
+     either an index-computed attribute on Commit or it stays custom.
+   - *Branch filter* (repo page): a parameterized query filter — no generic UI exists for
+     query parameters beyond search.
+7. **Version skew.** Backend is `MintPlayer.Spark 10.0.0-preview.43`; ClientApp pins
+   `ng-spark ^22.0.8` / `ng-spark-auth ^22.1.0`. Any upstream additions land in new previews of
+   both — adoption milestones must ride the usual upgrade train.
+
+---
+
+## 5. Target architecture
+
+- **Vanity pages stay.** `/a/:login`, `/r/...`, commit and file pages keep their routes, layout,
+  and custom panels — but their query tables become `spark-sub-query` instances (or a thin
+  wrapper), and coverage rendering becomes a registered attribute renderer used by *both* the
+  custom pages and the generic ones.
+- **Generic routes become real.** `/po/Account/:id`, `/po/Repository/:id`, `/query/GetAccounts`
+  etc. go from denied-and-unlinked to a working, row-secured secondary surface (useful
+  immediately as an admin/debug view, and as the free UI for any future entity — that's the point
+  of the framework).
+- **The model becomes honest.** Related queries declared, secret attributes hidden per-viewer,
+  computed columns (sparkline data, Δ) pushed into the model/index where cheap.
+- **`/api/browse` shrinks but does not disappear.** Tree/hierarchy/file/source endpoints (backed
+  by `FileCoverage`/`BuildTreeSummary`), `/api/me`, tokens, badges stay custom — they are not
+  query-shaped.
+
+---
+
+## 6. Plan
+
+Legend: 🟩 MintPlayer.Spark PR · 🟦 Coverage repo. One PR per repo per milestone
+([PLAN.md](PLAN.md) conventions).
+
+### M1 — Complete row-level security in Spark 🟩 (✅ DELIVERED 2026-08-14, Spark PR #237)
+
+**Goal:** superseded by the upstream PRD filed as
+[Spark#236](https://github.com/MintPlayer/MintPlayer.Spark/issues/236) (2026-08-14), implemented
+by [Spark#237](https://github.com/MintPlayer/MintPlayer.Spark/pull/237) (squash `e251208`,
+closes #236). All six gaps shipped: batched projection reload (G0), `GetRowFilter` expression
+pushdown with the derivation rule + projection fallback (G1), create-side WITH CHECK with
+`SparkSystemContext` for module principals (G2), row-gated custom actions via `Submitted*` (G3),
+`GetProtectedAttributesAsync` redaction incl. AsDetail read-side + top-level write shielding (G4),
+and the per-row `can` block consumed by `spark-po-detail` (G5) — plus a security sweep binding
+document ids to the authorized type. **Carriers: `MintPlayer.Spark 10.0.0-preview.44` /
+`@mintplayer/ng-spark 22.0.9`** (preview.43 has none of it).
+
+**Not delivered upstream (still open):** #236-M6 (Raven Skip/Take pushdown — perf only), and the
+**`parentId` ignored for `Database.*` queries** finding — verified still live on merged master
+and *no follow-up issue was filed* despite the PR plan saying there would be. That one blocks M4
+below.
+
+### M2 — Coverage adopts the security seam 🟦
+
+**Goal:** open `/spark` reads safely.
+
+0. Upgrade pins first: `MintPlayer.Spark.* 10.0.0-preview.44`, `@mintplayer/ng-spark 22.0.9`.
+   Breaking changes checked: Coverage has no Spark custom actions (the `Submitted*` rename
+   doesn't bite) and uses no lookup references (the new `Read/LookupReferences` requirement
+   doesn't bite).
+1. Add a `security.json` granting `QueryRead` on the four entity types to `Everyone`, and
+   implement `Actions` classes for Account/Repository/Commit/Build over the existing
+   `GitHubAccessService` visibility cache (same semantics as `ResolveVisibleRepository`;
+   WebhooksDemo's `GitHubProjectActions` is the worked example, and `GetRowFilter` keeps it
+   O(page) instead of O(collection) — note the expression's fields must be index-queryable).
+   ⚠️ Known trap from Fleet's CI: an ownership filter also runs as WITH CHECK on create, so an
+   authenticated machine principal with no user id gets 403 — return `null` (unrestricted) for
+   authenticated-but-no-user-id and reserve deny for anonymous.
+2. Hide `BadgeToken` (and review `InstallationId`) for non-managers via
+   `GetProtectedAttributesAsync`.
+3. Declare the related queries in the model (`Account.queries: ["GetRepositories"]`,
+   `Repository.queries: ["GetCommits"]`, `Commit.queries: ["GetBuilds"]`) and verify
+   parent-filtered `executeQuery` returns the right rows; run the model synchronize.
+4. Writes stay denied — the generic New/Edit/Delete buttons must not appear (permissions endpoint
+   returns read-only).
+
+**Exit criteria:** `/query/GetRepositories` and `/po/Repository/:id` render real, correctly
+filtered data for anonymous, member, and stranger viewers.
+
+### M3 — Attribute renderers for coverage visuals 🟦 (🟩 only if a gap shows)
+
+**Goal:** one `coverage-bar` renderer (column + detail) registered via
+`provideSparkAttributeRenderers`, driven by `renderer: "coverage-bar"` on the `LatestCoverage` /
+`Coverage` AsDetail attributes; reused by generic pages and (M4) the custom pages.
+
+**Exit criteria:** the generic repository list shows the same coverage bars as `/a/:login`.
+
+### M4 — Recompose the hand-rolled tables 🟦
+
+**Goal:** replace hand-written query tables with `spark-sub-query` where feature-complete
+(scope fixed by D2–D4):
+
+1. Account page card 1 → `<spark-sub-query queryId="GetRepositories" [parentId]=... parentType="Account" />`,
+   with the sparkline preserved as a `FullName` column renderer (D3). Parent scoping needs a
+   parent-aware query source until the upstream `Database.*` parentId bug is fixed (§4.5).
+2. Commit page builds table → `GetBuilds` sub-query (Sessions renders as the AsDetail sub-table),
+   same parent-scoping note.
+3. Repo page commits table: **out of scope** (D4) — keeps the hand-written table.
+
+**Exit criteria:** the account repositories card and the commit builds table are rendered by
+`spark-sub-query`; `BrowseController` endpoints that became redundant are deleted (endpoints
+still consumed elsewhere — e.g. the repos list feeding the token-scope dropdown — stay).
+
+### M5 (optional) — Row-link seam in ng-spark 🟩
+
+**Goal:** if D2 lands on "grids must link to vanity URLs": upstream a link-resolver injection
+token (default: current `/po/...` behavior) consumed by query-list, sub-query, and
+`referenceLinkRoute`. Unlocks dropping more of the custom link plumbing.
+
+### Sequencing
+
+M1 → M2 strictly ordered; M3 can start in parallel with M2 (renderer registration is client-only);
+M4 after M2+M3; M5 independent, pulled forward only if D2 demands it. Tests batched per repo at
+the end of each milestone per the global test policy.
+
+---
+
+## 7. Explicitly rejected
+
+- **Client-side data-source abstraction in ng-spark** (letting `spark-sub-query` fetch from
+  `/api/browse` instead of `/spark`): duplicates the query pipeline client-side, leaves DenyAll
+  unsolved for the generic pages, and violates "different layer, different abstraction". The
+  server-side security seam is the deep fix.
+- **Adopting `/po/...` as the canonical URLs**: breaks the shareable vanity URLs
+  (`coverage.mintplayer.com/a/PieterjanDeClippel`) and README badge links for zero user benefit.
+- **Modeling `FileCoverage`/`BuildTreeSummary`/`ApiToken` into Spark** just to genericize the
+  file/tree/token views: these are deliberately outside the model (per-entity XML docs); their
+  UIs are genuinely bespoke (code viewer, sunburst, token-reveal flow).
+
+## 8. Decisions
+
+| # | Decision | Resolution (implementation defaults, 2026-08-15 — each cheap to reverse) |
+|---|---|---|
+| D1 | ~~Shape of the upstream row-security hook~~ | Moved to [Spark#236](https://github.com/MintPlayer/MintPlayer.Spark/issues/236), shipped in PR #237: both hooks, with derivation (expression is source of truth when present; predicate refines) |
+| D2 | Row links from generic grids | **Accept `/po/...` links inside generic grids for now.** Vanity URLs stay the primary navigation; the upstream link-resolver seam (M5) remains optional future work |
+| D3 | Sparkline + Δ columns | **Sparkline survives** via a column renderer on `FullName` that batch-fetches `/api/browse/accounts/{login}/sparklines` (renderers are Angular components — they can inject services). **Δ stays hand-written** (cross-row computation, see D4) |
+| D4 | Branch filter on commits | **Keep hand-written** — the repo page's commits table is out of M4 scope (branch filter + Δ have no generic home) |
+| D5 | Generic surface user-facing or admin-only? | **User-facing**: `spark-sub-query` grids become part of the product pages; `/po`/`/query` routes are a legitimate secondary surface now that rows are secured |

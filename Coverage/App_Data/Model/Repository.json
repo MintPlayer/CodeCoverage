@@ -156,6 +156,7 @@
         "isReadOnly": false,
         "order": 10,
         "asDetailType": "Coverage.Entities.CoverageSummary",
+        "renderer": "coverage-bar",
         "isArray": false,
         "showedOn": "Query, PersistentObject",
         "rules": []

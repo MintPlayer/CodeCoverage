@@ -239,7 +239,21 @@ As built:
 `/po/Repository/:id` render real, correctly filtered data for anonymous, member, and stranger
 viewers; `BadgeToken` comes back nulled + invisible for non-managers.
 
-### M3 — Attribute renderers for coverage visuals 🟦 (🟩 only if a gap shows)
+### M3 — Attribute renderers for coverage visuals 🟦 (✅ BUILT 2026-08-15 — 🟩 gap found and filed)
+
+**As built:** `CoverageBarRendererComponent` (one class, column + detail slots) registered as
+`coverage-bar` in `app.config.ts`; `renderer: "coverage-bar"` declared on the three
+`CoverageSummary` AsDetail attributes (`Repository.LatestCoverage`, `Commit.Coverage`,
+`Build.Coverage`). ⚠️ The upstream gap this milestone anticipated materialized: **renderers on
+AsDetail attributes receive `undefined`** (`EntityMapper.cs:276` nulls the flat value; every
+ng-spark host passes only `itemAttr?.value`) — filed as
+[Spark#241](https://github.com/MintPlayer/MintPlayer.Spark/issues/241) proposing a value fallback
+to the nested PO. The renderer already handles that shape, so Coverage lights up with a package
+bump and zero code changes when #241 ships. Until then generic hosts show the bar's empty state
+(the column was blank before, too). The `parentId` scoping bug was also finally filed upstream as
+[Spark#242](https://github.com/MintPlayer/MintPlayer.Spark/issues/242).
+
+Original goal:
 
 **Goal:** one `coverage-bar` renderer (column + detail) registered via
 `provideSparkAttributeRenderers`, driven by `renderer: "coverage-bar"` on the `LatestCoverage` /

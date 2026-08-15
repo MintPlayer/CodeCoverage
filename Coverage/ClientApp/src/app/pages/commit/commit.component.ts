@@ -1,9 +1,10 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { CommonModule, DatePipe } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { BsCardComponent, BsCardHeaderComponent } from '@mintplayer/ng-bootstrap/card';
 import { BsTableComponent } from '@mintplayer/ng-bootstrap/table';
+import { SparkSubQueryComponent } from '@mintplayer/ng-spark/po-detail';
 import { BsBadgeComponent } from '@mintplayer/ng-bootstrap/badge';
 import { BsSpinnerComponent } from '@mintplayer/ng-bootstrap/spinner';
 import { BsAlertComponent } from '@mintplayer/ng-bootstrap/alert';
@@ -16,7 +17,7 @@ import { CoverageRingComponent } from '../../components/coverage-ring/coverage-r
 
 @Component({
   selector: 'app-commit',
-  imports: [CommonModule, DatePipe, RouterModule, BsCardComponent, BsCardHeaderComponent, BsTableComponent, BsBadgeComponent, BsSpinnerComponent, BsAlertComponent, BsBreadcrumbComponent, BsBreadcrumbItemComponent, BsHierarchyChartComponent, CoverageBarComponent, CoverageRingComponent],
+  imports: [CommonModule, RouterModule, BsCardComponent, BsCardHeaderComponent, BsTableComponent, BsBadgeComponent, BsSpinnerComponent, BsAlertComponent, BsBreadcrumbComponent, BsBreadcrumbItemComponent, BsHierarchyChartComponent, SparkSubQueryComponent, CoverageBarComponent, CoverageRingComponent],
   templateUrl: './commit.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

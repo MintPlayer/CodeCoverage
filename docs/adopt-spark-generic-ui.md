@@ -261,10 +261,23 @@ Original goal:
 
 **Exit criteria:** the generic repository list shows the same coverage bars as `/a/:login`.
 
-### M4 — Recompose the hand-rolled tables 🟦
+### M4 — Recompose the hand-rolled tables 🟦 (✅ BUILT 2026-08-15)
 
-**Goal:** replace hand-written query tables with `spark-sub-query` where feature-complete
-(scope fixed by D2–D4):
+**As built:** parent scoping via `Custom.*` sources on the Actions classes
+(`RepositoryActions.Account_Repositories`, `BuildActions.Commit_Builds` — the Spark#242
+workaround; the framework still applies row filters, sorting, and includes on top). Declared as
+model queries with aliases `account-repositories` / `commit-builds`, plus `EntityType.queries[]`
+on Account/Commit so the generic detail pages auto-render the same sub-queries. The account
+page's repositories card and the commit page's builds table are now `<spark-sub-query>`
+(`account.component.html`, `commit.component.html`); per-session parse detail moved to the
+generic Build detail page. The sparkline survives as the `coverage-sparkline` renderer bound to
+`Repository.FullName` (label "Trend") — it works today (scalar value), while `coverage-bar` waits
+on Spark#241. `showedOn` trimmed across the model so the generic grids show curated columns
+(secrets/ids/plumbing are detail-only). New `/api/browse/accounts/{login}` returns the account
+document id (sub-query `parentId`); the commit payload gained `id` for the same reason (its
+`builds` array is now unused by the SPA — trim in a follow-up). Test sweep: 54/54 passed.
+
+Original goal (scope fixed by D2–D4):
 
 1. Account page card 1 → `<spark-sub-query queryId="GetRepositories" [parentId]=... parentType="Account" />`,
    with the sparkline preserved as a `FullName` column renderer (D3). Parent scoping needs a

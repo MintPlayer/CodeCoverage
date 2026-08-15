@@ -54,8 +54,16 @@ export interface BuildInfo {
 }
 
 export interface CommitDetail extends CommitInfo {
+  /** Commit document id — parentId for the generic Spark sub-queries. */
+  id: string;
   latestBuildId?: string;
   builds: BuildInfo[];
+}
+
+/** Public account reference; id feeds the generic Spark sub-queries as parentId. */
+export interface AccountRef {
+  id: string;
+  login: string;
 }
 
 export interface TreeEntry {
@@ -117,6 +125,10 @@ export function coveragePercent(summary?: CoverageSummary | null): number | null
 @Injectable({ providedIn: 'root' })
 export class BrowseService {
   private readonly http = inject(HttpClient);
+
+  getAccount(login: string): Promise<AccountRef> {
+    return firstValueFrom(this.http.get<AccountRef>(`/api/browse/accounts/${encodeURIComponent(login)}`));
+  }
 
   getAccountRepos(login: string): Promise<RepoInfo[]> {
     return firstValueFrom(this.http.get<RepoInfo[]>(`/api/browse/accounts/${encodeURIComponent(login)}/repos`));

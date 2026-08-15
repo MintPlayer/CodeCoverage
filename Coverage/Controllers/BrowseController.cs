@@ -176,6 +176,22 @@ public partial class BrowseController : ControllerBase
             .ThenBy(b => b, StringComparer.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// Public account reference (logins/avatars are public GitHub data). The
+    /// document id feeds the generic Spark sub-queries as parentId.
+    /// </summary>
+    [HttpGet("accounts/{login}")]
+    public async Task<ActionResult<AccountRef>> GetAccount(string login, CancellationToken cancellationToken)
+    {
+        var account = await session.Query<Account>()
+            .Where(a => a.Login == login)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (account is null) return NotFound();
+        return Ok(new AccountRef(account.Id!, account.Login));
+    }
+
+    public sealed record AccountRef(string Id, string Login);
+
     [HttpGet("repos/{owner}/{name}/commits/{sha}")]
     public async Task<ActionResult<object>> GetCommit(string owner, string name, string sha, CancellationToken cancellationToken)
     {
@@ -204,6 +220,9 @@ public partial class BrowseController : ControllerBase
 
         return Ok(new
         {
+            // Document id — the generic Spark sub-queries on the commit page
+            // need it as parentId.
+            commit.Id,
             commit.Sha,
             commit.Branch,
             commit.PullRequestNumber,

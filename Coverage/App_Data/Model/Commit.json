@@ -81,7 +81,7 @@
         "isReadOnly": false,
         "order": 5,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -126,7 +126,7 @@
         "isReadOnly": false,
         "order": 8,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -158,11 +158,13 @@
         "isReadOnly": false,
         "order": 10,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       }
     ],
-    "queries": []
+    "queries": [
+      "commit-builds"
+    ]
   },
   "queries": [
     {

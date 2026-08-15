@@ -7,6 +7,7 @@ import { provideSparkAttributeRenderers } from '@mintplayer/ng-spark/renderers';
 
 import { routes } from './app.routes';
 import { CoverageBarRendererComponent } from './spark/coverage-bar-renderer.component';
+import { CoverageSparklineRendererComponent } from './spark/coverage-sparkline-renderer.component';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -20,6 +21,11 @@ export const appConfig: ApplicationConfig = {
         name: 'coverage-bar',
         detailComponent: CoverageBarRendererComponent,
         columnComponent: CoverageBarRendererComponent,
+      },
+      {
+        name: 'coverage-sparkline',
+        detailComponent: CoverageSparklineRendererComponent,
+        columnComponent: CoverageSparklineRendererComponent,
       },
     ]),
     provideZonelessChangeDetection()

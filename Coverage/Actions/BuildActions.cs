@@ -2,6 +2,9 @@ using Coverage.Entities;
 using Coverage.Services;
 using MintPlayer.SourceGenerators.Attributes;
 using MintPlayer.Spark.Actions;
+using MintPlayer.Spark.Queries;
+using Raven.Client.Documents.Linq;
+using Raven.Client.Documents.Session;
 
 namespace Coverage.Actions;
 
@@ -15,6 +18,7 @@ namespace Coverage.Actions;
 public partial class BuildActions : DefaultPersistentObjectActions<Build>
 {
     [Inject] private readonly ISparkVisibility visibility;
+    [Inject] private readonly IAsyncDocumentSession session;
 
     public override async Task<bool> IsAllowedAsync(string action, Build entity)
     {
@@ -33,4 +37,17 @@ public partial class BuildActions : DefaultPersistentObjectActions<Build>
     }
 
     public override IReadOnlyCollection<string>? GetDefaultIncludes() => [nameof(Build.Commit)];
+
+    /// <summary>
+    /// Custom query: builds of a commit, parent-scoped. Source: "Custom.Commit_Builds".
+    /// A Custom.* source because Database.* queries drop parentId upstream (Spark#242).
+    /// Build.Commit holds the exact commit document id, so equality suffices (no
+    /// prefix filtering — FileCoverage/BuildTreeSummary share the id prefix but are
+    /// different collections and never enter this query).
+    /// </summary>
+    public IRavenQueryable<Build> Commit_Builds(CustomQueryArgs args)
+    {
+        args.EnsureParent("Commit");
+        return session.Query<Build>().Where(b => b.Commit == args.Parent!.Id);
+    }
 }

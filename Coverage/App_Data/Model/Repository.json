@@ -21,7 +21,7 @@
         "query": "GetAccounts",
         "referenceType": "Coverage.Entities.Account",
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -36,7 +36,7 @@
         "isReadOnly": false,
         "order": 2,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -58,7 +58,7 @@
         "id": "a6ac6d37-7d03-4094-8d19-8c86a4fefa7f",
         "name": "FullName",
         "label": {
-          "en": "Full Name"
+          "en": "Trend"
         },
         "dataType": "string",
         "isRequired": false,
@@ -67,7 +67,8 @@
         "order": 4,
         "isArray": false,
         "showedOn": "Query, PersistentObject",
-        "rules": []
+        "rules": [],
+        "renderer": "coverage-sparkline"
       },
       {
         "id": "28457041-7915-454c-9186-f6bc79f788ce",
@@ -111,7 +112,7 @@
         "isReadOnly": false,
         "order": 7,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -126,7 +127,7 @@
         "isReadOnly": false,
         "order": 8,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -141,7 +142,7 @@
         "isReadOnly": false,
         "order": 9,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -188,7 +189,7 @@
         "isReadOnly": false,
         "order": 12,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       }
     ],
@@ -209,6 +210,25 @@
       "useProjection": false,
       "entityType": "Repository",
       "isStreamingQuery": false
+    },
+    {
+      "id": "7a4c9b30-5d2e-4f81-9c67-3e8b1a6d0f21",
+      "name": "Account_Repositories",
+      "description": {
+        "en": "Repositories"
+      },
+      "source": "Custom.Account_Repositories",
+      "sortColumns": [
+        {
+          "property": "Name",
+          "direction": "asc"
+        }
+      ],
+      "renderMode": "Pagination",
+      "useProjection": false,
+      "entityType": "Repository",
+      "isStreamingQuery": false,
+      "alias": "account-repositories"
     }
   ]
 }

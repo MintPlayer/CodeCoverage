@@ -101,7 +101,8 @@
         "order": 6,
         "isArray": false,
         "showedOn": "Query, PersistentObject",
-        "rules": []
+        "rules": [],
+        "renderer": "date-time"
       },
       {
         "id": "b31dad93-2418-4bc6-977d-02f4dfa52cdd",
@@ -176,7 +177,8 @@
         "order": 11,
         "isArray": false,
         "showedOn": "PersistentObject",
-        "rules": []
+        "rules": [],
+        "renderer": "date-time"
       },
       {
         "id": "dc719560-c154-4ca6-9b8b-0529593560c0",
@@ -191,7 +193,8 @@
         "order": 12,
         "isArray": false,
         "showedOn": "PersistentObject",
-        "rules": []
+        "rules": [],
+        "renderer": "date-time"
       },
       {
         "id": "cdb97b1f-5b8a-4079-8e41-313781aa056e",

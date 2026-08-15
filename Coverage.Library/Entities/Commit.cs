@@ -35,6 +35,14 @@ public class Commit
     /// </summary>
     public DateTimeOffset? FirstSeenAtUtc { get; set; }
 
+    /// <summary>
+    /// The date to show for this commit: when it was authored, falling back to
+    /// when we first saw it (upload-only commits have no AuthoredAt). Get-only,
+    /// so Spark serves it as a plain attribute — the grids sort and render this
+    /// rather than the two half-populated fields behind it.
+    /// </summary>
+    public DateTimeOffset? Date => AuthoredAt ?? FirstSeenAtUtc;
+
     /// <summary>Merged coverage of the latest finalized build, denormalized for lists/badges.</summary>
     public CoverageSummary? Coverage { get; set; }
 

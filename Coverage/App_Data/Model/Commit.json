@@ -76,18 +76,34 @@
         "rules": []
       },
       {
-        "id": "77203692-9b28-495d-913f-c8b34f038564",
-        "name": "AuthoredAt",
+        "id": "4e7b2c90-1a6d-4f83-9b25-8c0d7a3e5f14",
+        "name": "Date",
         "label": {
           "en": "Date"
         },
         "dataType": "datetime",
         "isRequired": false,
         "isVisible": true,
-        "isReadOnly": false,
+        "isReadOnly": true,
         "order": 5,
         "isArray": false,
         "showedOn": "Query, PersistentObject",
+        "rules": [],
+        "renderer": "date-time"
+      },
+      {
+        "id": "77203692-9b28-495d-913f-c8b34f038564",
+        "name": "AuthoredAt",
+        "label": {
+          "en": "Authored At"
+        },
+        "dataType": "datetime",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 6,
+        "isArray": false,
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {

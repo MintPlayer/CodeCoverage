@@ -207,11 +207,18 @@ below.
 
 **Goal:** open `/spark` reads safely.
 
-0. Upgrade pins first: `MintPlayer.Spark.* 10.0.0-preview.44`, `@mintplayer/ng-spark 22.0.9`.
+0. ⏸ **M2 waits for the async row-filter hook**
+   ([Spark#239](https://github.com/MintPlayer/MintPlayer.Spark/issues/239), expected in
+   preview.45): Coverage's rules need async data (GitHub-backed owners, a Raven query for
+   visible repo ids) and will be written against `GetRowFilterAsync` directly instead of
+   shipping sync-over-async bridges — see [spark-async-row-filter.md](spark-async-row-filter.md).
+   M3 is client-only and proceeds meanwhile.
+1. Upgrade pins first: `MintPlayer.Spark.* 10.0.0-preview.44` (→ .45 when #239 ships),
+   `@mintplayer/ng-spark 22.0.9`.
    Breaking changes checked: Coverage has no Spark custom actions (the `Submitted*` rename
    doesn't bite) and uses no lookup references (the new `Read/LookupReferences` requirement
    doesn't bite).
-1. Add a `security.json` granting `QueryRead` on the four entity types to `Everyone`, and
+2. Add a `security.json` granting `QueryRead` on the four entity types to `Everyone`, and
    implement `Actions` classes for Account/Repository/Commit/Build over the existing
    `GitHubAccessService` visibility cache (same semantics as `ResolveVisibleRepository`;
    WebhooksDemo's `GitHubProjectActions` is the worked example, and `GetRowFilter` keeps it
@@ -219,12 +226,12 @@ below.
    ⚠️ Known trap from Fleet's CI: an ownership filter also runs as WITH CHECK on create, so an
    authenticated machine principal with no user id gets 403 — return `null` (unrestricted) for
    authenticated-but-no-user-id and reserve deny for anonymous.
-2. Hide `BadgeToken` (and review `InstallationId`) for non-managers via
+3. Hide `BadgeToken` (and review `InstallationId`) for non-managers via
    `GetProtectedAttributesAsync`.
-3. Declare the related queries in the model (`Account.queries: ["GetRepositories"]`,
+4. Declare the related queries in the model (`Account.queries: ["GetRepositories"]`,
    `Repository.queries: ["GetCommits"]`, `Commit.queries: ["GetBuilds"]`) and verify
    parent-filtered `executeQuery` returns the right rows; run the model synchronize.
-4. Writes stay denied — the generic New/Edit/Delete buttons must not appear (permissions endpoint
+5. Writes stay denied — the generic New/Edit/Delete buttons must not appear (permissions endpoint
    returns read-only).
 
 **Exit criteria:** `/query/GetRepositories` and `/po/Repository/:id` render real, correctly

@@ -235,9 +235,21 @@ As built:
    containing the whole (row-filtered but unscoped) collection, since `Database.*` queries
    drop `parentId` upstream.
 
-**Exit criteria (to verify in the end-of-branch test sweep):** `/query/repositories` and
-`/po/Repository/:id` render real, correctly filtered data for anonymous, member, and stranger
-viewers; `BadgeToken` comes back nulled + invisible for non-managers.
+**Exit criteria — VERIFIED LIVE (Playwright + wire, 2026-08-15):** anonymous
+`/spark/queries/repositories/execute` returns only public rows (128, zero private) with
+`BadgeToken` nulled + `isVisible: false`; detail reads pass the compiled row check;
+`account-repositories?parentId=Accounts/48772716` returns exactly the account's 3 repos.
+Two findings fixed during verification:
+1. **RavenDB cannot translate `Contains` in these filters on .NET 10** — a `string[]` receiver
+   binds to span-based `MemoryExtensions.Contains`, and even `List<string>.Contains` inside
+   `!x || list.Contains(y)` throws `TypedParameterExpression`. Raven's `.In()` is the shape that
+   both translates and (verified live) evaluates in-memory for the compiled single-row checks.
+2. **The per-row `can` block overclaims upstream** — computed from the row rule alone, never
+   intersected with type-level rights, so anonymous viewers got `can: {edit, delete} = true` and
+   Edit/Delete buttons on the generic detail page. Filed as
+   [Spark#243](https://github.com/MintPlayer/MintPlayer.Spark/issues/243); Coverage-side fix
+   (correct regardless): the row rule returns `x => false` for `"Edit"/"Delete"/"New"` — this
+   surface is read-only. Verified: `can` now `{edit: false, delete: false}`, buttons gone.
 
 ### M3 — Attribute renderers for coverage visuals 🟦 (✅ BUILT 2026-08-15 — 🟩 gap found and filed)
 

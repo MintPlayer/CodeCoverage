@@ -22,6 +22,10 @@ public partial class BuildActions : DefaultPersistentObjectActions<Build>
 
     public override async Task<bool> IsAllowedAsync(string action, Build entity)
     {
+        // Read-only surface (see RepositoryActions for the Spark#243 note).
+        if (action is "Edit" or "Delete" or "New")
+            return false;
+
         var repoId = RepositoryIdFromCommitId(entity.Commit);
         if (repoId is null) return false;
         var visible = await visibility.GetVisibleRepositoryIdsAsync();

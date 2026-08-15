@@ -4,6 +4,7 @@ using Coverage.Services;
 using MintPlayer.SourceGenerators.Attributes;
 using MintPlayer.Spark.Actions;
 using MintPlayer.Spark.Queries;
+using Raven.Client.Documents;
 using Raven.Client.Documents.Linq;
 using Raven.Client.Documents.Session;
 
@@ -23,9 +24,20 @@ public partial class RepositoryActions : DefaultPersistentObjectActions<Reposito
 
     public override async Task<Expression<Func<Repository, bool>>?> GetRowFilterAsync(string action)
     {
+        // This surface is read-only: no row is writable regardless of viewer.
+        // Also keeps the per-row `can` block honest — upstream computes it from
+        // the row rule alone, without intersecting type-level rights (Spark#243).
+        if (action is "Edit" or "Delete" or "New")
+            return r => false;
+
         // Empty for anonymous viewers → the filter reduces to "public only".
+        // Raven's .In() is the list-membership shape its provider translates
+        // inside an OrElse (Contains fails: MemoryExtensions binding on .NET 10,
+        // TypedParameterExpression on List<string>.Contains). RavenDB.Client's
+        // In() also has a real in-memory implementation, which the framework's
+        // compiled single-row checks (detail/edit/delete) rely on.
         var owners = await visibility.GetAllowedOwnersAsync();
-        return r => !r.IsPrivate || owners.Contains(r.OwnerLogin);
+        return r => !r.IsPrivate || r.OwnerLogin.In(owners);
     }
 
     /// <summary>BadgeToken grants badge access on private repos — managers only.</summary>

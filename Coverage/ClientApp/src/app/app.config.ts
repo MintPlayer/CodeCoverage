@@ -3,8 +3,17 @@ import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideAnimations } from '@angular/platform-browser/animations';
 import { provideSparkAuth, withSparkAuth } from '@mintplayer/ng-spark-auth';
+import { provideSparkAttributeRenderers } from '@mintplayer/ng-spark/renderers';
 
 import { routes } from './app.routes';
+import { CoverageBarRendererComponent } from './spark/coverage-bar-renderer.component';
+import { CoverageSummaryDetailRendererComponent } from './spark/coverage-summary-detail-renderer.component';
+import { CoverageSparklineRendererComponent } from './spark/coverage-sparkline-renderer.component';
+import { ShortShaRendererComponent } from './spark/short-sha-renderer.component';
+import { BuildSessionsRendererComponent } from './spark/build-sessions-renderer.component';
+import { RepoNameRendererComponent } from './spark/repo-name-renderer.component';
+import { DateTimeRendererComponent } from './spark/date-time-renderer.component';
+import { CoverageDeltaRendererComponent } from './spark/coverage-delta-renderer.component';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -13,6 +22,43 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(...withSparkAuth()),
     provideAnimations(),
     provideSparkAuth(),
+    provideSparkAttributeRenderers([
+      {
+        name: 'coverage-bar',
+        detailComponent: CoverageSummaryDetailRendererComponent,
+        columnComponent: CoverageBarRendererComponent,
+      },
+      {
+        name: 'coverage-sparkline',
+        detailComponent: CoverageSparklineRendererComponent,
+        columnComponent: CoverageSparklineRendererComponent,
+      },
+      {
+        name: 'short-sha',
+        detailComponent: ShortShaRendererComponent,
+        columnComponent: ShortShaRendererComponent,
+      },
+      {
+        name: 'build-sessions',
+        detailComponent: BuildSessionsRendererComponent,
+        columnComponent: BuildSessionsRendererComponent,
+      },
+      {
+        name: 'repo-name',
+        detailComponent: RepoNameRendererComponent,
+        columnComponent: RepoNameRendererComponent,
+      },
+      {
+        name: 'date-time',
+        detailComponent: DateTimeRendererComponent,
+        columnComponent: DateTimeRendererComponent,
+      },
+      {
+        name: 'coverage-delta',
+        detailComponent: CoverageDeltaRendererComponent,
+        columnComponent: CoverageDeltaRendererComponent,
+      },
+    ]),
     provideZonelessChangeDetection()
   ]
 };

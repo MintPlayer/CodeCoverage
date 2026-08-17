@@ -2,6 +2,15 @@
 
 Companion to [PRD.md](PRD.md). Milestones are ordered so that every stage produces something demonstrable, upstream PRs are unblocked early, and the layering rule (generic → upstream repo) is respected. Target: **one PR per repo** per milestone group.
 
+> **Where the work is now (2026-08-17).** M0–M10 are built and deployed; this document is the record
+> of how they were sequenced. Active work has moved to
+> [adopt-spark-generic-ui.md](adopt-spark-generic-ui.md) — replacing the hand-written pages with
+> Spark's generic ones — on branch `adopt-spark-generic-ui`. Two things below read as stale: the
+> **R4-H1** row-level-auth finding referenced in M0 step 0 turned out to be a fabricated identifier
+> (Spark's own audit says so) and row-level security has since shipped upstream in
+> `10.0.0-preview.44`–`.46`; and the preview pins named throughout are historical — the current
+> target is **`10.0.0-preview.51`**. The adoption doc carries the live upstream scoreboard.
+
 Legend: 🟦 Coverage repo · 🟩 MintPlayer.Spark PR · 🟨 mintplayer-ng-bootstrap PR · 🟪 coverage-action repo
 
 ---

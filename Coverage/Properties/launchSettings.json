@@ -28,6 +28,14 @@
         "ASPNETCORE_ENVIRONMENT": "Development"
       },
       "dotnetRunMessages": true
+    },
+    "Verify model": {
+      "commandName": "Project",
+      "commandLineArgs": "--spark-verify-model",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "dotnetRunMessages": true
     }
   }
 }

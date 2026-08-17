@@ -37,11 +37,15 @@ builder.Services.AddSpark(builder.Configuration, spark =>
 {
     spark.UseContext<CoverageSparkContext>();
 
-    // Deliberately DenyAll (no security.json): Spark's generic data endpoints are
-    // fully denied. All data access goes through our own /api controllers, which
-    // mirror the viewer's GitHub permissions. This also sidesteps the open
-    // R4-H1 finding (row-level auth missing on query-execute/stream endpoints).
+    // security.json grants QueryRead on the four entity types to Everyone —
+    // including anonymous callers — and the Actions classes (Coverage/Actions)
+    // are the only gate behind that: row filters scope reads per viewer (public
+    // repos for anonymous, GitHub-granted owners for signed-in users) and redact
+    // BadgeToken/InstallationId for non-managers. Writes stay denied at the type
+    // level (no Edit/New/Delete right exists), so the generic UI is read-only.
+    // The /api controllers remain the primary read surface for the vanity pages.
     spark.AddAuthorization();
+    spark.AddActions();
 
     spark.AddAuthentication<SparkUser>(configureProviders: identity =>
     {
@@ -189,6 +193,13 @@ builder.Services.AddSpaStaticFilesImproved(configuration =>
     configuration.RootPath = "ClientApp/dist/ClientApp/browser";
 });
 
+// Model synchronization is a build step, not a run mode: it reflects over the entity classes to
+// write App_Data/Model/*.json and modelHashes.json, needs no database, and so runs here and
+// returns before Build(). --spark-verify-model is the same call in read-only mode (exit 3 on
+// drift), which is what lets CI gate the model without a RavenDB.
+if (builder.SynchronizeSparkModelsIfRequested(args))
+    return;
+
 var app = builder.Build();
 
 app.UseForwardedHeaders();
@@ -199,7 +210,7 @@ app.UseSpaStaticFilesImproved();
 
 app.UseRouting();
 app.UseRateLimiter();
-app.UseSpark(o => o.SynchronizeModelsIfRequested<CoverageSparkContext>(args));
+app.UseSpark();
 
 app.UseEndpoints(endpoints =>
 {

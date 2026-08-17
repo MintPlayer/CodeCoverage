@@ -23,6 +23,13 @@ jobs:
       - name: Restore & build
         run: dotnet build Coverage.slnx --configuration Release
 
+      # Spark's model files are generated from the entity classes, and a production
+      # app refuses to start when they disagree. This catches "touched an entity,
+      # forgot to synchronize" here rather than at deploy. Writes nothing, opens no
+      # database, and exits 3 on drift.
+      - name: Verify Spark model is in sync
+        run: dotnet run --project Coverage/Coverage.csproj --configuration Release --no-build --no-launch-profile -- --spark-verify-model
+
       - name: Test with coverage
         run: dotnet test Coverage.Tests/Coverage.Tests.csproj --configuration Release --no-build --collect:"XPlat Code Coverage"
 

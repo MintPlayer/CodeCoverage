@@ -71,6 +71,10 @@ pick up the new subscription query automatically at startup. Known follow-up lef
 1. **Coverage must upgrade to `10.0.0-preview.43`** before building any outbound feature — and the
    upgrade retroactively arms *existing* recipients too: failed webhook messages will now retry,
    so recipients must tolerate redelivery (they were written to be idempotent; verify at upgrade).
+   *(Done: master shipped preview.43; branch `adopt-spark-generic-ui` is on **preview.51** — see
+   [adopt-spark-generic-ui.md](adopt-spark-generic-ui.md) M11. Note preview.51 added a model-hash
+   startup gate, so any future preview bump now also needs a regenerated, committed
+   `App_Data/modelHashes.json` — outside Development a mismatch refuses to start.)*
 2. **The outbox design in T2.1 stays.** With bus retry now real it is belt-and-suspenders for
    delivery, but it also carries the check-run/comment ids that make republish idempotent and it
    solves the PR-opened-later backfill — both reasons stand independent of bus reliability.

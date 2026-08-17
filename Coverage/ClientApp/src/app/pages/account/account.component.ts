@@ -10,15 +10,14 @@ import { BsSpinnerComponent } from '@mintplayer/ng-bootstrap/spinner';
 import { BsAlertComponent } from '@mintplayer/ng-bootstrap/alert';
 import { BsFormComponent, BsFormControlDirective } from '@mintplayer/ng-bootstrap/form';
 import { BsSelectComponent, BsSelectOption } from '@mintplayer/ng-bootstrap/select';
-import { BsSparklineComponent } from '@mintplayer/ng-bootstrap/charts/sparkline';
 import { Color } from '@mintplayer/ng-bootstrap';
-import { BrowseService, RepoInfo } from '../../services/browse.service';
+import { SparkSubQueryComponent } from '@mintplayer/ng-spark/po-detail';
+import { AccountRef, BrowseService, RepoInfo } from '../../services/browse.service';
 import { TokensService, TokenInfo, CreatedToken } from '../../services/tokens.service';
-import { CoverageBarComponent } from '../../components/coverage-bar/coverage-bar.component';
 
 @Component({
   selector: 'app-account',
-  imports: [CommonModule, DatePipe, RouterModule, FormsModule, BsCardComponent, BsCardHeaderComponent, BsTableComponent, BsBadgeComponent, BsSpinnerComponent, BsAlertComponent, BsFormComponent, BsFormControlDirective, BsSelectComponent, BsSelectOption, BsSparklineComponent, CoverageBarComponent],
+  imports: [CommonModule, DatePipe, RouterModule, FormsModule, BsCardComponent, BsCardHeaderComponent, BsTableComponent, BsBadgeComponent, BsSpinnerComponent, BsAlertComponent, BsFormComponent, BsFormControlDirective, BsSelectComponent, BsSelectOption, SparkSubQueryComponent],
   templateUrl: './account.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -28,9 +27,12 @@ export default class AccountComponent {
   private readonly tokensService = inject(TokensService);
 
   readonly login = signal('');
+  /** The account PO reference — parentId for the repositories sub-query. */
+  readonly account = signal<AccountRef | null>(null);
+  /** True when the account has no document yet (no coverage data at all). */
+  readonly accountMissing = signal(false);
+  /** Still fetched for the token-scope dropdown (authorized viewers only see the card anyway). */
   readonly repos = signal<RepoInfo[] | null>(null);
-  /** fullName → recent coverage percentages (ascending) for table sparklines. */
-  readonly sparklines = signal<Record<string, number[]>>({});
 
   // Token management: visible only when the tokens list loads (the server
   // returns 403 for accounts the viewer can't manage — that's the gate).
@@ -47,15 +49,16 @@ export default class AccountComponent {
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(async (params) => {
       const login = params.get('login') ?? '';
       this.login.set(login);
+      this.account.set(null);
+      this.accountMissing.set(false);
       this.repos.set(null);
       this.tokens.set(null);
       this.canManageTokens.set(false);
       this.createdToken.set(null);
-      this.sparklines.set({});
+      this.browse.getAccount(login).then(
+        (account) => this.account.set(account),
+        () => this.accountMissing.set(true));
       this.repos.set(await this.browse.getAccountRepos(login));
-      this.browse.getSparklines(login).then(
-        (lines) => this.sparklines.set(lines),
-        () => this.sparklines.set({}));
       await this.loadTokens();
     });
   }

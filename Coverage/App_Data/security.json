@@ -1,0 +1,11 @@
+{
+  "groups": {
+    "00000000-0000-0000-0000-000000000000": { "en": "Everyone" }
+  },
+  "rights": [
+    { "id": "c0e5a9e1-0000-4000-8000-000000000001", "resource": "QueryRead/Account", "groupId": "00000000-0000-0000-0000-000000000000", "isDenied": false },
+    { "id": "c0e5a9e1-0000-4000-8000-000000000002", "resource": "QueryRead/Repository", "groupId": "00000000-0000-0000-0000-000000000000", "isDenied": false },
+    { "id": "c0e5a9e1-0000-4000-8000-000000000003", "resource": "QueryRead/Commit", "groupId": "00000000-0000-0000-0000-000000000000", "isDenied": false },
+    { "id": "c0e5a9e1-0000-4000-8000-000000000004", "resource": "QueryRead/Build", "groupId": "00000000-0000-0000-0000-000000000000", "isDenied": false }
+  ]
+}

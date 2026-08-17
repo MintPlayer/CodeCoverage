@@ -1,39 +1,41 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { CommonModule, DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { Router } from '@angular/router';
 import { BsCardComponent, BsCardHeaderComponent } from '@mintplayer/ng-bootstrap/card';
-import { BsTableComponent } from '@mintplayer/ng-bootstrap/table';
-import { BsBadgeComponent } from '@mintplayer/ng-bootstrap/badge';
 import { BsSpinnerComponent } from '@mintplayer/ng-bootstrap/spinner';
 import { BsAlertComponent } from '@mintplayer/ng-bootstrap/alert';
 import { BsBreadcrumbComponent, BsBreadcrumbItemComponent } from '@mintplayer/ng-bootstrap/breadcrumb';
 import { Color } from '@mintplayer/ng-bootstrap';
 import { BsHierarchyChartComponent, type HierarchyNodeEventDetail } from '@mintplayer/ng-bootstrap/charts/hierarchy';
-import { BrowseService, CommitDetail, CoverageHierarchyNode, TreeResponse, coveragePercent } from '../../services/browse.service';
-import { CoverageBarComponent } from '../../components/coverage-bar/coverage-bar.component';
-import { CoverageRingComponent } from '../../components/coverage-ring/coverage-ring.component';
+import { BsTableComponent } from '@mintplayer/ng-bootstrap/table';
+import { BrowseService, CoverageHierarchyNode, TreeResponse } from '../../services/browse.service';
+import { CoverageBarComponent } from '../coverage-bar/coverage-bar.component';
 
+/**
+ * The "Files" card of a commit — sunburst hierarchy chart + drill-down folder
+ * list — shared by the vanity commit page and the generic /po Commit detail
+ * page. Self-fetches tree + hierarchy; file clicks open the code viewer.
+ */
 @Component({
-  selector: 'app-commit',
-  imports: [CommonModule, DatePipe, RouterModule, BsCardComponent, BsCardHeaderComponent, BsTableComponent, BsBadgeComponent, BsSpinnerComponent, BsAlertComponent, BsBreadcrumbComponent, BsBreadcrumbItemComponent, BsHierarchyChartComponent, CoverageBarComponent, CoverageRingComponent],
-  templateUrl: './commit.component.html',
+  selector: 'app-commit-files-panel',
+  imports: [CommonModule, BsCardComponent, BsCardHeaderComponent, BsSpinnerComponent, BsAlertComponent, BsBreadcrumbComponent, BsBreadcrumbItemComponent, BsHierarchyChartComponent, BsTableComponent, CoverageBarComponent],
+  templateUrl: './commit-files-panel.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export default class CommitComponent {
-  private readonly route = inject(ActivatedRoute);
+export class CommitFilesPanelComponent {
   private readonly router = inject(Router);
   private readonly browse = inject(BrowseService);
 
-  readonly owner = signal('');
-  readonly name = signal('');
-  readonly sha = signal('');
-  readonly commit = signal<CommitDetail | null>(null);
+  owner = input.required<string>();
+  name = input.required<string>();
+  sha = input.required<string>();
+
   readonly tree = signal<TreeResponse | null>(null);
   readonly currentPath = signal('');
   readonly hierarchy = signal<CoverageHierarchyNode | null>(null);
   // The chart's zoom root; node ids are repo paths, '/' is the data root.
   readonly chartRootId = signal<string | undefined>('/');
+  readonly warningColor = Color.warning;
 
   /** Segments of the current folder path, each with its cumulative path for the breadcrumb. */
   readonly pathSegments = computed(() => {
@@ -48,23 +50,17 @@ export default class CommitComponent {
     return segments;
   });
 
-  readonly percent = computed(() => coveragePercent(this.commit()?.coverage));
-  readonly warningColor = Color.warning;
-
   constructor() {
-    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(async (params) => {
-      const owner = params.get('owner') ?? '';
-      const name = params.get('repo') ?? '';
-      const sha = params.get('sha') ?? '';
-      this.owner.set(owner);
-      this.name.set(name);
-      this.sha.set(sha);
-      this.commit.set(null);
+    effect(async () => {
+      // Re-runs when owner/name/sha change: reset and reload.
+      const owner = this.owner();
+      const name = this.name();
+      const sha = this.sha();
+      if (!owner || !name || !sha) return;
       this.tree.set(null);
       this.hierarchy.set(null);
       this.currentPath.set('');
       this.chartRootId.set('/');
-      this.commit.set(await this.browse.getCommit(owner, name, sha));
       await this.openFolder('');
       try {
         this.hierarchy.set(await this.browse.getHierarchy(owner, name, sha));

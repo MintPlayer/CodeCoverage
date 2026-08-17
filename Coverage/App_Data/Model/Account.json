@@ -30,7 +30,7 @@
         },
         "dataType": "number",
         "isRequired": true,
-        "isVisible": true,
+        "isVisible": false,
         "isReadOnly": false,
         "order": 1,
         "isArray": false,

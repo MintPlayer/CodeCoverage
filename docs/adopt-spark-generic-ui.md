@@ -591,12 +591,18 @@ Three small corrections found by looking at the finished page:
   surface filters `isVisible && hasShowedOnFlag(...)`, and server-side `IsWritableBySchema` refuses
   writes to an invisible attribute as well. (`GitHubId` stays `isRequired: true`, which is only
   reachable through a create form — and Repository has no create right, so nothing can hit it.)
+- **`Account.GitHubId` too.** The same attribute name, the same rationale, and on the one surface
+  that shows it (`/po/account`) it reads as noise for the same reason. `Account.InstallationId`
+  deliberately stays visible: `AccountActions.GetProtectedAttributesAsync` already redacts it
+  per-viewer, so it is shown to managers on purpose rather than by omission.
 
-Both JSON edits are **synchronize-stable**, which is worth recording because it isn't obvious:
+All three JSON edits are **synchronize-stable**, which is worth recording because it isn't obvious:
 `isVisible` is never reassigned for an existing attribute, and `ShowedOn` is reassigned only when
-the entity has a `[FromIndex]` projection type — Repository has none. Verified by re-running
-`--spark-synchronize-model` and diffing: only these two lines differ. Neither touches `modelHash`
-(presentation is outside it, as designed), so `modelHashes.json` is unchanged and CI still passes.
+the entity has a `[FromIndex]` projection type — neither Repository nor Account has one. None of
+them touches `modelHash`: `ModelFileShape` names visibility as presentational and does not hash
+`showedOn` at all, which is by design so that a hand-authored label can never stop an application
+from starting. Confirmed with `--spark-verify-model` after the edits — same hash
+(`d64bfee6…`), so `modelHashes.json` stays valid and CI still passes.
 
 Model JSON is read once through a `Lazy` in a singleton `ModelLoader` with no file watcher, so a
 running host must be **restarted** to pick up model edits — unlike renderer changes, which the dev

@@ -1,8 +1,8 @@
 # Adopting ng-spark's generic UI — PRD & plan
 
-Status: **M1–M10 built** on branch `adopt-spark-generic-ui` (see the milestone sections for
-per-milestone status). One milestone remains: **M11**, the preview.51 upgrade forced by upstream
-breaking changes. Current pins: `MintPlayer.Spark 10.0.0-preview.46`, `@mintplayer/ng-spark 22.0.11`.
+Status: **M1–M11 built** on branch `adopt-spark-generic-ui` — every milestone is done and the branch
+is ready for its single squash PR to `master` (see the milestone sections for what each delivered).
+Current pins: `MintPlayer.Spark 10.0.0-preview.51`, `@mintplayer/ng-spark 22.0.11`.
 
 ## Upstream scoreboard (2026-08-17)
 
@@ -503,7 +503,7 @@ The hazard was: `Build.Run` and `Commit.Date` are get-only computed properties t
 database only by convention.
 
 All three are resolved upstream, so **the warning against running the Synchronize profile is
-lifted** once M11 lands:
+lifted** — and M11 has since run it and confirmed it (see M11's "as built"):
 
 - **[PR #263](https://github.com/MintPlayer/MintPlayer.Spark/pull/263)** — attributes with no CLR
   property are carried over **by reference** (so the `Id` clients key on survives) and logged once
@@ -518,14 +518,14 @@ lifted** once M11 lands:
 - `Commit.CoverageDelta` is already `[JsonIgnore]`d here, which stays the right mechanism —
   upstream deliberately did **not** add a "not persisted" attribute.
 
-### M11 — Upgrade to preview.51 🟦 (⏳ TODO, forced by upstream breaking changes)
+### M11 — Upgrade to preview.51 🟦 (✅ BUILT 2026-08-17)
 
-PR #263 reworked the whole model-synchronization lifecycle, and three of its changes are breaking
+PR #263 reworked the whole model-synchronization lifecycle, and three of its changes were breaking
 for this app:
 
-1. **`SynchronizeModelsIfRequested` is gone.** `Coverage/Program.cs:206` currently reads
-   `app.UseSpark(o => o.SynchronizeModelsIfRequested<CoverageSparkContext>(args));`. The new shape
-   is a builder-phase call that returns before the app runs:
+1. **`SynchronizeModelsIfRequested` is gone.** `Coverage/Program.cs` read
+   `app.UseSpark(o => o.SynchronizeModelsIfRequested<CoverageSparkContext>(args));`; it is now a
+   bare `app.UseSpark()` plus a builder-phase call that returns before the app runs:
    ```csharp
    if (builder.SynchronizeSparkModelsIfRequested(args))
        return;                       // ordinary return from Main
@@ -538,19 +538,37 @@ for this app:
    mismatch** (`SparkModelOutOfSyncException`; Development only warns), so shipping without it, or
    with a stale one, breaks the deploy rather than the page. The hash covers the CLR shape, never
    the JSON's labels/renderers/groups/order, so our hand-set renderers don't invalidate it.
-3. **`--spark-verify-model` (exit 3 on drift)** is the intended PR gate → add it to
-   `.github/workflows/ci.yml` alongside build+test.
+3. **`--spark-verify-model` (exit 3 on drift)** is the intended PR gate → now a step in
+   `.github/workflows/ci.yml`, after the build and before the tests. It writes nothing and opens no
+   database, so it needs no RavenDB service in CI. A matching `Verify model` launch profile makes
+   the same check one click away locally.
 
-Also worth adopting while there: `spark.AddIndexesFrom(typeof(Commits_ByRepository).Assembly)` is
-now the explicit way to register indexes. Coverage's index lives in the entry assembly, which is
-still the default, so this is optional — but explicit beats implicit given #263 documents that a
-library-shipped index was silently never created (and its projection never registered, which makes
-index-computed fields come back null with no error).
+**`spark.AddIndexesFrom(...)` was considered and left out.** It exists to let an assembly *other
+than the entry assembly* contribute indexes and `[FromIndex]` projections; `Commits_ByRepository`
+lives in `Coverage/Indexes`, which the entry-assembly fallback already covers, so declaring it would
+change nothing but the number of ways the same fact is stated. It becomes required the moment that
+index moves to `Coverage.Library` — and #263 documents the failure mode if that move is made without
+it: the index is silently never created and its projection never registered, so index-computed
+fields come back null with no error at all.
 
-**Exit criteria:** pins on preview.51; `Program.cs` on the builder-phase call; `modelHashes.json`
-committed and verified by `--spark-verify-model` in CI; a synchronize run produces **no** churn in
-`App_Data/Model/*.json` beyond `Run`/`Date` gaining `isReadOnly: true` (they should otherwise be
-byte-identical, proving the preservation fix); tests green; the app boots.
+**As built.** All exit criteria met:
+
+- Pins on `10.0.0-preview.51` across `Coverage`, `Coverage.Library`, `Coverage.Tests`. Spark now
+  requires `MintPlayer.SourceGenerators[.Attributes] 10.20.0`, so those two moved up from 10.19.0 as
+  well — `NU1605` (warning-as-error) makes the downgrade a hard build failure, not a warning.
+- `Program.cs` on the builder-phase call, `app.UseSpark()` argument-free.
+- `modelHashes.json` committed; `--spark-verify-model` reports in sync (exit 0); tests 54/54; the
+  app boots with no model warning.
+- **The preservation fix is proven.** A full synchronize produced zero semantic change to
+  `App_Data/Model/*.json`: every attribute id, label, renderer, `order`, `showedOn` and
+  `isReadOnly` — including the hand-set ones on `Run` and `Date`, which were already
+  `isReadOnly: true` — survived untouched. The one generated value that moved is
+  `Commit.CoverageDelta`'s `dataType`, `number` → `decimal`, which is preview.51 mapping `double?`
+  more precisely; the `coverage-delta` renderer coerces with `Number(...)` and is unaffected.
+- The *textual* diff is nonetheless large (~320 lines per side) because the synchronizer now writes
+  the attribute array **sorted by name** rather than in declaration order. Pure reordering — worth
+  knowing before reading the diff of this commit, and worth remembering the next time a model diff
+  looks alarming.
 
 **Possible future upstream refinements (not filed):** (a) the link-resolver seam
 (`provideSparkLinks`, designed during this work) would let grids emit the canonical URL directly
@@ -564,10 +582,10 @@ even the thin `poDetail` wrapper unnecessary.
 M11 outstanding. Tests batched at the end of each milestone per the global test policy.
 
 **Remaining work, in order:**
-1. **M11** — the preview.51 upgrade (breaking `Program.cs` change + `modelHashes.json` + CI gate).
-   Do this first: everything else is cosmetic by comparison, and the model-hash gate means the
-   branch can't deploy until it's done.
-2. Then the branch is ready for the single squash PR to `master`.
+1. ~~**M11** — the preview.51 upgrade.~~ ✅ done 2026-08-17.
+2. The branch is ready for the single squash PR to `master`. **Deploy note:** `modelHashes.json`
+   must reach the server — production *refuses to start* on a mismatch, so a deploy that ships the
+   entities without the hash file fails closed at boot rather than degrading a page.
 3. Optional follow-ups, all currently worked around and each blocked only on an upstream issue:
    drop the `Custom.*` parent-scoped query sources once [#242](https://github.com/MintPlayer/MintPlayer.Spark/issues/242)
    lands; drop the referenced-PO load in `commit-files-extras` once

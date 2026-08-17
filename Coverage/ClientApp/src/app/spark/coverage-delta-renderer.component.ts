@@ -5,9 +5,9 @@ import type { SparkAttributeColumnRenderer, SparkAttributeDetailRenderer } from 
 /**
  * Spark attribute renderer "coverage-delta": the commit's coverage change in
  * percentage points, green when up and red when down — the Δ column the
- * hand-written commits table used to draw. The value is stamped per commit at
- * build-finalize time (Commit.CoverageDelta), so a cell needs no knowledge of
- * its neighbouring rows.
+ * hand-written commits table used to draw. Commit.CoverageDelta is computed by
+ * the commits query over the whole ordered sequence, so a cell needs no
+ * knowledge of its neighbouring rows.
  */
 @Component({
   selector: 'app-coverage-delta-renderer',

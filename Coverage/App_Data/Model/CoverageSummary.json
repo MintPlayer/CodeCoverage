@@ -8,36 +8,6 @@
     "groups": [],
     "attributes": [
       {
-        "id": "e8f9b601-7742-4f85-a93d-8d7a547360ff",
-        "name": "LinesCovered",
-        "label": {
-          "en": "Lines Covered"
-        },
-        "dataType": "number",
-        "isRequired": true,
-        "isVisible": true,
-        "isReadOnly": false,
-        "order": 1,
-        "isArray": false,
-        "showedOn": "Query, PersistentObject",
-        "rules": []
-      },
-      {
-        "id": "c5f2ea02-3446-4cfa-977e-042e8a84f35d",
-        "name": "LinesCoverable",
-        "label": {
-          "en": "Lines Coverable"
-        },
-        "dataType": "number",
-        "isRequired": true,
-        "isVisible": true,
-        "isReadOnly": false,
-        "order": 2,
-        "isArray": false,
-        "showedOn": "Query, PersistentObject",
-        "rules": []
-      },
-      {
         "id": "a1a72c91-bcbf-42db-bd35-0f04193a122e",
         "name": "BranchesCovered",
         "label": {
@@ -78,6 +48,36 @@
         "isVisible": true,
         "isReadOnly": false,
         "order": 5,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "c5f2ea02-3446-4cfa-977e-042e8a84f35d",
+        "name": "LinesCoverable",
+        "label": {
+          "en": "Lines Coverable"
+        },
+        "dataType": "number",
+        "isRequired": true,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 2,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "e8f9b601-7742-4f85-a93d-8d7a547360ff",
+        "name": "LinesCovered",
+        "label": {
+          "en": "Lines Covered"
+        },
+        "dataType": "number",
+        "isRequired": true,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 1,
         "isArray": false,
         "showedOn": "Query, PersistentObject",
         "rules": []

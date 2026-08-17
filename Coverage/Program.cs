@@ -193,6 +193,13 @@ builder.Services.AddSpaStaticFilesImproved(configuration =>
     configuration.RootPath = "ClientApp/dist/ClientApp/browser";
 });
 
+// Model synchronization is a build step, not a run mode: it reflects over the entity classes to
+// write App_Data/Model/*.json and modelHashes.json, needs no database, and so runs here and
+// returns before Build(). --spark-verify-model is the same call in read-only mode (exit 3 on
+// drift), which is what lets CI gate the model without a RavenDB.
+if (builder.SynchronizeSparkModelsIfRequested(args))
+    return;
+
 var app = builder.Build();
 
 app.UseForwardedHeaders();
@@ -203,7 +210,7 @@ app.UseSpaStaticFilesImproved();
 
 app.UseRouting();
 app.UseRateLimiter();
-app.UseSpark(o => o.SynchronizeModelsIfRequested<CoverageSparkContext>(args));
+app.UseSpark();
 
 app.UseEndpoints(endpoints =>
 {

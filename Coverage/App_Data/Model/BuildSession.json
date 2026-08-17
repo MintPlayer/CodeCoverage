@@ -8,31 +8,31 @@
     "groups": [],
     "attributes": [
       {
-        "id": "38a4a4dd-a653-4cf9-ae3f-49ab422648d6",
-        "name": "SessionId",
+        "id": "e42efb15-0dc0-4a42-9897-7bd35f0c4cdc",
+        "name": "Error",
         "label": {
-          "en": "Session Id"
+          "en": "Error"
         },
         "dataType": "string",
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 1,
+        "order": 6,
         "isArray": false,
         "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {
-        "id": "4385debf-84d2-47e1-9e70-e9d20769bcdb",
-        "name": "JobName",
+        "id": "df0396ff-d019-43a6-8dd6-415d2fd31a86",
+        "name": "FilesCount",
         "label": {
-          "en": "Job Name"
+          "en": "Files Count"
         },
-        "dataType": "string",
-        "isRequired": false,
+        "dataType": "number",
+        "isRequired": true,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 2,
+        "order": 8,
         "isArray": false,
         "showedOn": "Query, PersistentObject",
         "rules": []
@@ -53,16 +53,16 @@
         "rules": []
       },
       {
-        "id": "5c9d6ce5-4b25-434b-bc96-7f92c95ab4fd",
-        "name": "UploadedAtUtc",
+        "id": "4385debf-84d2-47e1-9e70-e9d20769bcdb",
+        "name": "JobName",
         "label": {
-          "en": "Uploaded At Utc"
+          "en": "Job Name"
         },
-        "dataType": "datetime",
-        "isRequired": true,
+        "dataType": "string",
+        "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 4,
+        "order": 2,
         "isArray": false,
         "showedOn": "Query, PersistentObject",
         "rules": []
@@ -78,21 +78,6 @@
         "isVisible": true,
         "isReadOnly": false,
         "order": 5,
-        "isArray": false,
-        "showedOn": "Query, PersistentObject",
-        "rules": []
-      },
-      {
-        "id": "e42efb15-0dc0-4a42-9897-7bd35f0c4cdc",
-        "name": "Error",
-        "label": {
-          "en": "Error"
-        },
-        "dataType": "string",
-        "isRequired": false,
-        "isVisible": true,
-        "isReadOnly": false,
-        "order": 6,
         "isArray": false,
         "showedOn": "Query, PersistentObject",
         "rules": []
@@ -128,16 +113,31 @@
         "rules": []
       },
       {
-        "id": "df0396ff-d019-43a6-8dd6-415d2fd31a86",
-        "name": "FilesCount",
+        "id": "38a4a4dd-a653-4cf9-ae3f-49ab422648d6",
+        "name": "SessionId",
         "label": {
-          "en": "Files Count"
+          "en": "Session Id"
         },
-        "dataType": "number",
+        "dataType": "string",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 1,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "5c9d6ce5-4b25-434b-bc96-7f92c95ab4fd",
+        "name": "UploadedAtUtc",
+        "label": {
+          "en": "Uploaded At Utc"
+        },
+        "dataType": "datetime",
         "isRequired": true,
         "isVisible": true,
         "isReadOnly": false,
-        "order": 8,
+        "order": 4,
         "isArray": false,
         "showedOn": "Query, PersistentObject",
         "rules": []

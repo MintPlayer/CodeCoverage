@@ -81,7 +81,7 @@
         "isReadOnly": false,
         "order": 5,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "Query",
         "rules": [],
         "renderer": "coverage-sparkline"
       },
@@ -93,7 +93,7 @@
         },
         "dataType": "number",
         "isRequired": true,
-        "isVisible": true,
+        "isVisible": false,
         "isReadOnly": false,
         "order": 2,
         "isArray": false,

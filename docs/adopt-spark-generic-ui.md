@@ -576,10 +576,36 @@ and make this forwarding unnecessary; (b) a registered per-entity-type *detail p
 (`provideSparkDetailPanels([{ type, component }])`, mirroring the attribute renderers) would make
 even the thin `poDetail` wrapper unnecessary.
 
+### Detail-page polish (2026-08-17)
+
+Three small corrections found by looking at the finished page:
+
+- **The coverage ring is gone.** The detail slot of the `coverage-bar` renderer drew a ring *and* a
+  bar for the same number — two charts, one datum. The bar carries the percentage and the
+  line/branch/file counts, so the ring only added visual weight. `components/coverage-ring/` had no
+  other caller and was deleted with it.
+- **`Repository.FullName` (label "Trend") is `showedOn: "Query"`.** The sparkline is a grid
+  affordance; on the detail page it was a second rendering of coverage the page already shows.
+- **`Repository.GitHubId` is `isVisible: false`** — an internal identifier with no reader.
+  `isVisible` is the "never" flag, distinct from `showedOn`'s "not on this surface": every ng-spark
+  surface filters `isVisible && hasShowedOnFlag(...)`, and server-side `IsWritableBySchema` refuses
+  writes to an invisible attribute as well. (`GitHubId` stays `isRequired: true`, which is only
+  reachable through a create form — and Repository has no create right, so nothing can hit it.)
+
+Both JSON edits are **synchronize-stable**, which is worth recording because it isn't obvious:
+`isVisible` is never reassigned for an existing attribute, and `ShowedOn` is reassigned only when
+the entity has a `[FromIndex]` projection type — Repository has none. Verified by re-running
+`--spark-synchronize-model` and diffing: only these two lines differ. Neither touches `modelHash`
+(presentation is outside it, as designed), so `modelHashes.json` is unchanged and CI still passes.
+
+Model JSON is read once through a `Lazy` in a singleton `ModelLoader` with no file watcher, so a
+running host must be **restarted** to pick up model edits — unlike renderer changes, which the dev
+server live-reloads.
+
 ### Sequencing
 
-*As executed:* M1 (upstream) → M2 → M3 → M4 → M6 → M7 → M8 → M9 → M10, with M5 dropped (D2) and
-M11 outstanding. Tests batched at the end of each milestone per the global test policy.
+*As executed:* M1 (upstream) → M2 → M3 → M4 → M6 → M7 → M8 → M9 → M10 → M11, with M5 dropped (D2).
+Tests batched at the end of each milestone per the global test policy.
 
 **Remaining work, in order:**
 1. ~~**M11** — the preview.51 upgrade.~~ ✅ done 2026-08-17.

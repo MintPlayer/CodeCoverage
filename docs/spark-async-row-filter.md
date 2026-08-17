@@ -1,8 +1,12 @@
 # Spark handoff — async row filter (`GetRowFilterAsync`)
 
-Status: **requested upstream** — filed as
-[Spark#239](https://github.com/MintPlayer/MintPlayer.Spark/issues/239) (2026-08-15) for the
-session working in the Spark repo to implement. This doc records Coverage's consumer requirement and what the change means
+Status: **✅ SHIPPED** — filed as
+[Spark#239](https://github.com/MintPlayer/MintPlayer.Spark/issues/239), implemented by
+[PR #240](https://github.com/MintPlayer/MintPlayer.Spark/pull/240) in
+`MintPlayer.Spark 10.0.0-preview.45` and adopted here (Coverage's Actions classes are async-first).
+Kept for the record: it documents why the hook had to be async and the invariants the
+implementation had to preserve. Live status of the whole adoption is in
+[adopt-spark-generic-ui.md](adopt-spark-generic-ui.md) — see its upstream scoreboard. This doc records Coverage's consumer requirement and what the change means
 for the adoption plan in [adopt-spark-generic-ui.md](adopt-spark-generic-ui.md).
 
 > Research basis: a two-agent investigation (2026-08-15) of MintPlayer.Spark `origin/master`

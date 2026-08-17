@@ -90,11 +90,25 @@ dotnet run --project Coverage --launch-profile https
 The host spawns the Angular dev server itself (SPA proxy middleware) — do **not** run
 `ng serve` separately. App: https://localhost:5200.
 
-After changing entities, regenerate the model metadata:
+After changing entities, regenerate the model metadata **and commit the result** —
+`App_Data/Model/*.json` plus `App_Data/modelHashes.json`:
 
 ```bash
 dotnet run --project Coverage --launch-profile Synchronize
 ```
+
+The hash file is a startup gate: outside Development an app whose entity classes disagree
+with its committed model **refuses to start**, so forgetting it breaks the deploy rather
+than a page. It hashes the structural shape only — labels, renderers, groups, order and
+visibility are hand-authored and deliberately excluded, so curating the model JSON never
+invalidates it. To check without writing anything (this is what CI runs, exit 3 on drift):
+
+```bash
+dotnet run --project Coverage --launch-profile "Verify model"
+```
+
+Both commands return before the host is built, so they need no database and no free port —
+they are safe to run while the app is running.
 
 ## Deployment
 

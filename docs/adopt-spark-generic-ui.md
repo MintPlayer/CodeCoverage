@@ -103,6 +103,11 @@ No standalone action bar, no breadcrumb-trail component, no nav-menu component, 
 
 ## 3. Page census
 
+> **This section records the starting state (2026-08-14), not the current one.** The `repo` and
+> `commit` pages listed below no longer exist — M9 deleted them and their routes now forward to the
+> generic detail page. Read it as the analysis the plan was built on; `app.routes.ts` is the
+> current answer.
+
 Routes from `Coverage/ClientApp/src/app/app.routes.ts:6-21`. All five pages follow the same
 pattern: subscribe to route params, `await` a `BrowseService`/`AccountsService`/`TokensService`
 call (plain `HttpClient` → `/api/...`), render manually.
@@ -124,6 +129,10 @@ three hand-rolled query tables onto `spark-sub-query` + attribute renderers.
 ---
 
 ## 4. Why nothing can be dropped today — the gap list
+
+> **Also the starting state.** Every gap below is now closed or worked around — the scoreboard at
+> the top of this document is the live status, and `security.json` replaced DenyAll in M2. Kept
+> because the *reasons* are what justify the upstream issues.
 
 1. **DenyAll authorization (the hard blocker — smaller than first thought).** Every Spark data
    component fetches through `SparkService` → `/spark/queries/...` / `/spark/po/...`, which deny
@@ -617,7 +626,11 @@ Tests batched at the end of each milestone per the global test policy.
 1. ~~**M11** — the preview.51 upgrade.~~ ✅ done 2026-08-17.
 2. The branch is ready for the single squash PR to `master`. **Deploy note:** `modelHashes.json`
    must reach the server — production *refuses to start* on a mismatch, so a deploy that ships the
-   entities without the hash file fails closed at boot rather than degrading a page.
+   entities without the hash file fails closed at boot rather than degrading a page. Verified that
+   it does: the Web SDK's default `**/*.json` content glob copies it to the publish output, the same
+   mechanism that already carries `App_Data/Model/*.json` and `security.json` (confirmed present in
+   the build output), and the `Dockerfile` copies the publish directory wholesale. No csproj or
+   Dockerfile change was needed.
 3. Optional follow-ups, all currently worked around and each blocked only on an upstream issue:
    drop the `Custom.*` parent-scoped query sources once [#242](https://github.com/MintPlayer/MintPlayer.Spark/issues/242)
    lands; drop the referenced-PO load in `commit-files-extras` once

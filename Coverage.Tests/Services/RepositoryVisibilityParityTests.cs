@@ -3,6 +3,7 @@ using Coverage.Services;
 using FluentAssertions;
 using Raven.Client.Documents;
 using Raven.Client.Documents.Linq;
+using Coverage.Tests;
 using Raven.TestDriver;
 using Xunit;
 
@@ -19,19 +20,8 @@ namespace Coverage.Tests.Services;
 /// private-but-shared, an unlisted state) breaks this test unless it lands in
 /// both, which is the point.
 /// </summary>
-public class RepositoryVisibilityParityTests : RavenTestDriver
+public class RepositoryVisibilityParityTests : CoverageRavenTest
 {
-    static RepositoryVisibilityParityTests()
-    {
-        ConfigureServer(new TestServerOptions
-        {
-            Licensing = new Raven.Embedded.ServerOptions.LicensingOptions
-            {
-                ThrowOnInvalidOrMissingLicense = false,
-            },
-        });
-    }
-
     private static Repository Repo(long id, string owner, string name, bool isPrivate) => new()
     {
         GitHubId = id,

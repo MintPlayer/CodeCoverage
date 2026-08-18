@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using MintPlayer.Spark.Messaging.Abstractions;
 using Raven.Client.Documents;
 using Raven.Client.Documents.Session;
+using Coverage.Tests;
 using Raven.TestDriver;
 using Xunit;
 
@@ -22,19 +23,8 @@ namespace Coverage.Tests.Controllers;
 /// distinguishable 404s, that a baseline never compares a build against itself,
 /// and that a read never writes.
 /// </summary>
-public class UploadsControllerStatusTests : RavenTestDriver
+public class UploadsControllerStatusTests : CoverageRavenTest
 {
-    static UploadsControllerStatusTests()
-    {
-        ConfigureServer(new TestServerOptions
-        {
-            Licensing = new Raven.Embedded.ServerOptions.LicensingOptions
-            {
-                ThrowOnInvalidOrMissingLicense = false,
-            },
-        });
-    }
-
     /// <summary>
     /// The baseline lookup queries Commits/ByRepository, which the app creates at
     /// startup — so every store here must have it too, or the endpoint 500s.

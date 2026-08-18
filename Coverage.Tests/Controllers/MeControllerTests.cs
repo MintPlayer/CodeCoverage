@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Raven.Client.Documents.Session;
+using Coverage.Tests;
 using Raven.TestDriver;
 using Xunit;
 
@@ -15,19 +16,8 @@ namespace Coverage.Tests.Controllers;
 /// The reauth flag travels as a field on a 200 response — never as a status
 /// code, because the SPA's auth interceptor hijacks 401s into /login.
 /// </summary>
-public class MeControllerTests : RavenTestDriver
+public class MeControllerTests : CoverageRavenTest
 {
-    static MeControllerTests()
-    {
-        ConfigureServer(new TestServerOptions
-        {
-            Licensing = new Raven.Embedded.ServerOptions.LicensingOptions
-            {
-                ThrowOnInvalidOrMissingLicense = false,
-            },
-        });
-    }
-
     private static MeController CreateController(IAsyncDocumentSession session, GitHubVisibility visibility)
     {
         var services = new ServiceCollection();

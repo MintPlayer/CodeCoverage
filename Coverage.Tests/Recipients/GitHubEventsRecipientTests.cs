@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using MintPlayer.Spark.Webhooks.GitHub.Messages;
 using Octokit.Webhooks;
 using Raven.Client.Documents.Session;
+using Coverage.Tests;
 using Raven.TestDriver;
 using Xunit;
 
@@ -22,19 +23,8 @@ namespace Coverage.Tests.Recipients;
 /// deserializes <c>EventJson</c> itself, so this exercises the same path
 /// production does, including Octokit's converters.
 /// </summary>
-public class GitHubEventsRecipientTests : RavenTestDriver
+public class GitHubEventsRecipientTests : CoverageRavenTest
 {
-    static GitHubEventsRecipientTests()
-    {
-        ConfigureServer(new TestServerOptions
-        {
-            Licensing = new Raven.Embedded.ServerOptions.LicensingOptions
-            {
-                ThrowOnInvalidOrMissingLicense = false,
-            },
-        });
-    }
-
     private const long RepoId = 555;
     private const string HeadSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     private const string BaseSha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";

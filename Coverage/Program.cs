@@ -175,6 +175,21 @@ builder.Services.AddRateLimiter(options =>
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
+    // Polling the status endpoint is metered separately from uploading to it.
+    // Same partition — a CI caller gets its own bucket keyed on its token, never
+    // collateral damage from a crawler on a shared IP — but a much higher limit,
+    // because the two are nothing alike: `uploads` is sized for 50 MB payloads,
+    // while a gate waiting on a build spends 12 requests/minute per waiting job
+    // and a workflow may wait in several. Sharing one bucket would throttle the
+    // poll and starve the uploads it is waiting for.
+    options.AddPolicy("uploads-status", context => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: UploadsPartitionKey(context),
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 300,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
     // Badges get their own, roomier policy: GitHub's camo proxy funnels every
     // README render through a handful of IPs, so sharing the uploads policy
     // would let one popular badge throttle them all.

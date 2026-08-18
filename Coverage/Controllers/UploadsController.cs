@@ -1,5 +1,6 @@
 using Coverage.ApiTokens;
 using Coverage.Entities;
+using Coverage.Indexes;
 using Coverage.Ingestion;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -27,6 +28,7 @@ public partial class UploadsController : ControllerBase
     [Inject] private readonly IAsyncDocumentSession session;
     [Inject] private readonly IMessageBus messageBus;
     [Inject] private readonly ILogger<UploadsController> logger;
+    [Inject] private readonly IConfiguration configuration;
 
     private const long MaxReportBytes = 50 * 1024 * 1024;
 
@@ -43,7 +45,7 @@ public partial class UploadsController : ControllerBase
         if (string.IsNullOrWhiteSpace(form.CommitSha) || form.CommitSha.Length < 7)
             return BadRequest(new { error = "commitSha is required (full SHA preferred)." });
 
-        var repository = await ResolveAuthorizedRepository(form.Repository, cancellationToken);
+        var repository = await ResolveAuthorizedRepository(form.Repository, provision: true, cancellationToken);
         if (repository is null)
             return NotFound(new { error = $"Repository '{form.Repository}' is unknown here (is the GitHub App installed?) or the token doesn't grant it." });
 
@@ -132,7 +134,7 @@ public partial class UploadsController : ControllerBase
     [HttpPost("finish")]
     public async Task<IActionResult> Finish([FromBody] FinishRequest request, CancellationToken cancellationToken)
     {
-        var repository = await ResolveAuthorizedRepository(request.Repository, cancellationToken);
+        var repository = await ResolveAuthorizedRepository(request.Repository, provision: false, cancellationToken);
         if (repository is null)
             return NotFound();
 
@@ -147,6 +149,123 @@ public partial class UploadsController : ControllerBase
         await messageBus.BroadcastAsync(new FinalizeBuildMessage { BuildId = buildId }, cancellationToken);
         return Accepted(new { status = "Finalizing" });
     }
+
+    /// <summary>
+    /// How did a workflow run turn out? The endpoint a CI gate polls — and the
+    /// reason it exists rather than pointing consumers at <c>/api/browse</c>:
+    /// browse authorizes against a signed-in human's GitHub access, so no CI
+    /// credential can read a private repository through it, and it cannot tell
+    /// "no build yet" apart from "not allowed".
+    /// <para>
+    /// Documented in <c>docs/upload-api.md</c>, which is a compatibility
+    /// promise: fields are added here, never removed or repurposed.
+    /// </para>
+    /// </summary>
+    [HttpGet("status")]
+    // Overrides the controller's "uploads" policy (action-level metadata wins):
+    // that one allows 60/minute because it is sized for 50 MB payloads, and a
+    // gate polling every 5 seconds from several jobs of one workflow would
+    // exhaust it — throttling the poll *and* starving the uploads sharing its
+    // per-token bucket. Same partition key, limit sized for polling.
+    [EnableRateLimiting("uploads-status")]
+    public async Task<ActionResult<UploadStatusResponse>> Status(
+        [FromQuery] string repository, [FromQuery] string commitSha,
+        [FromQuery] long runId, [FromQuery] int runAttempt = 1,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(repository) || !repository.Contains('/'))
+            return BadRequest(new { error = "repository must be owner/name." });
+        if (string.IsNullOrWhiteSpace(commitSha))
+            return BadRequest(new { error = "commitSha is required." });
+
+        // provision: false — a GET must not have side effects. The upload path
+        // auto-provisions a public repository from an OIDC claim (registering is
+        // what an upload *is*); doing that here would let a poll for a
+        // repository that never uploaded quietly create it.
+        var repo = await ResolveAuthorizedRepository(repository, provision: false, cancellationToken);
+        if (repo is null)
+            return NotFound();
+
+        var buildId = Build.DocumentId(repo.GitHubId, commitSha, runId, runAttempt);
+        var build = await session.LoadAsync<Build>(buildId, cancellationToken);
+        if (build is null)
+        {
+            // Authorization is already proven, so this one is safe to spell out —
+            // and it is the distinction a poller needs, because it means "you
+            // asked the wrong question", never "keep waiting". Anti-enumeration
+            // is preserved above, where the repository itself 404s bare.
+            return NotFound(new { error = $"No build for run {runId}.{runAttempt} on {commitSha}." });
+        }
+
+        var commit = build.Commit is null ? null : await session.LoadAsync<Commit>(build.Commit, cancellationToken);
+        var baseUrl = configuration["Coverage:BaseUrl"]?.TrimEnd('/');
+
+        return Ok(new UploadStatusResponse(
+            buildId,
+            Build.ClassifyState(build),
+            build.Status,
+            build.FinalizeReason,
+            build.CreatedAtUtc,
+            build.FinalizedAtUtc,
+            build.Coverage,
+            await ResolveBaseline(repo, commit, cancellationToken),
+            [.. build.Sessions.Select(s => new UploadStatusSession(
+                s.SessionId, s.JobName, s.Flags, s.ParseStatus, s.Error, s.FilesCount))],
+            baseUrl is null ? null : $"{baseUrl}/r/{repo.FullName}/c/{commitSha}"));
+    }
+
+    /// <summary>
+    /// The number a ratchet compares against: the newest finalized coverage on
+    /// the default branch that isn't the commit being polled.
+    /// <para>
+    /// It deliberately does not read <see cref="Repository.LatestCoverage"/>,
+    /// which holds exactly this and would cost nothing. On a push-to-default
+    /// gate the finalize that makes the build terminal is the same finalize that
+    /// overwrites that field with this very commit — so the poller would compare
+    /// the build against itself and every ratchet would pass. The exclusion has
+    /// to happen in the query.
+    /// </para>
+    /// </summary>
+    private async Task<UploadStatusBaseline?> ResolveBaseline(Repository repo, Commit? commit, CancellationToken cancellationToken)
+    {
+        // Repositories auto-provisioned by an OIDC upload never learn their
+        // default branch (only the webhooks set it), and that is precisely the
+        // population uploading without installing the App — so fall back to the
+        // polled commit's own branch rather than returning no baseline at all.
+        var branch = repo.DefaultBranch ?? commit?.Branch;
+
+        var query = session.Query<Commits_ByRepository.Result, Commits_ByRepository>()
+            .Where(r => r.Repository == repo.Id && r.HasCoverage);
+        if (branch is not null)
+            query = query.Where(r => r.Branch == branch);
+
+        // Take 2: the newest may be the commit being polled.
+        var candidates = await query
+            .OrderByDescending(r => r.AuthoredAt)
+            .OfType<Commit>()
+            .Take(2)
+            .ToListAsync(cancellationToken);
+
+        var baseline = candidates.FirstOrDefault(c => !string.Equals(c.Sha, commit?.Sha, StringComparison.OrdinalIgnoreCase));
+        return baseline is null ? null : new UploadStatusBaseline(baseline.Sha, baseline.Branch, baseline.Coverage);
+    }
+
+    public sealed record UploadStatusResponse(
+        string BuildId,
+        string State,
+        string Status,
+        string? FinalizeReason,
+        DateTime CreatedAtUtc,
+        DateTime? FinalizedAtUtc,
+        CoverageSummary? Coverage,
+        UploadStatusBaseline? Baseline,
+        IReadOnlyList<UploadStatusSession> Sessions,
+        string? CommitUrl);
+
+    public sealed record UploadStatusBaseline(string Sha, string? Branch, CoverageSummary? Coverage);
+
+    public sealed record UploadStatusSession(
+        string SessionId, string? JobName, string[] Flags, string ParseStatus, string? Error, int FilesCount);
 
     public sealed class UploadForm
     {
@@ -168,7 +287,12 @@ public partial class UploadsController : ControllerBase
 
     public sealed record FinishRequest(string Repository, string CommitSha, long RunId, int RunAttempt);
 
-    private async Task<Repository?> ResolveAuthorizedRepository(string fullName, CancellationToken cancellationToken)
+    /// <param name="provision">
+    /// Whether an unknown public repository may be created from the OIDC claim.
+    /// True for an upload — registering the repository is part of what an upload
+    /// means. False for every read: a GET must not create documents.
+    /// </param>
+    private async Task<Repository?> ResolveAuthorizedRepository(string fullName, bool provision, CancellationToken cancellationToken)
     {
         // OIDC path: the GitHub-signed `repository` claim IS the authorization —
         // a workflow can only ever upload for the repository it runs in.
@@ -177,7 +301,7 @@ public partial class UploadsController : ControllerBase
         {
             if (!string.Equals(oidcRepository, fullName, StringComparison.OrdinalIgnoreCase))
                 return null;
-            return await ResolveOidcRepository(cancellationToken);
+            return await ResolveOidcRepository(provision, cancellationToken);
         }
 
         var repository = await session.Query<Repository>()
@@ -206,7 +330,7 @@ public partial class UploadsController : ControllerBase
     /// first upload (no App installation needed), private ones must already be
     /// known via the GitHub App.
     /// </summary>
-    private async Task<Repository?> ResolveOidcRepository(CancellationToken cancellationToken)
+    private async Task<Repository?> ResolveOidcRepository(bool provision, CancellationToken cancellationToken)
     {
         if (!long.TryParse(User.FindFirst(GitHubOidc.RepositoryIdClaim)?.Value, out var gitHubRepoId))
             return null;
@@ -214,6 +338,9 @@ public partial class UploadsController : ControllerBase
         var repository = await session.LoadAsync<Repository>(Repository.DocumentId(gitHubRepoId), cancellationToken);
         if (repository is not null)
             return repository;
+
+        if (!provision)
+            return null;
 
         if (User.FindFirst(GitHubOidc.RepositoryVisibilityClaim)?.Value != "public")
             return null;

@@ -99,10 +99,21 @@ one docs-only commit ahead — confirm intended base). One PR for the lot.
 
 ## NEW (2026-08-18): enhancement — rate-limiter gaps + a `SparkTestDriver` licence option
 
-> **Filed upstream as [MintPlayer.Spark#265](https://github.com/MintPlayer/MintPlayer.Spark/issues/265)**,
-> covering both rate-limiter items below plus a third: letting `SparkTestDriver` tolerate an absent
-> licence (org secrets are not exposed to fork pull requests), while still failing loudly on an
-> *invalid* one. Coverage's local equivalent is `Coverage.Tests/CoverageRavenTest.cs`.
+> **✅ RESOLVED** — filed as [MintPlayer.Spark#265](https://github.com/MintPlayer/MintPlayer.Spark/issues/265),
+> fixed by [#266](https://github.com/MintPlayer/MintPlayer.Spark/pull/266), shipped in
+> `10.0.0-preview.52`. Both rate-limiter items below are addressed, plus a third: `SparkTestDriver`
+> now tolerates an absent licence (org secrets are not exposed to fork pull requests) while still
+> failing loudly on an *invalid* one — Coverage's local equivalent is
+> `Coverage.Tests/CoverageRavenTest.cs`.
+>
+> Coverage has adopted it: `spark.AddRateLimiter(o => o.PathPrefixes = [...])` in `Program.cs`, with
+> the hand-rolled `GlobalLimiter` and the manual `app.UseRateLimiter()` deleted. Kept below as the
+> record of what was wrong and why, since the reasoning outlived the workaround.
+>
+> One finding from the review is worth carrying: the fix's first routing guard was a **false
+> positive** for minimal-hosting apps, which never call `UseRouting()` explicitly — `WebApplication`
+> stamps `__GlobalEndpointRouteBuilder`, not the `__EndpointRouteBuilder` the guard checked. Fixed
+> upstream before merge. This app is unaffected either way: it calls `app.UseRouting()` explicitly.
 
 `spark.AddRateLimiter()` is a good primitive that Coverage ended up **not** using, for two
 reasons that are both fixable upstream and neither of which is a criticism of the design.

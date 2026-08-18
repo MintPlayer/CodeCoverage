@@ -15,10 +15,13 @@ This document does not reorder the roadmap: it fills a gap the roadmap never had
 a decision the roadmap was waiting on, resequences one T0.3 item, and disarms one live defect.
 
 Where an existing MintPlayer.Spark feature does the job, it is used rather than reimplemented — and
-where it doesn't, the gap goes upstream rather than being quietly worked around. Both happened:
-Spark ships a migration runner this repo had never referenced and now uses (§5 step 4), while its
-rate limiter turned out to place its middleware on the wrong side of authentication for this app, so
-that stays hand-configured and the gap is filed (§6.1, N5).
+where it doesn't, the gap goes upstream rather than being quietly worked around. Both happened, and
+the second one closed: Spark ships a migration runner this repo had never referenced and now uses
+(§5 step 4); its rate limiter placed its middleware on the wrong side of authentication for this app
+and could not be pointed at `/api/browse`, so those gaps were filed as
+[Spark#265](https://github.com/MintPlayer/MintPlayer.Spark/issues/265), fixed in
+[#266](https://github.com/MintPlayer/MintPlayer.Spark/pull/266), and the local workaround is now
+deleted in favour of the framework call (§6.1, N5).
 
 Legend: 🟦 Coverage repo · 🟪 `action/` · 🟩 MintPlayer.Spark PR
 
@@ -32,7 +35,7 @@ design survives; seven things moved, and five of them are new constraints rather
 
 | # | Finding | Effect |
 |---|---|---|
-| 0.1 | **The baseline cannot come from `Repository.LatestCoverage`** (two independent reasons — the second found on re-read: `BuildFinalizer.cs:38-46` has no chronology guard, so finalizing an *older* default-branch commit after a newer one overwrites the field with the older numbers; and while `DefaultBranch` is null the any-branch fallback re-applies on every finalize rather than seeding once).** That field *is* already the newest finalized default-branch coverage (`BuildFinalizer.cs:33-46`) — which looked like a free baseline. But on a push-to-`master` gate the finalize that makes `state` terminal is the same finalize that overwrites the field, so by the time the poller reads it, the "baseline" is *this commit*. | §3.2 now specifies an explicit query over `Commits_ByRepository`, self-excluded. |
+| 0.1 | **The baseline cannot come from `Repository.LatestCoverage`.** That field *is* already the newest finalized default-branch coverage (`BuildFinalizer.cs:33-46`), which looked like a free baseline. But on a push-to-`master` gate the finalize that makes `state` terminal is the same finalize that overwrites it, so by the time the poller reads it the "baseline" is *this commit*. A second, independent reason found on re-read: `BuildFinalizer.cs:38-46` has no chronology guard, so finalizing an *older* default-branch commit after a newer one overwrites the field with the older numbers — and while `DefaultBranch` is null the any-branch fallback re-applies on every finalize rather than seeding once. | §3.2 now specifies an explicit query over `Commits_ByRepository`, self-excluded. |
 | 0.2 | **A status `GET` must not auto-provision.** `ResolveAuthorizedRepository` → `ResolveOidcRepository` (`UploadsController.cs:209-247`) **creates** `Account` + `Repository` documents for any public repo presenting an OIDC token. Reusing it verbatim on a `GET` would let a poll for a repository that never uploaded silently create it. | §3.2 uses a read-only resolve. |
 | 0.3 | **The `uploads` policy is too tight to poll on.** 60 requests/minute per token (`Program.cs:170-178`). A 5-second poll is 12/min *per waiting job*; the consumer runs 13 report-producing jobs, and they share one token. Putting the status endpoint on that policy would 429 the gate **and** starve the uploads it shares a bucket with. | §3.2 adds a separate `uploads-status` policy on the same token partition; §3.3 makes the action honour `Retry-After`. |
 | 0.4 | **`FinalizeReason == "Timeout"` is a stronger signal than §2 claimed.** `FinalizeBuildsCronJob:52` computes `reason = timedOut && !allParsed ? "Timeout" : "Debounce"`, and the `Timeout` branch marks every still-`Pending` session `Failed`. So `Timeout` ⟹ at least one `Failed` session, and a build that merely *exceeded* 30 minutes with everything parsed is labelled `Debounce`. | §2 guarantee 4 restated; the `Timeout` clause in the `state` derivation is belt-and-braces, not load-bearing. |
@@ -43,8 +46,8 @@ design survives; seven things moved, and five of them are new constraints rather
 Everything else re-verified unchanged, including all of §5's `ParentSha` analysis (two writers, zero
 programmatic readers, `Commit.json:134-148` editable), §6.2's authorization reading, and the three
 copies of the visibility predicate. Two upstream facts were confirmed in the Spark source rather than
-assumed: `MintPlayer.Spark.Migrations` **is published at `10.0.0-preview.51`** (the version this repo
-already pins), and `Octokit.Webhooks` 4.1.2 does define `PullRequestBase` symmetrically with
+assumed: `MintPlayer.Spark.Migrations` **is published**, at the Spark version this repo pins (then
+`preview.51`, now `preview.52`), and `Octokit.Webhooks` 4.1.2 does define `PullRequestBase` symmetrically with
 `PullRequestHead`, so `pr.Base.Sha` is available to §5 step 2.
 
 ---
@@ -715,26 +718,28 @@ backup both come up with the stale property gone.
 
 Four changes, in ascending cost — and the first is the one that matters most:
 
-1. **Meter `/spark/*`** — the second read surface of §6.2.
-   **Not** via `spark.AddRateLimiter()`, which is what this document originally specified. Two
-   findings from reading the extension's body killed that, and neither is visible from its
-   signature:
-   - **It does not buy the `/connect` protection its documentation advertises**, because Coverage
-     has no Identity endpoints (§6.1, verified). That was the reason to rank the item first, and it
-     does not hold here.
-   - **Its middleware lands after authentication, and that is the wrong side.** The extension
-     registers `app.UseRateLimiter()` through the builder registry, and `registry.ApplyMiddleware`
-     runs at the *end* of `UseSpark` — after `UseAuthentication`. Coverage's own limiter runs
-     *before* authentication deliberately (`Program.cs:150-155` says so), so a flood is rejected
-     without first costing a token lookup on the ingest path. Adopting the extension would give that
-     up. And the two cannot be combined: ASP.NET Core's `UseRateLimiter` has no idempotence marker,
-     so a second call appends a second `RateLimitingMiddleware` and every request is charged twice
-     against the same partition — including `/api/uploads`.
+1. **Meter `/spark/*` and `/api/browse`** — the second read surface of §6.2, and our own.
+   ✅ Now `spark.AddRateLimiter(o => o.PathPrefixes = ["/spark", "/connect", "/api/browse"])`,
+   after [MintPlayer.Spark#266](https://github.com/MintPlayer/MintPlayer.Spark/pull/266) shipped in
+   `preview.52`. The hand-rolled `GlobalLimiter` and the manual `app.UseRateLimiter()` are both
+   deleted.
 
-   So: a hand-configured `GlobalLimiter` scoped to `/spark`, with Spark's own defaults (150 / 10 s
-   per IP), inside the existing `AddRateLimiter` call and under the existing early
-   `app.UseRateLimiter()`. One middleware, ahead of authentication, covering everything.
-   Both gaps are filed upstream (§N5.4) and the local config is deleted when they land.
+   **This document originally specified the framework call, then rejected it**, on two findings from
+   reading the extension's body. Both were fixed upstream rather than worked around, which is why the
+   rejection did not survive:
+   - It bought no `/connect` protection here, because Coverage has no Identity endpoints (§6.1). Still
+     true, and now irrelevant — `/connect` is simply one entry in a list we control.
+   - **Its middleware landed after authentication**, and this app deliberately meters *before* it, so
+     a flood costs no token lookup on the ingest path. `preview.52` introduces a middleware stage and
+     registers the limiter at `BeforeAuthentication`, so the framework now places it exactly where the
+     hand-rolled one sat.
+
+   **The trap that made the two uncombinable is still live**, and is the reason the manual call had to
+   go in the same commit as the switch: ASP.NET Core's `UseRateLimiter` has no idempotence marker and
+   `RateLimitingMiddleware` records nothing to say it ran, so registering both puts two instances in
+   the pipeline and every request takes two leases from the same partition — silently halving the
+   configured budget.
+
 2. **A dedicated bounded cache for GitHub source content.** Not a `SizeLimit` on the shared
    `IMemoryCache` as originally written — that would make every unsized `Set` in the process throw,
    including Spark's (§6.1). Sized in characters with a per-entry ceiling, so one generated bundle

@@ -10,6 +10,7 @@ using MintPlayer.AspNetCore.SpaServices.Extensions;
 using MintPlayer.Spark;
 using MintPlayer.Spark.Abstractions.Authentication;
 using MintPlayer.Spark.Authorization.Extensions;
+using MintPlayer.Spark.Extensions;
 using MintPlayer.Spark.Authorization.Identity;
 using MintPlayer.Spark.Messaging;
 using MintPlayer.Spark.Webhooks.GitHub.Extensions;
@@ -87,6 +88,18 @@ builder.Services.AddSpark(builder.Configuration, spark =>
     spark.AddCredentialScheme<AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>(
         ApiTokenAuthenticationHandler.SchemeName);
 
+    // Meters /spark (Spark's generic query API — a second anonymous read surface
+    // over the same documents as /api/browse) and /api/browse itself, one bucket
+    // per client IP. Registered at the BeforeAuthentication stage since
+    // preview.52, so a flood is rejected before a covt_ token lookup is paid for
+    // — which is why this replaced a hand-rolled GlobalLimiter rather than
+    // sitting alongside one. Assigning PathPrefixes replaces the defaults, hence
+    // /connect is listed even though this app has no Identity endpoints: naming
+    // it costs nothing and stops the omission becoming a surprise if one is ever
+    // added. Named policies below still apply per endpoint on top of this.
+    spark.AddRateLimiter(rateLimiter =>
+        rateLimiter.PathPrefixes = ["/spark", "/connect", "/api/browse"]);
+
     spark.AddMessaging();
     spark.AddRecipients();
     spark.AddCronJobs();
@@ -156,11 +169,10 @@ builder.Services.AddAuthentication()
     });
 
 // Ingest endpoints are partitioned per token (falling back to client IP).
-// The limiter middleware runs BEFORE authentication (UseSpark wires auth later
-// in the pipeline), so context.User is always anonymous here — the partition
-// key must come from the presented credential itself, not claims. Keeping that
-// ordering is why the limiter is registered by hand rather than by Spark's
-// AddRateLimiter; see the GlobalLimiter comment below.
+// The limiter middleware runs BEFORE authentication, so context.User is always
+// anonymous here — the partition key must come from the presented credential
+// itself, not claims. That ordering is the framework's since preview.52; before
+// it, this app hand-rolled the limiter specifically to keep it.
 static string UploadsPartitionKey(HttpContext context)
 {
     var authorization = context.Request.Headers.Authorization.ToString();
@@ -176,34 +188,6 @@ static string UploadsPartitionKey(HttpContext context)
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-
-    // Spark's generic query API (/spark/*) is a second anonymous read surface
-    // over the same documents as /api/browse, and it takes no attributes — so it
-    // is metered here, by IP, with Spark's own documented defaults.
-    //
-    // Spark ships `spark.AddRateLimiter()` for this, and it is deliberately not
-    // used: it registers its middleware through the builder registry, which runs
-    // it at the END of UseSpark — after authentication. Our limiter runs before
-    // authentication, so an unauthenticated flood is rejected without first
-    // costing a token lookup, and that is worth more here than the one line it
-    // would save. Its other selling point, covering /connect, does not apply:
-    // this app has no Identity endpoints. The generic gap — that
-    // SparkRateLimiterOptions cannot be pointed at other path prefixes — is
-    // filed upstream in docs/spark-handoff.md.
-    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
-    {
-        if (!context.Request.Path.StartsWithSegments("/spark"))
-            return RateLimitPartition.GetNoLimiter("no-limit");
-
-        return RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 150,
-                Window = TimeSpan.FromSeconds(10),
-                QueueLimit = 0,
-            });
-    });
 
     // Browsing is anonymous for public repositories, and GetFile costs a GitHub
     // fetch per uncached path against the installation's shared rate limit — so
@@ -274,7 +258,11 @@ app.UseStaticFiles();
 app.UseSpaStaticFilesImproved();
 
 app.UseRouting();
-app.UseRateLimiter();
+// No app.UseRateLimiter() here: spark.AddRateLimiter() registers it through the
+// builder registry, at the BeforeAuthentication stage. Calling it here as well
+// would put two RateLimitingMiddleware instances in the pipeline — ASP.NET Core
+// has no idempotence marker on either — so every request would take two leases
+// from the same partition and silently get half its configured budget.
 app.UseSpark();
 
 app.UseEndpoints(endpoints =>

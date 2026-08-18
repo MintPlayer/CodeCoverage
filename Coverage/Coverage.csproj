@@ -17,14 +17,14 @@
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
 		<PackageReference Include="MintPlayer.SourceGenerators.Attributes" Version="10.20.0" GeneratePathProperty="true" />
-		<PackageReference Include="MintPlayer.Spark" Version="10.0.0-preview.51" />
-		<PackageReference Include="MintPlayer.Spark.Authorization" Version="10.0.0-preview.51" />
-		<PackageReference Include="MintPlayer.Spark.Cron" Version="10.0.0-preview.51" />
-		<PackageReference Include="MintPlayer.Spark.Messaging" Version="10.0.0-preview.51" />
-		<PackageReference Include="MintPlayer.Spark.Migrations" Version="10.0.0-preview.51" />
-		<PackageReference Include="MintPlayer.Spark.Webhooks.GitHub" Version="10.0.0-preview.51" />
-		<PackageReference Include="MintPlayer.Spark.Webhooks.GitHub.DevTunnel" Version="10.0.0-preview.51" />
-		<PackageReference Include="MintPlayer.Spark.SourceGenerators" Version="10.0.0-preview.51">
+		<PackageReference Include="MintPlayer.Spark" Version="10.0.0-preview.52" />
+		<PackageReference Include="MintPlayer.Spark.Authorization" Version="10.0.0-preview.52" />
+		<PackageReference Include="MintPlayer.Spark.Cron" Version="10.0.0-preview.52" />
+		<PackageReference Include="MintPlayer.Spark.Messaging" Version="10.0.0-preview.52" />
+		<PackageReference Include="MintPlayer.Spark.Migrations" Version="10.0.0-preview.52" />
+		<PackageReference Include="MintPlayer.Spark.Webhooks.GitHub" Version="10.0.0-preview.52" />
+		<PackageReference Include="MintPlayer.Spark.Webhooks.GitHub.DevTunnel" Version="10.0.0-preview.52" />
+		<PackageReference Include="MintPlayer.Spark.SourceGenerators" Version="10.0.0-preview.52">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>

@@ -4,7 +4,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as zlib from 'zlib';
 import { collectContext } from './context';
+import { Credential, oidcCredential, staticCredential } from './credential';
 import { findCoverageFiles } from './files';
+import { UploadStatus, rate, waitForFinalize } from './status';
 
 const MAX_RETRIES = 3;
 
@@ -19,7 +21,7 @@ async function run(): Promise<void> {
 
   try {
     const url = core.getInput('url', { required: true }).replace(/\/+$/, '');
-    const token = await resolveCredential(url);
+    const credential = resolveCredential(url);
     const ctx = collectContext();
 
     const files = await findCoverageFiles(
@@ -63,7 +65,7 @@ async function run(): Promise<void> {
       form.append('files', new Blob([new Uint8Array(gzipped)]), path.basename(file) + '.gz');
     }
 
-    const response = await postWithRetry(`${url}/api/uploads`, token, form);
+    const response = await postWithRetry(`${url}/api/uploads`, credential, form);
     const body = (await response.json()) as { buildId: string; sessionId: string };
     core.info(`Upload accepted: build ${body.buildId}, session ${body.sessionId}`);
     core.setOutput('build-id', body.buildId);
@@ -72,7 +74,7 @@ async function run(): Promise<void> {
     if (getBool('finish')) {
       const finish = await postWithRetry(
         `${url}/api/uploads/finish`,
-        token,
+        credential,
         JSON.stringify({
           repository: ctx.repository,
           commitSha: ctx.commitSha,
@@ -82,6 +84,10 @@ async function run(): Promise<void> {
         'application/json',
       );
       core.info(`Finish requested (${finish.status}) — the build finalizes once parsing completes.`);
+    }
+
+    if (getBool('wait-for-finalize')) {
+      await waitAndReport(url, credential, ctx);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -97,8 +103,11 @@ async function run(): Promise<void> {
  * Prefers OIDC when asked (use-oidc) or when no token is configured and the
  * runtime offers it. The id-token's audience must equal the server's base URL —
  * that's what the server validates.
+ *
+ * Returns a credential rather than a token because an OIDC id-token lives five
+ * minutes and `wait-for-finalize` can run for thirty; see credential.ts.
  */
-async function resolveCredential(url: string): Promise<string> {
+function resolveCredential(url: string): Credential {
   const token = core.getInput('token');
   const oidcAvailable = !!process.env['ACTIONS_ID_TOKEN_REQUEST_URL'];
 
@@ -109,7 +118,7 @@ async function resolveCredential(url: string): Promise<string> {
       );
     }
     core.info('Authenticating with GitHub Actions OIDC.');
-    return core.getIDToken(url);
+    return oidcCredential(url);
   }
 
   if (!token) {
@@ -117,7 +126,87 @@ async function resolveCredential(url: string): Promise<string> {
       'No `token` given and OIDC is unavailable. Pass an upload token, or grant `permissions: id-token: write` for tokenless uploads.',
     );
   }
-  return token;
+  return staticCredential(token);
+}
+
+/**
+ * Waits for the build to finalize and publishes the result as step outputs, so
+ * a workflow can gate on `steps.<id>.outputs.line-rate` without writing any
+ * polling of its own.
+ *
+ * A timeout or a `CompleteWithErrors` is reported through the existing
+ * `fail-ci-if-error` input rather than a second knob: both mean "you may not
+ * have the number you think you have", which is the same judgement that input
+ * already encodes. Outputs are still set from whatever the server did say.
+ */
+async function waitAndReport(url: string, credential: Credential, ctx: ReturnType<typeof collectContext>): Promise<void> {
+  const timeoutSeconds = numberInput('wait-timeout', 1800);
+  const pollIntervalSeconds = numberInput('wait-poll-interval', 5);
+
+  core.info(`Waiting up to ${timeoutSeconds}s for the build to finalize...`);
+
+  // A timeout propagates to run()'s single catch, so fail-ci-if-error decides
+  // what it means in one place rather than two.
+  const status = await waitForFinalize(credential, {
+    url,
+    repository: ctx.repository,
+    commitSha: ctx.commitSha,
+    runId: ctx.runId,
+    runAttempt: ctx.runAttempt,
+    timeoutSeconds,
+    pollIntervalSeconds,
+  });
+
+  setResultOutputs(status);
+
+  const summary = status.coverage
+    ? `${status.coverage.linesCovered}/${status.coverage.linesCoverable} lines (${rate(status.coverage.linesCovered, status.coverage.linesCoverable)}%)`
+    : 'no coverage data';
+  core.info(`Build ${status.state}: ${summary}`);
+  if (status.commitUrl) core.info(status.commitUrl);
+
+  if (status.state === 'CompleteWithErrors') {
+    const failures = (status.sessions ?? [])
+      .filter((s) => s.parseStatus !== 'Parsed')
+      .map((s) => `${s.jobName || s.sessionId}: ${s.error ?? s.parseStatus}`);
+    throw new Error(
+      `The build finalized with errors, so the coverage number under-counts. ${failures.join('; ')}`.trim(),
+    );
+  }
+}
+
+function setResultOutputs(status: UploadStatus): void {
+  core.setOutput('state', status.state);
+  core.setOutput('build-status', status.status);
+  core.setOutput('finalize-reason', status.finalizeReason ?? '');
+  core.setOutput('commit-url', status.commitUrl ?? '');
+
+  const coverage = status.coverage;
+  core.setOutput('lines-covered', coverage?.linesCovered ?? '');
+  core.setOutput('lines-coverable', coverage?.linesCoverable ?? '');
+  core.setOutput('line-rate', rate(coverage?.linesCovered, coverage?.linesCoverable));
+  core.setOutput('branches-covered', coverage?.branchesCovered ?? '');
+  core.setOutput('branches-total', coverage?.branchesTotal ?? '');
+  core.setOutput('branch-rate', rate(coverage?.branchesCovered, coverage?.branchesTotal));
+  core.setOutput('files-count', coverage?.filesCount ?? '');
+
+  // Empty on a first upload, where a ratchet has nothing to compare against and
+  // must pass by definition.
+  const baseline = status.baseline;
+  core.setOutput('baseline-sha', baseline?.sha ?? '');
+  core.setOutput('baseline-lines-covered', baseline?.coverage?.linesCovered ?? '');
+  core.setOutput('baseline-lines-coverable', baseline?.coverage?.linesCoverable ?? '');
+  core.setOutput('baseline-line-rate', rate(baseline?.coverage?.linesCovered, baseline?.coverage?.linesCoverable));
+}
+
+function numberInput(name: string, fallback: number): number {
+  const raw = core.getInput(name).trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`\`${name}\` must be a positive number of seconds, got "${raw}".`);
+  }
+  return value;
 }
 
 async function gitLsFiles(cwd: string): Promise<string | null> {
@@ -132,14 +221,14 @@ async function gitLsFiles(cwd: string): Promise<string | null> {
 
 async function postWithRetry(
   url: string,
-  token: string,
+  credential: Credential,
   body: FormData | string,
   contentType?: string,
 ): Promise<Response> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+      const headers: Record<string, string> = { Authorization: `Bearer ${await credential.get()}` };
       if (contentType) headers['Content-Type'] = contentType;
       const response = await fetch(url, { method: 'POST', headers, body });
       if (response.ok) return response;

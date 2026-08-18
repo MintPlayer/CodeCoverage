@@ -88,6 +88,12 @@ builder.Services.AddSpark(builder.Configuration, spark =>
     spark.AddMessaging();
     spark.AddRecipients();
     spark.AddCronJobs();
+    // Pending ISparkMigration classes run inside UseSpark(), after indexes are
+    // created and before the app serves — once per database, in Version order,
+    // under a cluster-wide lock. Committed and replayed automatically, so a
+    // restored backup or a fresh environment can't miss one the way a hand-run
+    // patch in Raven Studio can.
+    spark.AddMigrations();
     spark.AddGithubWebhooks(options =>
     {
         options.WebhookSecret = builder.Configuration["GitHub:WebhookSecret"] ?? string.Empty;

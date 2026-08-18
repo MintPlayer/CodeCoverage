@@ -140,7 +140,7 @@
         "dataType": "string",
         "isRequired": false,
         "isVisible": true,
-        "isReadOnly": false,
+        "isReadOnly": true,
         "order": 9,
         "isArray": false,
         "showedOn": "PersistentObject",

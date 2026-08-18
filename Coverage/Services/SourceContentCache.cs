@@ -59,5 +59,7 @@ public sealed class SourceContentCache : ISourceContentCache, IDisposable
         });
     }
 
-    public void Dispose() => cache.Dispose();
+    // Explicit, so it isn't part of the service's own surface — the DI
+    // container still disposes the singleton at shutdown.
+    void IDisposable.Dispose() => cache.Dispose();
 }

@@ -30,7 +30,28 @@ jobs:
       - name: Verify Spark model is in sync
         run: dotnet run --project Coverage/Coverage.csproj --configuration Release --no-build --no-launch-profile -- --spark-verify-model
 
+      # The embedded RavenDB the tests run against reads its licence from here.
+      # Absent — which is the case for a pull request from a fork, since org
+      # secrets are not exposed to those runs — the server starts in restricted
+      # mode instead of refusing to start, so a fork contributor can still run
+      # everything that needs no licensed feature. See CoverageRavenTest.
+      # Reports which mode the tests will run in. An absent or misnamed secret
+      # degrades silently to restricted mode — correct behaviour, but invisible,
+      # and then a licensed-feature test would fail for a reason nobody could
+      # see. Tests presence only: the value is never echoed, and never will be.
+      - name: Check RavenDB licence availability
+        env:
+          RAVENDB_LICENSE: ${{ secrets.RAVENDB_LICENSE }}
+        run: |
+          if [ -n "$RAVENDB_LICENSE" ]; then
+            echo "RAVENDB_LICENSE is set (${#RAVENDB_LICENSE} chars) — tests run licensed."
+          else
+            echo "::notice::RAVENDB_LICENSE is not set — the embedded server runs restricted. Expected on fork pull requests; otherwise check the secret name."
+          fi
+
       - name: Test with coverage
+        env:
+          RAVENDB_LICENSE: ${{ secrets.RAVENDB_LICENSE }}
         run: dotnet test Coverage.Tests/Coverage.Tests.csproj --configuration Release --no-build --collect:"XPlat Code Coverage"
 
       # Dogfood: upload our own coverage to a deployed Coverage instance,

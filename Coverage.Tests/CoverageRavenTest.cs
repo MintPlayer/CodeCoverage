@@ -21,16 +21,41 @@ namespace Coverage.Tests;
 /// </summary>
 public abstract class CoverageRavenTest : RavenTestDriver
 {
+    /// <summary>
+    /// The licence, as JSON, matching the convention <c>MintPlayer.Spark.Testing</c>
+    /// already uses. CI supplies it from the organization secret of the same name.
+    /// </summary>
+    private const string LicenseEnvironmentVariable = "RAVENDB_LICENSE";
+
     static CoverageRavenTest()
     {
+        var license = Environment.GetEnvironmentVariable(LicenseEnvironmentVariable);
+
         ConfigureServer(new TestServerOptions
         {
-            Licensing = new Raven.Embedded.ServerOptions.LicensingOptions
-            {
-                // CI has no RAVENDB_LICENSE; the embedded server runs in its
-                // restricted mode rather than refusing to start.
-                ThrowOnInvalidOrMissingLicense = false,
-            },
+            // Deliberately conditional rather than always tolerant.
+            //
+            // With a licence, honour it and let an invalid one fail loudly at
+            // startup — `ThrowOnInvalidOrMissingLicense = false` would turn a
+            // misconfigured licence into a silent downgrade to restricted mode,
+            // and the failure would then surface as an obscure "feature not
+            // available" inside whichever test first needs a licensed feature,
+            // rather than as "the licence is wrong" where it can be fixed.
+            //
+            // Without one, start restricted rather than refusing to run: org
+            // secrets are not exposed to pull requests from forks, and nothing
+            // in this suite needs a licensed feature. A contributor without a
+            // licence gets a running suite, not a wall.
+            Licensing = string.IsNullOrWhiteSpace(license)
+                ? new Raven.Embedded.ServerOptions.LicensingOptions
+                {
+                    ThrowOnInvalidOrMissingLicense = false,
+                }
+                : new Raven.Embedded.ServerOptions.LicensingOptions
+                {
+                    License = license,
+                    EulaAccepted = true,
+                },
         });
     }
 }

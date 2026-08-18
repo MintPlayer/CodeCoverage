@@ -11,6 +11,7 @@ Built on [MintPlayer.Spark](https://github.com/MintPlayer/MintPlayer.Spark)
 - **Product & architecture**: [docs/PRD.md](docs/PRD.md)
 - **Milestone plan**: [docs/PLAN.md](docs/PLAN.md)
 - **The upload GitHub Action**: [action/README.md](action/README.md) (`uses: MintPlayer/CodeCoverage/action@master`)
+- **The upload API contract** (states, polling, gating a PR): [docs/upload-api.md](docs/upload-api.md)
 - **Upstream (Spark) work items**: [docs/spark-handoff.md](docs/spark-handoff.md)
 
 ## Local development

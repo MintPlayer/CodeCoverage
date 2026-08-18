@@ -263,6 +263,14 @@ adopting it is M9.28; only the commit list has a static index (tree/hierarchy re
 materialized `BuildTreeSummary` since M9.20); typed webhook recipients were deliberately
 skipped (M8 step 2.3 note).
 
+**Everything without a static index runs on a RavenDB auto-index**, silently and by default — that
+is one static index against four collections on the anonymous generic-query surface, the hottest
+lookup in the app (`Repository` by `FullName`, opening all nine browse endpoints) and a cron firing
+every sixty seconds. Spark `preview.53` can generate indexes from a `[GenerateIndex]` attribute on the
+entity; see [adopt-generated-indexes.md](adopt-generated-indexes.md) for what it covers, what it
+cannot (`Commit` — the coalesced sort field is not expressible, and one index per entity is a
+compile error), and the sequencing.
+
 ## Sequencing notes
 
 - M0 (Spark PR) and M3 (action) can proceed in parallel with M1/M2 once the token library's *interface* is agreed — the Coverage app can stub token auth briefly.

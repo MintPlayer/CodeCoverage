@@ -32,6 +32,8 @@ Legend: 🟦 Coverage repo · 🟪 `action/` · 🟩 MintPlayer.Spark PR
 The first draft of this document was written against the issue's two original comments. Those were
 replaced by a single consolidated handover brief, so every claim was read again in the source. **The
 design survives; seven things moved, and five of them are new constraints rather than corrections.**
+An eighth (0.8) was found later, while building, and is a finding about the app rather than about the
+issue.
 
 | # | Finding | Effect |
 |---|---|---|
@@ -42,6 +44,7 @@ design survives; seven things moved, and five of them are new constraints rather
 | 0.5 | **§6.1's "a `SizeLimit`, two lines, no API impact" is wrong.** `IMemoryCache` is registered once and shared (`GitHubAccessService.cs:21`, `GitHubContentService.cs:25`, plus anything Spark caches). Setting `SizeLimit` makes **every** `Set` that omits an explicit `Size` throw at runtime — including callers we don't own. | §6.1 replaces it with a dedicated bounded cache for source content. |
 | 0.6 | **SP1 answered: GitHub OIDC ID tokens expire in 5 minutes** (10 maximum, not configurable). The action mints once, in `resolveCredential` (`main.ts:110`). A 30-minute wait on that one token 401s partway — on slow builds only. | §3.3 re-mints on expiry; SP1 closed. |
 | 0.7 | **The consumer's cutover ask is already satisfied.** The handover brief §8 asks that the future check run be named `coverage/project` so their branch protection carries over unchanged. `roadmap-2026-08.md:399-400` already specifies `coverage/project` and `coverage/patch` — chosen independently, identical. | §4.4 records it as a **commitment**, so M11.3 cannot rename it. |
+| 0.8 | **Every query in this document except the baseline runs on a RavenDB auto-index.** Found while adding an index for `Build` (N6). `Commits_ByRepository` is the only static index in the app; `/api/uploads/status`'s repository resolve (`UploadsController.cs:307`), the cron that makes `state` terminal (`FinalizeBuildsCronJob.cs:32`) and all nine browse endpoints are auto-indexed. Spark [#269](https://github.com/MintPlayer/MintPlayer.Spark/pull/269) (`preview.53`) can generate most of them from the entities — but **not `Commit`**: one index per entity is enforced as an error, and `AuthoredAt`'s coalesce and `HasCoverage`'s null test are not expressible. | New N6; §3.2's baseline query is unaffected and stays hand-written. Detail in `adopt-generated-indexes.md`. |
 
 Everything else re-verified unchanged, including all of §5's `ParentSha` analysis (two writers, zero
 programmatic readers, `Commit.json:134-148` editable), §6.2's authorization reading, and the three
@@ -605,7 +608,7 @@ nothing to honour.
 ## 7. Spikes
 
 Each is a question whose answer changes the implementation, and each is cheap. **SP1 and SP3 were run
-on 2026-08-18 and are closed; SP2 stays open and does not block anything.**
+on 2026-08-18 and are closed; SP2 and SP4 stay open, and neither blocks anything in this document.**
 
 ### SP1 — Does an OIDC workflow JWT survive a long poll? 🟪 · ✅ **ANSWERED 2026-08-18 — no**
 
@@ -645,6 +648,23 @@ available for anyone who wants to know precisely which report failed and why.
 The consequence for N1's prose is that it may state the three values as **closed**: T1.2 will change
 `parseStatus`, an informational field, and will not change `state`. That is the whole point of
 deriving it.
+
+### SP4 — What does the `Commit` grid sort on once it is index-backed? 🟦 · cost S · **still open**
+
+Opened by §0.8. `Repository_Commits` declares `Date` as its default sort, and `Date` is a get-only
+`AuthoredAt ?? FirstSeenAtUtc` on the entity; `CoverageDelta` is another sortable grid column that is
+`[JsonIgnore]` and exists in RavenDB not at all. Both work today only because
+`CommitActions.Repository_Commits` materializes and returns an in-memory `IQueryable` — and
+`CommitActions.cs:53-57` already says in as many words that the sort must move to an indexed field if
+that ever stops being true.
+
+So the question is not *whether* the Commit grid can be index-backed but what the grid sorts on when
+it is: a mapped `Date` on the hand-written index (which `Commits_ByRepository` already computes, under
+the name `AuthoredAt`), a changed default sort in the model, or leaving it materialized — in which
+case its unbounded `ToListAsync()` is a scaling problem on its own terms.
+
+Blocks only step 5 of [adopt-generated-indexes.md](adopt-generated-indexes.md); N6 as scoped here does
+not touch it.
 
 ---
 
@@ -786,6 +806,49 @@ caller — which is precisely what the consumer asked us not to do.
 **Exit criteria**: `/spark`, `/connect` and `/api/browse` are all metered; the memory cache has a
 ceiling; a token-authenticated caller has its own bucket; the SPA is unaffected at normal use; the
 visibility predicate exists once and a test pins the two surfaces together.
+
+---
+
+### N6 — Stop querying through auto-indexes 🟦 · cost S then M · **planned, not started**
+
+Falls out of §0.8. Full investigation and sequencing in
+[adopt-generated-indexes.md](adopt-generated-indexes.md); the summary is that Spark
+[#269](https://github.com/MintPlayer/MintPlayer.Spark/pull/269) (`10.0.0-preview.53`) generates a
+RavenDB index, a `V{Entity}` projection and `SparkContext` query roots from a `[GenerateIndex]`
+attribute — and that it covers `Build`, `Repository` and `Account` but deliberately cannot cover
+`Commit`.
+
+Why it belongs in this document rather than only in the roadmap: two of the three surfaces this issue
+added run on auto-indexes. `/api/uploads/status` resolves the repository by `FullName`
+(`UploadsController.cs:307`) on every poll — 12/min per waiting job — and the cron that makes `state`
+terminal at all (`FinalizeBuildsCronJob.cs:32`) filters three fields every sixty seconds forever.
+Neither is wrong today; both are unmeasured.
+
+**Scope here** is steps 1–4 of that document, which are all cheap and independently provable:
+
+1. `preview.52` → `preview.53`, nothing generated yet — the step that turns upstream-reading into
+   compiled fact.
+2. `[IgnoreForIndex]` on `Build.Run`, with a recorded decision on `Build.Sessions`. **Blocking**: the
+   generator's membership test is opt-out, so a get-only computed property is otherwise emitted into
+   a map that runs against a document where the field does not exist.
+3. `[GenerateIndex]` on `Build` and `Account`; move `FinalizeBuildsCronJob`,
+   `BuildActions.Commit_Builds` and the three `Account` lookups onto them.
+4. `[GenerateIndex]` on `Repository`; move the six `FullName` lookups — including this issue's — and
+   the two `OwnerLogin` ones.
+
+**Out of scope**, and stated so it is not attempted by accident: the generic-surface cutover
+(`CoverageSparkContext` → index roots) is step 5 there, is gated on SP4, and drags `App_Data/Model`,
+`modelHashes.json`, `RepositoryVisibility.Filter`'s element type and the `Repository_Commits` default
+sort with it. `Commit` is out entirely — one index per entity is a compile error, and
+`Commits_ByRepository`'s coalesced `AuthoredAt` is not expressible as a generated projection. Losing
+that coalesce would silently mis-sort the *majority* of commits, since upload-only commits have no
+webhook timestamp.
+
+**Exit criteria**: the app builds and the suite is green on `preview.53`; `Build`, `Account` and
+`Repository` each resolve through a named static index rather than an auto-index; `--spark-verify-model`
+still exits 0; `Commits_ByRepository` is untouched; and the two conventions now in the codebase
+(`OfType` for the hand-written index, `ProjectInto` for generated ones) are stated in the index
+doc-comments rather than left for the next reader to infer.
 
 ---
 

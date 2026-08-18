@@ -621,7 +621,7 @@ re-minting mid-job is supported; refreshing on expiry rather than per request ke
 across a full wait, which stays well clear of any minting limit. No fallback to upload-tokens-only is
 needed, so `wait-for-finalize` works on both credentials.
 
-### SP2 — What is the real time-to-finalize? 🟦 · cost S
+### SP2 — What is the real time-to-finalize? 🟦 · cost S · **still open** (needs production traffic; blocks nothing)
 
 Measure against production on `mintplayer-ng-bootstrap` (13 reports, 804 files) with and without
 `finish: true`. Picks `wait-poll-interval` and the backoff curve, and tells us whether the ~2-minute
@@ -647,7 +647,7 @@ deriving it.
 
 ## 8. Milestones
 
-### N1 — Write the contract down 🟦 · cost S · **do this first**
+### N1 — Write the contract down 🟦 · cost S (✅ BUILT 2026-08-18)
 
 The consumer's own ranking: *"if only one of these is possible, (1) is the highest value per unit of
 effort, and unblocks a consumer-side gate immediately."* It is prose over behaviour that already
@@ -662,7 +662,7 @@ holds, and it is the input to N2/N3 rather than an afterthought of them.
 **Exit criteria**: a reader can write a correct poll loop — including its timeout — from the docs
 alone, without reading C#.
 
-### N2 — `GET /api/uploads/status` 🟦 · cost S–M
+### N2 — `GET /api/uploads/status` 🟦 · cost S–M (✅ BUILT 2026-08-18)
 
 Endpoint per §3.2, on `UploadsController` under a **new `uploads-status`** policy (§0.3 — not
 `uploads`, whose 60/min is sized for 50 MB payloads and would 429 a poll), resolving the repository
@@ -680,7 +680,7 @@ unknown public repo returns 404 **and stores nothing**.
 for a finished build and `InFlight` for a live one — and a `baseline` sufficient to decide a ratchet
 without a second call.
 
-### N3 — `wait-for-finalize` and the outputs 🟪 · cost M
+### N3 — `wait-for-finalize` and the outputs 🟪 · cost M (✅ BUILT 2026-08-18)
 
 Per §3.3, with SP1 answered: the poller **must refresh an OIDC credential** (5-minute expiry) rather
 than reuse the one minted for the upload, and must treat 429 as back-off rather than failure. Polling
@@ -691,7 +691,7 @@ executes, so a source-only change ships nothing.
 **Exit criteria**: a workflow step reads `steps.coverage.outputs.line-rate` and gates on it; with
 `wait-for-finalize: false` the action's timing is unchanged.
 
-### N4 — Disarm `ParentSha` 🟦 · cost S (steps 1–2) + M (step 4, first migration)
+### N4 — Disarm `ParentSha` 🟦 · cost S (steps 1–2) + M (step 4, first migration) (✅ BUILT 2026-08-18 — step 3, the rename, remains deferred by design)
 
 Per §5, and **split so the benefit lands in the cheap half**: steps 1–2 (drop the push writer, add the
 PR-webhook writer) are a few lines with no CLR-shape change, hence no model synchronize, no
@@ -711,7 +711,7 @@ webhook path, so a webhook-ordering regression test is net-new infrastructure.
 sha leaves the PR base intact (covered by a test, not by inspection); a fresh database and a restored
 backup both come up with the stale property gone.
 
-### N5 — Bound the anonymous surfaces 🟦 · cost S · **T0.3's item, resequenced to ship with N1**
+### N5 — Bound the anonymous surfaces 🟦 · cost S · **T0.3's item, resequenced to ship with N1** (✅ BUILT 2026-08-18 — items 1–3; item 4 filed upstream 🟩)
 
 Four changes, in ascending cost — and the first is the one that matters most:
 

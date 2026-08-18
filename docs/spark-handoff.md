@@ -97,7 +97,12 @@ during the Coverage-analyzer investigation (see `docs/PRD.md` in MintPlayer/Code
 §10 and PLAN.md M0). Branch from `master` (note: local checkout sits on `security-audit`,
 one docs-only commit ahead — confirm intended base). One PR for the lot.
 
-## NEW (2026-08-18): enhancement — `SparkRateLimiterOptions` can't be pointed at other paths
+## NEW (2026-08-18): enhancement — rate-limiter gaps + a `SparkTestDriver` licence option
+
+> **Filed upstream as [MintPlayer.Spark#265](https://github.com/MintPlayer/MintPlayer.Spark/issues/265)**,
+> covering both rate-limiter items below plus a third: letting `SparkTestDriver` tolerate an absent
+> licence (org secrets are not exposed to fork pull requests), while still failing loudly on an
+> *invalid* one. Coverage's local equivalent is `Coverage.Tests/CoverageRavenTest.cs`.
 
 `spark.AddRateLimiter()` is a good primitive that Coverage ended up **not** using, for two
 reasons that are both fixable upstream and neither of which is a criticism of the design.

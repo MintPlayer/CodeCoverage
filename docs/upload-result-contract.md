@@ -765,7 +765,8 @@ Four changes, in ascending cost — and the first is the one that matters most:
    `/connect` scoping is hardcoded, `SparkBuilderRateLimiterExtensions.cs:52`), and a way to place
    the middleware ahead of authentication (or at minimum a doc note that calling `UseRateLimiter`
    alongside it double-charges). Generic gaps, generic repo, per `PRD.md` §2 — after which (1) and
-   (3) are deleted in favour of configuration. Filed in
+   (3) are deleted in favour of configuration. Filed as
+   [MintPlayer.Spark#265](https://github.com/MintPlayer/MintPlayer.Spark/issues/265); context in
    [spark-handoff.md](spark-handoff.md).
 
 Plus §6.2's cleanup: extract the `!IsPrivate || OwnerLogin.In(owners)` predicate written three times

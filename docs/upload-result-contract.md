@@ -14,9 +14,11 @@ Companion to [PRD.md](PRD.md), [PLAN.md](PLAN.md) and [roadmap-2026-08.md](roadm
 This document does not reorder the roadmap: it fills a gap the roadmap never had a task for, records
 a decision the roadmap was waiting on, resequences one T0.3 item, and disarms one live defect.
 
-Where an existing MintPlayer.Spark feature does the job, it is used rather than reimplemented — that
-turned out to matter twice: the app never opts into Spark's rate limiter (§6.1), and Spark ships a
-migration runner this repo has never referenced (§5 step 4).
+Where an existing MintPlayer.Spark feature does the job, it is used rather than reimplemented — and
+where it doesn't, the gap goes upstream rather than being quietly worked around. Both happened:
+Spark ships a migration runner this repo had never referenced and now uses (§5 step 4), while its
+rate limiter turned out to place its middleware on the wrong side of authentication for this app, so
+that stays hand-configured and the gap is filed (§6.1, N5).
 
 Legend: 🟦 Coverage repo · 🟪 `action/` · 🟩 MintPlayer.Spark PR
 
@@ -713,27 +715,43 @@ backup both come up with the stale property gone.
 
 Four changes, in ascending cost — and the first is the one that matters most:
 
-1. **`spark.AddRateLimiter()`** in the `AddSpark` block. One line, an existing Spark feature the app
-   never opted into. It meters `/spark/*` — the second read surface of §6.2. It does *not* buy the
-   `/connect` protection its documentation advertises, because Coverage has no Identity endpoints
-   (§6.1, verified); that was the reason to rank it first and it no longer holds, so this is now
-   simply the cheapest of the four.
-   **Trap:** the extension self-registers its middleware through the Spark builder registry
-   (`SparkBuilderRateLimiterExtensions.cs:75`) — *"no separate `app.UseRateLimiter()` call needed"*.
-   Coverage already calls `app.UseRateLimiter()` itself (`Program.cs:212`), and ASP.NET Core's
-   `UseRateLimiter` has no idempotence marker — a second call appends a second
-   `RateLimitingMiddleware`. Every request would then acquire two leases from the same partition and
-   burn the budget at twice the configured rate, including on `/api/uploads`. Delete the manual call
-   in the same commit. (What does *not* conflict: Spark sets `GlobalLimiter` while Coverage adds named
-   policies, and both configurators compose on one options object — §6.1.)
-2. **A dedicated bounded cache for GitHub source content**, plus a per-request cap on `/file`'s
-   GitHub fetches. Not a `SizeLimit` on the shared `IMemoryCache` as originally written — that would
-   make every unsized `Set` in the process throw, including Spark's (§6.1).
-3. **A local `browse` policy** alongside `uploads`/`badges`, as a stopgap until (4). Must not partition
-   browse and uploads into the same bucket — the machine path (§6.3) is the whole point.
-4. **Upstream 🟩:** a `PathPrefixes` option on `SparkRateLimiterOptions`, since the `/spark` +
-   `/connect` scoping is hardcoded (`SparkBuilderRateLimiterExtensions.cs:52`). Generic gap, generic
-   repo, per `PRD.md` §2 — after which (3) is deleted in favour of configuration.
+1. **Meter `/spark/*`** — the second read surface of §6.2.
+   **Not** via `spark.AddRateLimiter()`, which is what this document originally specified. Two
+   findings from reading the extension's body killed that, and neither is visible from its
+   signature:
+   - **It does not buy the `/connect` protection its documentation advertises**, because Coverage
+     has no Identity endpoints (§6.1, verified). That was the reason to rank the item first, and it
+     does not hold here.
+   - **Its middleware lands after authentication, and that is the wrong side.** The extension
+     registers `app.UseRateLimiter()` through the builder registry, and `registry.ApplyMiddleware`
+     runs at the *end* of `UseSpark` — after `UseAuthentication`. Coverage's own limiter runs
+     *before* authentication deliberately (`Program.cs:150-155` says so), so a flood is rejected
+     without first costing a token lookup on the ingest path. Adopting the extension would give that
+     up. And the two cannot be combined: ASP.NET Core's `UseRateLimiter` has no idempotence marker,
+     so a second call appends a second `RateLimitingMiddleware` and every request is charged twice
+     against the same partition — including `/api/uploads`.
+
+   So: a hand-configured `GlobalLimiter` scoped to `/spark`, with Spark's own defaults (150 / 10 s
+   per IP), inside the existing `AddRateLimiter` call and under the existing early
+   `app.UseRateLimiter()`. One middleware, ahead of authentication, covering everything.
+   Both gaps are filed upstream (§N5.4) and the local config is deleted when they land.
+2. **A dedicated bounded cache for GitHub source content.** Not a `SizeLimit` on the shared
+   `IMemoryCache` as originally written — that would make every unsized `Set` in the process throw,
+   including Spark's (§6.1). Sized in characters with a per-entry ceiling, so one generated bundle
+   cannot evict everything else.
+   The companion suggestion, *"a per-request cap on `/file`'s GitHub fetches"*, turns out to be a
+   non-item: `GetFile` (`BrowseController.cs:350-380`) fetches exactly **one** path per request.
+   There is no fan-out to cap. The real bounds are the cache ceiling and the request rate, which are
+   (2) and (3).
+3. **A local `browse` policy** alongside `uploads`/`badges`, as a stopgap until (4) — applied as an
+   attribute on `BrowseController`, partitioned by IP, since these callers present no credential to
+   key on. Deliberately a separate bucket from `uploads`: the machine path (§6.3) is the whole point.
+4. **Upstream 🟩:** two gaps on `SparkRateLimiterOptions` — a `PathPrefixes` option (the `/spark` +
+   `/connect` scoping is hardcoded, `SparkBuilderRateLimiterExtensions.cs:52`), and a way to place
+   the middleware ahead of authentication (or at minimum a doc note that calling `UseRateLimiter`
+   alongside it double-charges). Generic gaps, generic repo, per `PRD.md` §2 — after which (1) and
+   (3) are deleted in favour of configuration. Filed in
+   [spark-handoff.md](spark-handoff.md).
 
 Plus §6.2's cleanup: extract the `!IsPrivate || OwnerLogin.In(owners)` predicate written three times
 (`SparkVisibility.cs:37`, `RepositoryActions.cs:38`, `BrowseController.ResolveVisibleRepository`) into

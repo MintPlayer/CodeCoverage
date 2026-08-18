@@ -31,6 +31,8 @@ builder.Services.AddControllers()
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
+// Bounded, and separate from the shared cache on purpose — see SourceContentCache.
+builder.Services.AddSingleton<Coverage.Services.ISourceContentCache, Coverage.Services.SourceContentCache>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddCoverage();
 builder.Services.AddSpark(builder.Configuration, spark =>
@@ -153,11 +155,12 @@ builder.Services.AddAuthentication()
         };
     });
 
-// Spark's built-in rate limiter only covers /spark/* — our ingest endpoints
-// need their own, partitioned per token (falling back to client IP).
-// The limiter middleware runs BEFORE authentication (UseSpark wires auth
-// later in the pipeline), so context.User is always anonymous here — the
-// partition key must come from the presented credential itself, not claims.
+// Ingest endpoints are partitioned per token (falling back to client IP).
+// The limiter middleware runs BEFORE authentication (UseSpark wires auth later
+// in the pipeline), so context.User is always anonymous here — the partition
+// key must come from the presented credential itself, not claims. Keeping that
+// ordering is why the limiter is registered by hand rather than by Spark's
+// AddRateLimiter; see the GlobalLimiter comment below.
 static string UploadsPartitionKey(HttpContext context)
 {
     var authorization = context.Request.Headers.Authorization.ToString();
@@ -173,6 +176,47 @@ static string UploadsPartitionKey(HttpContext context)
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Spark's generic query API (/spark/*) is a second anonymous read surface
+    // over the same documents as /api/browse, and it takes no attributes — so it
+    // is metered here, by IP, with Spark's own documented defaults.
+    //
+    // Spark ships `spark.AddRateLimiter()` for this, and it is deliberately not
+    // used: it registers its middleware through the builder registry, which runs
+    // it at the END of UseSpark — after authentication. Our limiter runs before
+    // authentication, so an unauthenticated flood is rejected without first
+    // costing a token lookup, and that is worth more here than the one line it
+    // would save. Its other selling point, covering /connect, does not apply:
+    // this app has no Identity endpoints. The generic gap — that
+    // SparkRateLimiterOptions cannot be pointed at other path prefixes — is
+    // filed upstream in docs/spark-handoff.md.
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+    {
+        if (!context.Request.Path.StartsWithSegments("/spark"))
+            return RateLimitPartition.GetNoLimiter("no-limit");
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 150,
+                Window = TimeSpan.FromSeconds(10),
+                QueueLimit = 0,
+            });
+    });
+
+    // Browsing is anonymous for public repositories, and GetFile costs a GitHub
+    // fetch per uncached path against the installation's shared rate limit — so
+    // an unmetered crawler spends a budget every tenant depends on. Roomy enough
+    // that the SPA never notices: a page view is a handful of requests.
+    options.AddPolicy("browse", context => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 300,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
     options.AddPolicy("uploads", context => RateLimitPartition.GetFixedWindowLimiter(
         partitionKey: UploadsPartitionKey(context),
         _ => new FixedWindowRateLimiterOptions

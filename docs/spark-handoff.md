@@ -97,6 +97,38 @@ during the Coverage-analyzer investigation (see `docs/PRD.md` in MintPlayer/Code
 §10 and PLAN.md M0). Branch from `master` (note: local checkout sits on `security-audit`,
 one docs-only commit ahead — confirm intended base). One PR for the lot.
 
+## NEW (2026-08-18): enhancement — `SparkRateLimiterOptions` can't be pointed at other paths
+
+`spark.AddRateLimiter()` is a good primitive that Coverage ended up **not** using, for two
+reasons that are both fixable upstream and neither of which is a criticism of the design.
+
+**1. The path scoping is hardcoded.** `SparkBuilderRateLimiterExtensions.cs:52` tests
+`/spark` and `/connect` literally, and `SparkRateLimiterOptions` exposes only `PermitLimit`
+and `Window`. An app that also wants its own anonymous read surface metered — Coverage has
+`/api/browse`, serving the same documents as `/spark` — cannot say so, and ends up
+hand-rolling a global limiter that duplicates the extension's body.
+
+*Suggested shape*: `PathPrefixes` on `SparkRateLimiterOptions`, defaulting to
+`["/spark", "/connect"]` so nothing changes for existing callers.
+
+**2. The middleware lands after authentication, and callers can't move it.** The extension
+registers `app.UseRateLimiter()` through the builder registry, and `registry.ApplyMiddleware`
+runs at the *end* of `UseSpark` — after `UseAuthentication`. An app whose flood risk is on an
+authenticated ingest endpoint wants the limiter to reject before a token lookup happens, and
+today the only way to get that is to register `UseRateLimiter()` by hand and skip the
+extension entirely (calling both runs `RateLimitingMiddleware` twice, and ASP.NET Core has no
+idempotence marker on it, so every request is charged twice against the same partition).
+
+*Suggested shape*: either place the limiter ahead of `UseAuthentication` inside `UseSpark`
+(it needs only routing, which has already run), or expose the registration point so an app
+can opt into "before auth". A note in the XML doc that the two cannot be combined would be
+worth having regardless — it is a silent double-charge, not an error.
+
+Coverage's local workaround: a hand-configured `GlobalLimiter` scoped to `/spark`, plus named
+policies for its own endpoints, all under one early `app.UseRateLimiter()`. It is deleted in
+favour of configuration the moment (1) and (2) land. Context:
+`docs/upload-result-contract.md` §6.1 / N5.
+
 ## 1. Bug: typed webhook messages produce invalid queue names (likely High)
 
 **Symptom**: any app with a typed `IRecipient<GitHubWebhookMessage<TEvent>>` faults at

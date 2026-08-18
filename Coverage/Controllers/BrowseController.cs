@@ -1,6 +1,7 @@
 using Coverage.Entities;
 using Coverage.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using MintPlayer.SourceGenerators.Attributes;
 using Raven.Client.Documents;
 using Raven.Client.Documents.Linq;
@@ -16,6 +17,11 @@ namespace Coverage.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/browse")]
+// Anonymous for public repositories, and GetFile spends the installation's
+// shared GitHub rate limit per uncached path — so a crawler here is a denial of
+// service against every other tenant, not just a load on us. Partitioned by IP:
+// these callers present no credential to key on.
+[EnableRateLimiting("browse")]
 public partial class BrowseController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;
@@ -413,8 +419,13 @@ public partial class BrowseController : ControllerBase
             .Where(r => r.FullName == $"{owner}/{name}")
             .FirstOrDefaultAsync(cancellationToken);
         if (repository is null) return null;
+
+        // Same rule as the /spark surface, from the same place — the two must
+        // agree forever, and a shared doc-comment was the only thing binding
+        // them. The owner list is only fetched when it can matter.
         if (!repository.IsPrivate) return repository;
-        return await gitHubAccess.IsOwnerAllowedAsync(repository.OwnerLogin, cancellationToken) ? repository : null;
+        var owners = await gitHubAccess.GetAllowedOwnersAsync(cancellationToken);
+        return RepositoryVisibility.IsVisible(repository, owners) ? repository : null;
     }
 
     // BaseUrl rides along so the SPA builds badge markdown against the public

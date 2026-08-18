@@ -1,5 +1,4 @@
 using Coverage.Entities;
-using Microsoft.Extensions.Caching.Memory;
 using MintPlayer.SourceGenerators.Attributes;
 using MintPlayer.Spark.Webhooks.GitHub.Services;
 
@@ -22,7 +21,7 @@ public partial class GitHubContentService : IGitHubContentService
 {
     [Inject] private readonly IGitHubInstallationService installationService;
     [Inject] private readonly IHttpClientFactory httpClientFactory;
-    [Inject] private readonly IMemoryCache memoryCache;
+    [Inject] private readonly ISourceContentCache sourceCache;
     [Inject] private readonly ILogger<GitHubContentService> logger;
 
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(30);
@@ -30,7 +29,7 @@ public partial class GitHubContentService : IGitHubContentService
     public async Task<string?> GetFileContentAsync(Repository repository, long? installationId, string sha, string path, CancellationToken cancellationToken = default)
     {
         var cacheKey = $"content/{repository.GitHubId}/{sha}/{path}";
-        if (memoryCache.TryGetValue<string>(cacheKey, out var cached))
+        if (sourceCache.TryGet(cacheKey, out var cached))
             return cached;
 
         string? content = null;
@@ -68,7 +67,7 @@ public partial class GitHubContentService : IGitHubContentService
         }
 
         if (content is not null)
-            memoryCache.Set(cacheKey, content, CacheDuration);
+            sourceCache.Set(cacheKey, content, CacheDuration);
 
         return content;
     }

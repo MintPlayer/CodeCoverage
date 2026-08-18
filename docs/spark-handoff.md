@@ -145,6 +145,37 @@ policies for its own endpoints, all under one early `app.UseRateLimiter()`. It i
 favour of configuration the moment (1) and (2) land. Context:
 `docs/upload-result-contract.md` §6.1 / N5.
 
+## NEW (2026-08-18): bug — `IndexRegistry` silently rebinds a collection to whichever index registers last
+
+**FILED — [Spark#272](https://github.com/MintPlayer/MintPlayer.Spark/issues/272)**, open. Found while
+scoping `[GenerateIndex]` adoption ([#269](https://github.com/MintPlayer/MintPlayer.Spark/pull/269),
+`preview.53`) for this repo.
+
+`IndexRegistry.RegisterIndex` guards on `_byIndexName` and then assigns
+`_byCollectionType[collectionType]` **unconditionally**
+([`IndexRegistry.cs:88`](https://github.com/MintPlayer/MintPlayer.Spark/blob/023ec43b097a338e2dcc801119a32ec4d6823185/libs/spark/MintPlayer.Spark/Services/IndexRegistry.cs#L88)).
+Two differently-named indexes over the same entity therefore both register, and the collection ends up
+bound to whichever `Assembly.GetTypes()` reached last — no build signal, no startup signal.
+
+`SPARK_INDEX_004` is the only thing preventing it today, and it does not cover the general case: it
+sees one compilation, so it catches a generated index colliding with a hand-written one but not two
+hand-written indexes, nor a collision across assemblies contributed via `AddIndexesFrom(...)`. It is
+also an analyzer diagnostic, so `.editorconfig` can switch it off and get the coin flip instead of a
+clean failure. Its own doc-comment describes the runtime as "keys registrations by collection type and
+silently skips duplicates", which is not what the code does — the practical difference being that the
+index which stops serving queries is the one you did not touch.
+
+Underneath sits a design question the issue also raises: `_byCollectionType` is a
+`Dictionary<Type, IndexRegistration>`, so Spark structurally cannot represent more than one index per
+entity, while RavenDB treats several indexes over a collection as routine. That is what blocks a
+generated `VCommit` coexisting with our hand-written `Commits_ByRepository` — see
+`docs/adopt-generated-indexes.md` §2. Proposed upstream: guard `_byCollectionType` the way
+`_byIndexName` is guarded (deterministic first-wins), fix the doc-comment, and optionally allow
+coexistence by making the collection binding an *explicit* default rather than an implicit one.
+
+**Not blocking us.** Our plan routes around it entirely by persisting `Commit.Date` and
+`Commit.HasCoverage` so one generated index replaces the hand-written one.
+
 ## 1. Bug: typed webhook messages produce invalid queue names (likely High)
 
 **Symptom**: any app with a typed `IRecipient<GitHubWebhookMessage<TEvent>>` faults at

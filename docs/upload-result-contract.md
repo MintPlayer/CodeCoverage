@@ -664,7 +664,9 @@ the name `AuthoredAt`), a changed default sort in the model, or leaving it mater
 case its unbounded `ToListAsync()` is a scaling problem on its own terms.
 
 Blocks only step 5 of [adopt-generated-indexes.md](adopt-generated-indexes.md); N6 as scoped here does
-not touch it.
+not touch it. Note that its step 6 — persisting `Date` and `HasCoverage` rather than computing them
+in the index map — **answers this spike by removing it**: a materialized `Date` is sortable by
+definition, and it is the same change that lets `Commit` be generated at all.
 
 ---
 
@@ -839,10 +841,17 @@ Neither is wrong today; both are unmeasured.
 **Out of scope**, and stated so it is not attempted by accident: the generic-surface cutover
 (`CoverageSparkContext` → index roots) is step 5 there, is gated on SP4, and drags `App_Data/Model`,
 `modelHashes.json`, `RepositoryVisibility.Filter`'s element type and the `Repository_Commits` default
-sort with it. `Commit` is out entirely — one index per entity is a compile error, and
+sort with it. `Commit` is out of N6 — one index per entity is a compile error, and
 `Commits_ByRepository`'s coalesced `AuthoredAt` is not expressible as a generated projection. Losing
 that coalesce would silently mis-sort the *majority* of commits, since upload-only commits have no
 webhook timestamp.
+
+Two later routes exist and neither belongs here. Persisting `Date` and `HasCoverage` (step 6 there)
+lets `Commit` be generated and deletes `Commits_ByRepository` outright, closing SP4 on the way.
+Running a generated `VCommit` *alongside* the hand-written index is possible today by suppressing the
+diagnostic, and is rejected: `IndexRegistry` binds a collection to whichever index
+`Assembly.GetTypes()` reaches last, filed as
+[Spark#272](https://github.com/MintPlayer/MintPlayer.Spark/issues/272) 🟩.
 
 **Exit criteria**: the app builds and the suite is green on `preview.53`; `Build`, `Account` and
 `Repository` each resolve through a named static index rather than an auto-index; `--spark-verify-model`

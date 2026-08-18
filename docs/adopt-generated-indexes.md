@@ -117,12 +117,29 @@ have none, so `App_Data/culture.json` and its `AdditionalFiles` line are not nee
 
 ## 2. What this repo can and cannot generate
 
-### `Commit` — cannot, twice over
+### `Commit` — not yet, for two independent reasons
 
-1. **Hard build error.** `IIndexRegistry` keys registrations by collection type: **one index per
-   entity**. A generated index for an entity that already has a hand-written one is
-   `SPARK_INDEX_004`, an *error*. `[GenerateIndex]` on `Commit` does not compile while
-   `Commits_ByRepository` exists.
+1. **One index per entity, enforced as a build error — but the enforcement is papering over a
+   registry defect, not a RavenDB one.** `SPARK_INDEX_004` fails the build when an entity that
+   already has a hand-written index gets `[GenerateIndex]`, so `[GenerateIndex]` on `Commit` does not
+   compile while `Commits_ByRepository` exists.
+
+   RavenDB itself is perfectly happy with several indexes over one collection. The ceiling is
+   `IndexRegistry._byCollectionType`, a `Dictionary<Type, IndexRegistration>` that structurally
+   cannot hold more than one index per entity — and `RegisterIndex` guards only `_byIndexName`, then
+   assigns `_byCollectionType[collectionType]` unconditionally
+   ([`IndexRegistry.cs:88`](https://github.com/MintPlayer/MintPlayer.Spark/blob/023ec43b097a338e2dcc801119a32ec4d6823185/libs/spark/MintPlayer.Spark/Services/IndexRegistry.cs#L88)).
+   So a second index does not "get skipped", as the diagnostic's own doc-comment claims — it
+   *rebinds the collection*, and the winner is decided by `Assembly.GetTypes()` order. Filed upstream
+   as [Spark#272](https://github.com/MintPlayer/MintPlayer.Spark/issues/272) 🟩, proposing a
+   deterministic first-wins guard plus an explicit default so coexistence stops being a diagnostic.
+
+   Two consequences for us. The diagnostic is an *analyzer* diagnostic, so `.editorconfig` can switch
+   it off — and hand-written queries never consult the registry, so
+   `session.Query<VCommit, Commits_Overview>()` would work regardless. Suppressing it is therefore
+   possible and is still the wrong move: it buys an index none of our existing call sites can use
+   (see 2), doubles indexing work on the heaviest write path, and leaves `Database.Commits` bound to
+   whichever index reflection happened to reach last.
 2. **Three of its four indexed fields are not projections.** `AuthoredAt` is a coalesce
    (`commit.AuthoredAt ?? commit.FirstSeenAtUtc`), `HasCoverage` is a null test
    (`commit.Coverage != null`), and only `Repository` and `Branch` are straight copies
@@ -134,9 +151,22 @@ those are the *majority* of commits, since OIDC auto-provisioned repositories ha
 all. An index that mapped the raw property would sort every one of them to one end, and six
 request-path call sites order by it.
 
-So `Commit` stays hand-written. That is not a gap in the generator — it is the case the generator
-explicitly leaves to hand-written indexes, and the `[Search]`/`IndexSearchFields()` partial seam
-exists for exactly this: keep the map, gain the companions.
+So `Commit` stays hand-written **for now**. That is not a gap in the generator — it is the case the
+generator explicitly leaves to hand-written indexes, and the `[Search]`/`IndexSearchFields()` partial
+seam exists for exactly this: keep the map, gain the companions.
+
+**The route that removes both blockers at once is to stop computing the two fields at index time and
+persist them instead.** `Date` already has a single well-defined write point — `FirstSeenAtUtc` is
+stamped at document creation in both the webhook and the upload path (`PLAN.md:167`), which is what
+the coalesce exists to paper over — and `HasCoverage` has one writer, `BuildFinalizer`, the only
+thing that assigns `Commit.Coverage`. Materialize both and every field becomes a plain projection:
+`[GenerateIndex]` compiles with no suppression and no dependence on #272, `Commits_ByRepository` is
+*deleted* rather than duplicated, there is exactly one index per collection, and **SP4 dissolves** —
+the generic grid can finally sort on `Date` because `Date` is a real indexed field.
+
+Cost is one Spark migration plus single-writer discipline on two fields, which is the pattern N4 just
+established for `ParentSha`. It is more work than suppressing a diagnostic, and it is the only option
+that ends with fewer hand-written indexes than we started with.
 
 ### `Repository` — yes, and it is the biggest win
 
@@ -251,8 +281,16 @@ Deliberately ordered so the first step is provable on its own and the risky part
 5. **`CoverageSparkContext` partial + generic-surface cutover** — §3's expensive half, gated on
    answering SP4 for the `Commit` grid. Not scoped here.
 
-`Commit` never appears in that list. It stays hand-written until someone has a reason to give
-`Commits_ByRepository` `[Search]` companions through the partial seam.
+6. **Materialize `Commit.Date` and `Commit.HasCoverage`, then generate `Commit` too** — §2's route.
+   Migration + single-writer discipline, then `[GenerateIndex]` on `Commit` and
+   `Commits_ByRepository` is deleted. Closes SP4 as a side effect. Independent of
+   [Spark#272](https://github.com/MintPlayer/MintPlayer.Spark/issues/272): it needs no second index
+   on the collection, so it does not wait on upstream.
+
+`Commit` appears only at step 6, and never as a *second* index on the collection. Coexistence — a
+generated `VCommit` alongside `Commits_ByRepository` — is possible today by suppressing
+`SPARK_INDEX_004`, and is deliberately not planned: it would bind `Database.Commits` to whichever
+index reflection reaches last (#272) and serve none of the six existing call sites.
 
 ## 5. Open question
 

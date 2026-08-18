@@ -21,6 +21,16 @@ that you can write the loop yourself, correctly, without reading any C#.
 > against *a signed-in human's* GitHub access, so an upload token cannot read a private repository
 > through it, and it returns the same `404` for "no build yet" as for "not allowed", which is exactly
 > the distinction a poller needs. Build on `/api/uploads/status`.
+>
+> **If you are polling `/api/browse` from CI today, move.** It is now rate limited **by client IP**,
+> and GitHub-hosted runners share egress addresses — so your gate can be throttled by traffic that
+> isn't yours, on a bucket you have no way to claim. `/api/uploads/status` is metered per *token*
+> instead, so a CI caller gets a bucket of its own and is never collateral damage from someone
+> else's crawler. That difference is the whole reason the endpoint exists.
+>
+> And whichever surface you poll: **never let a `429` count as a pass.** A gate that treats "I
+> couldn't get an answer" as "the answer was fine" is worse than no gate, because it fails open
+> exactly when the service is under load. Back off and retry — see the loop below.
 
 ---
 

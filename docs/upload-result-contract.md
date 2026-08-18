@@ -32,7 +32,7 @@ design survives; seven things moved, and five of them are new constraints rather
 
 | # | Finding | Effect |
 |---|---|---|
-| 0.1 | **The baseline cannot come from `Repository.LatestCoverage`.** That field *is* already the newest finalized default-branch coverage (`BuildFinalizer.cs:33-46`) — which looked like a free baseline. But on a push-to-`master` gate the finalize that makes `state` terminal is the same finalize that overwrites the field, so by the time the poller reads it, the "baseline" is *this commit*. | §3.2 now specifies an explicit query over `Commits_ByRepository`, self-excluded. |
+| 0.1 | **The baseline cannot come from `Repository.LatestCoverage`** (two independent reasons — the second found on re-read: `BuildFinalizer.cs:38-46` has no chronology guard, so finalizing an *older* default-branch commit after a newer one overwrites the field with the older numbers; and while `DefaultBranch` is null the any-branch fallback re-applies on every finalize rather than seeding once).** That field *is* already the newest finalized default-branch coverage (`BuildFinalizer.cs:33-46`) — which looked like a free baseline. But on a push-to-`master` gate the finalize that makes `state` terminal is the same finalize that overwrites the field, so by the time the poller reads it, the "baseline" is *this commit*. | §3.2 now specifies an explicit query over `Commits_ByRepository`, self-excluded. |
 | 0.2 | **A status `GET` must not auto-provision.** `ResolveAuthorizedRepository` → `ResolveOidcRepository` (`UploadsController.cs:209-247`) **creates** `Account` + `Repository` documents for any public repo presenting an OIDC token. Reusing it verbatim on a `GET` would let a poll for a repository that never uploaded silently create it. | §3.2 uses a read-only resolve. |
 | 0.3 | **The `uploads` policy is too tight to poll on.** 60 requests/minute per token (`Program.cs:170-178`). A 5-second poll is 12/min *per waiting job*; the consumer runs 13 report-producing jobs, and they share one token. Putting the status endpoint on that policy would 429 the gate **and** starve the uploads it shares a bucket with. | §3.2 adds a separate `uploads-status` policy on the same token partition; §3.3 makes the action honour `Retry-After`. |
 | 0.4 | **`FinalizeReason == "Timeout"` is a stronger signal than §2 claimed.** `FinalizeBuildsCronJob:52` computes `reason = timedOut && !allParsed ? "Timeout" : "Debounce"`, and the `Timeout` branch marks every still-`Pending` session `Failed`. So `Timeout` ⟹ at least one `Failed` session, and a build that merely *exceeded* 30 minutes with everything parsed is labelled `Debounce`. | §2 guarantee 4 restated; the `Timeout` clause in the `state` derivation is belt-and-braces, not load-bearing. |
@@ -746,6 +746,21 @@ Four changes, in ascending cost — and the first is the one that matters most:
 3. **A local `browse` policy** alongside `uploads`/`badges`, as a stopgap until (4) — applied as an
    attribute on `BrowseController`, partitioned by IP, since these callers present no credential to
    key on. Deliberately a separate bucket from `uploads`: the machine path (§6.3) is the whole point.
+
+   **The hazard this creates, and why §6.3's sequencing is not sufficient on its own.** Partitioning
+   by IP is the only option for an anonymous surface, but GitHub-hosted runners share egress
+   addresses — so a CI caller still polling `/api/browse` can be throttled by traffic that is not
+   its own, which is exactly the collateral damage the consumer's Q3 asked us to avoid. Shipping the
+   token-partitioned machine path in the same PR satisfies the letter of that request; it does not
+   help anyone who has not yet moved onto it.
+
+   Worse, it interacts with a decision on *their* side. Their D5 — *"treat a missing or `Pending`
+   coverage result as skip, never as fail"* — is correct reasoning about outages, but composed with
+   a 429 it makes the gate **fail open**: a throttled poll reads as a pass. Their own PRD sees the
+   shape of this (*"a gate that 429s is worse than no gate, per D5"*) without knowing the limit had
+   landed. So the bound is not done when the code ships: it is done when the consumer has been told
+   to build stage 1 on `/api/uploads/status`, while their gate is still unimplemented and moving
+   costs nothing. Documented in `upload-api.md` and raised on the issue.
 4. **Upstream 🟩:** two gaps on `SparkRateLimiterOptions` — a `PathPrefixes` option (the `/spark` +
    `/connect` scoping is hardcoded, `SparkBuilderRateLimiterExtensions.cs:52`), and a way to place
    the middleware ahead of authentication (or at minimum a doc note that calling `UseRateLimiter`

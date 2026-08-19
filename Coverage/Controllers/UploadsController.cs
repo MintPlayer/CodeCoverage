@@ -2,6 +2,7 @@ using Coverage.ApiTokens;
 using Coverage.Entities;
 using Coverage.Indexes;
 using Coverage.Ingestion;
+using Coverage.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -27,6 +28,7 @@ public partial class UploadsController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;
     [Inject] private readonly IMessageBus messageBus;
+    [Inject] private readonly IBaseResolver baseResolver;
     [Inject] private readonly ILogger<UploadsController> logger;
     [Inject] private readonly IConfiguration configuration;
 
@@ -208,6 +210,12 @@ public partial class UploadsController : ControllerBase
         var commit = build.Commit is null ? null : await session.LoadAsync<Commit>(build.Commit, cancellationToken);
         var baseUrl = configuration["Coverage:BaseUrl"]?.TrimEnd('/');
 
+        // A partial build's numbers are honest only against a like-for-like
+        // base; a whole build keeps the original whole-workspace baseline (D9).
+        var (baseline, baselineScope, projection) = build.Partial
+            ? await ResolvePartialComparison(repo, build, commit, cancellationToken)
+            : (await ResolveBaseline(repo, commit, cancellationToken), null, null);
+
         return Ok(new UploadStatusResponse(
             buildId,
             Build.ClassifyState(build),
@@ -216,10 +224,86 @@ public partial class UploadsController : ControllerBase
             build.CreatedAtUtc,
             build.FinalizedAtUtc,
             build.Coverage,
-            await ResolveBaseline(repo, commit, cancellationToken),
+            baseline,
             [.. build.Sessions.Select(s => new UploadStatusSession(
                 s.SessionId, s.JobName, s.Flags, s.ParseStatus, s.Error, s.FilesCount))],
-            baseUrl is null ? null : $"{baseUrl}/r/{repo.FullName}/c/{commitSha}"));
+            baseUrl is null ? null : $"{baseUrl}/r/{repo.FullName}/c/{commitSha}",
+            build.Partial,
+            baselineScope,
+            projection));
+    }
+
+    /// <summary>
+    /// Everything a partial build's comparison can honestly say, in three
+    /// pieces: a scoped <c>baseline</c> (the base restricted to the measured
+    /// paths), a <c>baselineScope</c> stating exactly which base resolved and
+    /// how far it strayed from what was declared, and a whole-workspace
+    /// <c>projection</c> carrying its own completeness verdict. Numbers appear
+    /// only once the head build is finalized (its tree summary exists); until
+    /// then the scope still reports what the base would be. Never throws for a
+    /// missing base — abstaining is the routine case (#11 SP3).
+    /// </summary>
+    private async Task<(UploadStatusBaseline? Baseline, UploadStatusBaselineScope? Scope, UploadStatusProjection? Projection)>
+        ResolvePartialComparison(Repository repo, Build build, Commit? commit, CancellationToken cancellationToken)
+    {
+        var resolved = commit is null
+            ? new ResolvedBase(build.DeclaredBaseSha, null, ResolvedBase.None, null, null)
+            : await baseResolver.ResolveAsync(repo, commit, build.DeclaredBaseSha, cancellationToken);
+
+        UploadStatusBaselineScope Scope(int? filesInScope = null, int? prunedFiles = null) =>
+            new("scoped", resolved.RequestedSha, resolved.ResolvedSha, resolved.Mode, filesInScope, prunedFiles);
+
+        if (resolved.BaseBuildId is null)
+            return (null, Scope(), null);
+
+        var headTree = build.Id is null ? null
+            : await session.LoadAsync<BuildTreeSummary>(BuildTreeSummary.DocumentId(build.Id), cancellationToken);
+        if (headTree is null)
+            return (null, Scope(), null);
+
+        var baseTree = await session.LoadAsync<BuildTreeSummary>(BuildTreeSummary.DocumentId(resolved.BaseBuildId), cancellationToken);
+        if (baseTree is null)
+            return (null, Scope(), null);
+
+        var fileList = await ReadHeadFileList(build, cancellationToken);
+        var comparison = PartialComparison.Compute(headTree, baseTree, fileList);
+
+        var reasons = new List<string>();
+        if (resolved.Mode != ResolvedBase.Exact)
+            reasons.Add("baseWalked");
+        if (fileList is null)
+            reasons.Add("noFileList");
+        if (headTree.Files.Any(f => !f.Matched))
+            reasons.Add("unmatchedPaths");
+        if (Build.ClassifyState(build) == "CompleteWithErrors")
+            reasons.Add("parseErrors");
+
+        return (
+            new UploadStatusBaseline(resolved.ResolvedSha!, resolved.Branch, comparison.ScopedBaseline),
+            Scope(comparison.FilesInScope, comparison.PrunedFiles),
+            new UploadStatusProjection(comparison.Projection, reasons.Count == 0, [.. reasons]));
+    }
+
+    /// <summary>
+    /// The head's git file list, needed to prune PR-deleted files from the
+    /// projection. Every job uploads the same `git ls-files` of the same
+    /// commit, so the first session that attached one wins.
+    /// </summary>
+    private async Task<string[]?> ReadHeadFileList(Build build, CancellationToken cancellationToken)
+    {
+        foreach (var buildSession in build.Sessions)
+        {
+            var attachment = await session.Advanced.Attachments.GetAsync(
+                build, UploadAttachments.FileListName(buildSession.SessionId), cancellationToken);
+            if (attachment is null)
+                continue;
+
+            await using var stream = attachment.Stream;
+            using var reader = new StreamReader(stream);
+            var text = await reader.ReadToEndAsync(cancellationToken);
+            return text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
+        return null;
     }
 
     /// <summary>
@@ -268,9 +352,30 @@ public partial class UploadsController : ControllerBase
         CoverageSummary? Coverage,
         UploadStatusBaseline? Baseline,
         IReadOnlyList<UploadStatusSession> Sessions,
-        string? CommitUrl);
+        string? CommitUrl,
+        bool Partial = false,
+        UploadStatusBaselineScope? BaselineScope = null,
+        UploadStatusProjection? Projection = null);
 
     public sealed record UploadStatusBaseline(string Sha, string? Branch, CoverageSummary? Coverage);
+
+    /// <summary>
+    /// States what the partial comparison's denominator actually is: <c>Mode</c>
+    /// is "scoped" (the only value yet — "whole" builds carry no scope object),
+    /// <c>BaseResolution</c> is exact | mergeBase | walked | none, and the two
+    /// shas make any substitution visible. Null counts mean "not computed yet".
+    /// </summary>
+    public sealed record UploadStatusBaselineScope(
+        string Mode, string? RequestedBaseSha, string? ResolvedBaseSha, string BaseResolution,
+        int? FilesInScope, int? PrunedFiles);
+
+    /// <summary>
+    /// The patched whole-workspace projection with its completeness verdict
+    /// (reasons: baseWalked | noFileList | unmatchedPaths | parseErrors). An
+    /// incomplete projection is a best-effort reconstruction — the UI shows a
+    /// danger badge and a gate may choose to abstain.
+    /// </summary>
+    public sealed record UploadStatusProjection(CoverageSummary Coverage, bool Complete, string[] IncompleteReasons);
 
     public sealed record UploadStatusSession(
         string SessionId, string? JobName, string[] Flags, string ParseStatus, string? Error, int FilesCount);

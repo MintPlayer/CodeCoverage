@@ -27,7 +27,8 @@ public interface IBaseResolver
 /// <param name="Mode">One of <see cref="ResolvedBase.Exact"/> / <see cref="ResolvedBase.MergeBase"/> / <see cref="ResolvedBase.Walked"/> / <see cref="ResolvedBase.None"/> — the API's <c>baseResolution</c> value.</param>
 /// <param name="BaseBuildId">The finalized build whose tree summary carries the base's per-file numbers.</param>
 /// <param name="Coverage">The base commit's whole-workspace totals.</param>
-public sealed record ResolvedBase(string? RequestedSha, string? ResolvedSha, string Mode, string? BaseBuildId, CoverageSummary? Coverage)
+/// <param name="Branch">The base commit's recorded branch, for display.</param>
+public sealed record ResolvedBase(string? RequestedSha, string? ResolvedSha, string Mode, string? BaseBuildId, CoverageSummary? Coverage, string? Branch = null)
 {
     public const string Exact = "exact";
     public const string MergeBase = "mergeBase";

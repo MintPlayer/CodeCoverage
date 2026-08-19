@@ -24,7 +24,7 @@ public partial class BaseResolver : IBaseResolver
         {
             var declared = await session.LoadAsync<Commit>(Entities.Commit.DocumentId(repository.GitHubId, requested), cancellationToken);
             if (await UsableBuildIdAsync(declared, cancellationToken) is { } declaredBuildId)
-                return new ResolvedBase(requested, declared!.Sha, ResolvedBase.Exact, declaredBuildId, declared.Coverage);
+                return new ResolvedBase(requested, declared!.Sha, ResolvedBase.Exact, declaredBuildId, declared.Coverage, declared.Branch);
         }
 
         // M4 slots the compare-API merge-base in here, between exact and walk.
@@ -51,7 +51,7 @@ public partial class BaseResolver : IBaseResolver
                 continue; // already probed above, and it wasn't usable
 
             if (await UsableBuildIdAsync(candidate, cancellationToken) is { } buildId)
-                return new ResolvedBase(requested, candidate.Sha, ResolvedBase.Walked, buildId, candidate.Coverage);
+                return new ResolvedBase(requested, candidate.Sha, ResolvedBase.Walked, buildId, candidate.Coverage, candidate.Branch);
         }
 
         return new ResolvedBase(requested, null, ResolvedBase.None, null, null);

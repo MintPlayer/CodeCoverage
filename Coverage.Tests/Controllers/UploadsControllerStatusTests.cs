@@ -15,6 +15,7 @@ using Raven.Client.Documents.Session;
 using Coverage.Tests;
 using Raven.TestDriver;
 using Xunit;
+using Coverage.Services;
 
 namespace Coverage.Tests.Controllers;
 
@@ -69,6 +70,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Coverage:BaseUrl"] = "https://coverage.example.com" })
             .Build());
+        services.AddScoped<IBaseResolver, BaseResolver>();
         services.AddScoped<UploadsController>();
 
         var controller = services.BuildServiceProvider().GetRequiredService<UploadsController>();
@@ -389,5 +391,138 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         var result = await CreateController(session, AccountToken("acme")).Status("widgets", Sha, 7);
 
         result.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    // ---- partial uploads: scoped baseline, projection, disclosure ---------------
+
+    private static async Task SeedTree(IAsyncDocumentSession session, string buildId, params (string Path, int Covered, int Coverable)[] files)
+    {
+        await session.StoreAsync(new BuildTreeSummary
+        {
+            BuildId = buildId,
+            Files = [.. files.Select(f => new TreeFileSummary { Path = f.Path, LinesCovered = f.Covered, LinesCoverable = f.Coverable })],
+        }, BuildTreeSummary.DocumentId(buildId), default);
+    }
+
+    /// <summary>A finalized whole-workspace build on the base commit, tree included.</summary>
+    private static async Task SeedBaseline(IAsyncDocumentSession session, params (string Path, int Covered, int Coverable)[] files)
+    {
+        var build = await SeedBuild(session, BaselineSha, 1, "Finalized", "Explicit",
+            new CoverageSummary { LinesCovered = files.Sum(f => f.Covered), LinesCoverable = files.Sum(f => f.Coverable) }, "Parsed");
+        var buildId = Build.DocumentId(RepoId, BaselineSha, 1, 1);
+        var commit = await session.LoadAsync<Commit>(Commit.DocumentId(RepoId, BaselineSha));
+        commit!.Coverage = build.Coverage;
+        commit.LatestBuildId = buildId;
+        await SeedTree(session, buildId, files);
+    }
+
+    private static async Task<Build> SeedPartialHead(IAsyncDocumentSession session, params (string Path, int Covered, int Coverable)[] files)
+    {
+        var build = await SeedBuild(session, Sha, 7, "Finalized", "Explicit",
+            new CoverageSummary { LinesCovered = files.Sum(f => f.Covered), LinesCoverable = files.Sum(f => f.Coverable) }, "Parsed");
+        build.Partial = true;
+        build.DeclaredBaseSha = BaselineSha;
+        await SeedTree(session, Build.DocumentId(RepoId, Sha, 7, 1), files);
+        return build;
+    }
+
+    [Fact]
+    public async Task A_whole_build_carries_no_scope_or_projection()
+    {
+        using var store = GetDocumentStore();
+        using (var seed = store.OpenAsyncSession())
+        {
+            await SeedRepository(seed);
+            await SeedBuild(seed, Sha, 7, "Finalized", "Explicit", new CoverageSummary(), "Parsed");
+            await seed.SaveChangesAsync();
+        }
+        WaitForIndexing(store);
+
+        using var session = store.OpenAsyncSession();
+        var body = Body(await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, 7));
+
+        body.Partial.Should().BeFalse();
+        body.BaselineScope.Should().BeNull();
+        body.Projection.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_partial_build_gets_a_scoped_baseline_and_a_projection_against_its_declared_base()
+    {
+        using var store = GetDocumentStore();
+        using (var seed = store.OpenAsyncSession())
+        {
+            await SeedRepository(seed);
+            await SeedBaseline(seed, ("libs/a/x.ts", 8, 10), ("libs/b/y.ts", 90, 100));
+            var head = await SeedPartialHead(seed, ("libs/a/x.ts", 10, 10));
+            // The head's git file list, so pruning is possible and the projection complete.
+            seed.Advanced.Attachments.Store(head, Coverage.Ingestion.UploadAttachments.FileListName("session0"),
+                new MemoryStream(System.Text.Encoding.UTF8.GetBytes("libs/a/x.ts\nlibs/b/y.ts")));
+            await seed.SaveChangesAsync();
+        }
+        WaitForIndexing(store);
+
+        using var session = store.OpenAsyncSession();
+        var body = Body(await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, 7));
+
+        body.Partial.Should().BeTrue();
+
+        // Like-for-like: only the measured path, on both sides.
+        body.Baseline!.Sha.Should().Be(BaselineSha);
+        body.Baseline.Coverage!.LinesCoverable.Should().Be(10);
+        body.Baseline.Coverage.LinesCovered.Should().Be(8);
+
+        body.BaselineScope!.BaseResolution.Should().Be("exact");
+        body.BaselineScope.RequestedBaseSha.Should().Be(BaselineSha);
+        body.BaselineScope.ResolvedBaseSha.Should().Be(BaselineSha);
+        body.BaselineScope.FilesInScope.Should().Be(1);
+
+        // Projection: base patched with the measured file.
+        body.Projection!.Coverage.LinesCovered.Should().Be(10 + 90);
+        body.Projection.Coverage.LinesCoverable.Should().Be(10 + 100);
+        body.Projection.Complete.Should().BeTrue();
+        body.Projection.IncompleteReasons.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_partial_build_without_a_file_list_projects_but_says_incomplete()
+    {
+        using var store = GetDocumentStore();
+        using (var seed = store.OpenAsyncSession())
+        {
+            await SeedRepository(seed);
+            await SeedBaseline(seed, ("libs/a/x.ts", 8, 10));
+            await SeedPartialHead(seed, ("libs/a/x.ts", 9, 10));
+            await seed.SaveChangesAsync();
+        }
+        WaitForIndexing(store);
+
+        using var session = store.OpenAsyncSession();
+        var body = Body(await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, 7));
+
+        body.Projection!.Complete.Should().BeFalse();
+        body.Projection.IncompleteReasons.Should().Contain("noFileList");
+    }
+
+    [Fact]
+    public async Task A_partial_build_with_no_resolvable_base_abstains_with_disclosure()
+    {
+        using var store = GetDocumentStore();
+        using (var seed = store.OpenAsyncSession())
+        {
+            await SeedRepository(seed);
+            await SeedPartialHead(seed, ("libs/a/x.ts", 9, 10));
+            await seed.SaveChangesAsync();
+        }
+        WaitForIndexing(store);
+
+        using var session = store.OpenAsyncSession();
+        var body = Body(await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, 7));
+
+        body.Baseline.Should().BeNull("abstain, never fail");
+        body.Projection.Should().BeNull();
+        body.BaselineScope!.BaseResolution.Should().Be("none");
+        body.BaselineScope.RequestedBaseSha.Should().Be(BaselineSha);
+        body.BaselineScope.ResolvedBaseSha.Should().BeNull();
     }
 }

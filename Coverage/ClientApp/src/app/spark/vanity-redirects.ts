@@ -15,7 +15,8 @@ export const repositoryRedirectGuard: CanActivateFn = async (route) => {
   const name = route.paramMap.get('repo') ?? '';
   try {
     const repo = await browse.getRepo(owner, name);
-    return router.createUrlTree(['/po', 'repository', repo.id]);
+    // Keep query params (e.g. ?flag=) alive through the redirect.
+    return router.createUrlTree(['/po', 'repository', repo.id], { queryParams: route.queryParams });
   } catch {
     return router.createUrlTree(['/home']);
   }
@@ -29,7 +30,7 @@ export const commitRedirectGuard: CanActivateFn = async (route) => {
   const sha = route.paramMap.get('sha') ?? '';
   try {
     const commit = await browse.getCommit(owner, name, sha);
-    return router.createUrlTree(['/po', 'commit', commit.id]);
+    return router.createUrlTree(['/po', 'commit', commit.id], { queryParams: route.queryParams });
   } catch {
     return router.createUrlTree(['/home']);
   }

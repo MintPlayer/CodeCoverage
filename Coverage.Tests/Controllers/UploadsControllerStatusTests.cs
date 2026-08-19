@@ -526,4 +526,32 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         body.BaselineScope.RequestedBaseSha.Should().Be(BaselineSha);
         body.BaselineScope.ResolvedBaseSha.Should().BeNull();
     }
+
+    /// <summary>
+    /// #13 U2: FeedbackState (what happened to the check-run publish) must be
+    /// pollable from CI — diagnosing a bad App key used to take shell access to
+    /// the production container. Null until the publisher has run at all.
+    /// </summary>
+    [Fact]
+    public async Task Feedback_state_is_exposed_and_null_before_the_first_publish_attempt()
+    {
+        using var store = GetDocumentStore();
+        using var session = store.OpenAsyncSession();
+        await SeedRepository(session);
+        await SeedBuild(session, Sha, runId: 7, "Finalized", "Explicit",
+            new CoverageSummary { LinesCovered = 80, LinesCoverable = 100 }, "Parsed");
+        await session.SaveChangesAsync();
+        WaitForIndexing(store);
+
+        var controller = CreateController(session, AccountToken("acme"));
+
+        Body(await controller.Status(RepoName, Sha, runId: 7)).FeedbackState.Should().BeNull(
+            "the publish is broadcast after finalize — a poller can see Complete before any attempt");
+
+        var build = await session.LoadAsync<Build>(Build.DocumentId(RepoId, Sha, 7, 1));
+        build.FeedbackState = "Posted";
+        await session.SaveChangesAsync();
+
+        Body(await controller.Status(RepoName, Sha, runId: 7)).FeedbackState.Should().Be("Posted");
+    }
 }

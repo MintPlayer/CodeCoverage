@@ -2,16 +2,19 @@
   <bs-card-header>Files</bs-card-header>
 
   @if (flagEntries().length > 0) {
-    <div class="d-flex flex-wrap gap-2 align-items-center px-3 pt-3">
-      <span class="small text-muted">Flags:</span>
+    <div class="d-flex flex-wrap gap-2 align-items-center px-3 pt-3" role="group" aria-label="Filter by flag">
+      <span class="small text-muted" aria-hidden="true">Flags:</span>
       <button type="button" class="btn btn-sm"
               [class.btn-primary]="!selectedFlag()"
               [class.btn-outline-secondary]="!!selectedFlag()"
+              [attr.aria-pressed]="!selectedFlag()"
               (click)="selectFlag(null)">All</button>
       @for (entry of flagEntries(); track entry.flag) {
         <button type="button" class="btn btn-sm"
                 [class.btn-primary]="selectedFlag() === entry.flag"
                 [class.btn-outline-secondary]="selectedFlag() !== entry.flag"
+                [attr.aria-pressed]="selectedFlag() === entry.flag"
+                attr.aria-label="{{ entry.flag }} coverage {{ entry.rate }}"
                 (click)="selectFlag(entry.flag)">
           {{ entry.flag }} <span class="opacity-75">{{ entry.rate }}</span>
         </button>
@@ -57,8 +60,11 @@
   @if (tree(); as t) {
     @if (t.unmatchedFiles.length > 0) {
       <bs-alert [type]="warningColor" class="d-block mb-2">
-        {{ t.unmatchedFiles.length }} report path(s) couldn't be matched to the repository tree
+        {{ t.unmatchedTotal }} report path(s) couldn't be matched to the repository tree
         (e.g. {{ t.unmatchedFiles[0] }}). Check the action's <code>rootDir</code>/checkout.
+        @if (t.unmatchedFiles.length < t.unmatchedTotal) {
+          <span class="d-block small">Showing {{ t.unmatchedFiles.length }} of {{ t.unmatchedTotal }} unmatched paths.</span>
+        }
       </bs-alert>
     }
     @if (t.entries.length === 0) {

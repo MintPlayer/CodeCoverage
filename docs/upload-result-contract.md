@@ -237,7 +237,8 @@ Authorization: Bearer covt_…   (or the OIDC workflow JWT)
                 "coverage": { "linesCovered": 16102, "linesCoverable": 21998, … } },
   "sessions": [ { "sessionId": "…", "jobName": "…", "flags": [],
                   "parseStatus": "Parsed", "error": null, "filesCount": 804 } ],
-  "commitUrl": "https://coverage.mintplayer.com/…"
+  "commitUrl": "https://coverage.mintplayer.com/…",
+  "feedbackState": "Posted"     // informational: Pending | Posted | Retry | Failed | Unavailable (null before publish)
 }
 ```
 

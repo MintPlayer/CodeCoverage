@@ -24,6 +24,7 @@
 		<PackageReference Include="MintPlayer.Spark.Migrations" Version="10.0.0-preview.53" />
 		<PackageReference Include="MintPlayer.Spark.Webhooks.GitHub" Version="10.0.0-preview.53" />
 		<PackageReference Include="MintPlayer.Spark.Webhooks.GitHub.DevTunnel" Version="10.0.0-preview.53" />
+		<PackageReference Include="YamlDotNet" Version="16.3.0" />
 		<PackageReference Include="MintPlayer.Spark.SourceGenerators" Version="10.0.0-preview.53">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

@@ -47,9 +47,14 @@ No organization permissions are needed: the viewer's visibility is derived
 from `GET /user/installations` with the **user's OAuth token**, which lists
 whatever installations that user can access on their own authority.
 
-Planned upgrades (PLAN M9.11 — PR comments and commit checks) will additionally
-need **Checks: Read & write** and **Pull requests: Read & write**; don't grant
-them until that ships.
+Check-run feedback (`coverage/project` / `coverage/patch`, shipped with the
+coverage-analyzer suite) additionally needs **Checks: Read & write** and
+**Pull requests: Read & write**. Granting is a two-step: raise the permissions
+on the App, then **each installation must accept the change** before any
+check-run appears (the `new_permissions_accepted` webhook restores service
+automatically). Until an installation accepts, its builds record
+`FeedbackState: Unavailable`-style silence rather than errors. Plain commit
+statuses are deliberately not used.
 
 **Webhook events to subscribe**: `Repository`, `Push`, `Pull request`
 (`installation` / `installation_repositories` are always delivered to Apps, no

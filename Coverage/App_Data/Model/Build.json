@@ -90,6 +90,21 @@
         "renderer": "date-time"
       },
       {
+        "id": "c5a98666-1fb2-4a2e-8e64-1000a1e363e7",
+        "name": "DeclaredBaseSha",
+        "label": {
+          "en": "Declared Base Sha"
+        },
+        "dataType": "string",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 9,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
         "id": "d3af4b5b-41b8-4f54-ae60-2431a2c505d4",
         "name": "EventName",
         "label": {
@@ -100,6 +115,52 @@
         "isVisible": true,
         "isReadOnly": false,
         "order": 10,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "d287dc72-bdb5-48b2-82a7-6ad74309dcde",
+        "name": "Feedback",
+        "label": {
+          "en": "Feedback"
+        },
+        "dataType": "AsDetail",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 17,
+        "asDetailType": "Coverage.Entities.BuildFeedback",
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "bce5895b-a41f-4911-90ad-b44e555a8feb",
+        "name": "FeedbackNextAttemptAtUtc",
+        "label": {
+          "en": "Feedback Next Attempt At Utc"
+        },
+        "dataType": "datetime",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 19,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "2ce95585-bb56-465d-b495-d6d1674360f4",
+        "name": "FeedbackState",
+        "label": {
+          "en": "Feedback State"
+        },
+        "dataType": "string",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 18,
         "isArray": false,
         "showedOn": "Query, PersistentObject",
         "rules": []
@@ -136,6 +197,37 @@
         "rules": []
       },
       {
+        "id": "7831aaa9-ded8-41be-96c7-9ee956790931",
+        "name": "FlagCoverage",
+        "label": {
+          "en": "Flag Coverage"
+        },
+        "dataType": "string",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 17,
+        "isArray": true,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "5e3d9442-d45c-4498-8e39-b6ea6a9905a5",
+        "name": "GateSnapshot",
+        "label": {
+          "en": "Gate Snapshot"
+        },
+        "dataType": "AsDetail",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 20,
+        "asDetailType": "Coverage.Entities.GateSettings",
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
         "id": "b061f85f-d080-49fb-9efd-feebe38c0d78",
         "name": "LastUploadAtUtc",
         "label": {
@@ -150,6 +242,37 @@
         "showedOn": "Query, PersistentObject",
         "rules": [],
         "renderer": "date-time"
+      },
+      {
+        "id": "7d5c2b4f-7c9a-4c87-a480-eaf933a6f821",
+        "name": "Partial",
+        "label": {
+          "en": "Partial"
+        },
+        "dataType": "boolean",
+        "isRequired": true,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 8,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "8a7f538b-2c64-445e-8612-fd801a981db9",
+        "name": "Patch",
+        "label": {
+          "en": "Patch"
+        },
+        "dataType": "AsDetail",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 16,
+        "asDetailType": "Coverage.Entities.PatchCoverage",
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
       },
       {
         "id": "9f2e7d10-4b8c-4e35-a1d6-7c3b9e04f512",

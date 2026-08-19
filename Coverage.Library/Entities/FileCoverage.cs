@@ -35,6 +35,18 @@ public class FileCoverage
     public static string DocumentId(string buildId, string normalizedPath)
         => $"{buildId}/files/{PathHash(normalizedPath)}";
 
+    /// <summary>
+    /// Per-flag merged copy of one file's coverage: sessions carrying the flag
+    /// max-merge in here exactly as they do into the build-level document, so
+    /// per-flag numbers survive retries the same way. Flag names are sanitized
+    /// because they come off an upload form and become document-id segments.
+    /// </summary>
+    public static string FlagDocumentId(string buildId, string flag, string normalizedPath)
+        => $"{buildId}/flags/{SanitizeFlag(flag)}/files/{PathHash(normalizedPath)}";
+
+    public static string SanitizeFlag(string flag)
+        => new([.. flag.ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '-')]);
+
     public static string PathHash(string normalizedPath)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedPath));

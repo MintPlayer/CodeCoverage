@@ -44,6 +44,14 @@ public class Repository
     public string? BadgeToken { get; set; }
 
     /// <summary>
+    /// Gate policy; null means every default (informational, auto-ratchet).
+    /// [IgnoreForIndex]: policy is owner-facing configuration — it has no
+    /// business in the anonymous /spark grid, and nothing filters on it.
+    /// </summary>
+    [IgnoreForIndex]
+    public GateSettings? Gate { get; set; }
+
+    /// <summary>
     /// Denormalized from the newest finalized default-branch build, so repo
     /// lists and badges are point-loads.
     /// </summary>

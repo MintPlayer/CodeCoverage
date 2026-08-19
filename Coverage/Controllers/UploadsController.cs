@@ -2,6 +2,7 @@ using Coverage.ApiTokens;
 using Coverage.Entities;
 using Coverage.Indexes;
 using Coverage.Ingestion;
+using Coverage.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -27,6 +28,7 @@ public partial class UploadsController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;
     [Inject] private readonly IMessageBus messageBus;
+    [Inject] private readonly IBaseResolver baseResolver;
     [Inject] private readonly ILogger<UploadsController> logger;
     [Inject] private readonly IConfiguration configuration;
 
@@ -93,6 +95,13 @@ public partial class UploadsController : ControllerBase
             build.FinalizedAtUtc = null;
             build.FinalizeReason = null;
         }
+
+        // One partial job makes the whole build partial: the totals under-count
+        // the workspace regardless of what the other jobs measured. The declared
+        // base is fixed by the first job that names one (all jobs of a run pass
+        // the same inputs; ??= just makes a disagreeing straggler harmless).
+        build.Partial |= form.Partial;
+        build.DeclaredBaseSha ??= form.BaseSha;
 
         var sessionId = Guid.NewGuid().ToString("N")[..12];
         var buildSession = new BuildSession
@@ -201,6 +210,12 @@ public partial class UploadsController : ControllerBase
         var commit = build.Commit is null ? null : await session.LoadAsync<Commit>(build.Commit, cancellationToken);
         var baseUrl = configuration["Coverage:BaseUrl"]?.TrimEnd('/');
 
+        // A partial build's numbers are honest only against a like-for-like
+        // base; a whole build keeps the original whole-workspace baseline (D9).
+        var (baseline, baselineScope, projection) = build.Partial
+            ? await ResolvePartialComparison(repo, build, commit, cancellationToken)
+            : (await ResolveBaseline(repo, commit, cancellationToken), null, null);
+
         return Ok(new UploadStatusResponse(
             buildId,
             Build.ClassifyState(build),
@@ -209,10 +224,44 @@ public partial class UploadsController : ControllerBase
             build.CreatedAtUtc,
             build.FinalizedAtUtc,
             build.Coverage,
-            await ResolveBaseline(repo, commit, cancellationToken),
+            baseline,
             [.. build.Sessions.Select(s => new UploadStatusSession(
                 s.SessionId, s.JobName, s.Flags, s.ParseStatus, s.Error, s.FilesCount))],
-            baseUrl is null ? null : $"{baseUrl}/r/{repo.FullName}/c/{commitSha}"));
+            baseUrl is null ? null : $"{baseUrl}/r/{repo.FullName}/c/{commitSha}",
+            build.Partial,
+            baselineScope,
+            projection,
+            build.Patch,
+            build.FlagCoverage));
+    }
+
+    /// <summary>
+    /// Everything a partial build's comparison can honestly say, in three
+    /// pieces: a scoped <c>baseline</c> (the base restricted to the measured
+    /// paths), a <c>baselineScope</c> stating exactly which base resolved and
+    /// how far it strayed from what was declared, and a whole-workspace
+    /// <c>projection</c> carrying its own completeness verdict. Numbers appear
+    /// only once the head build is finalized (its tree summary exists); until
+    /// then the scope still reports what the base would be. Never throws for a
+    /// missing base — abstaining is the routine case (#11 SP3).
+    /// </summary>
+    private async Task<(UploadStatusBaseline? Baseline, UploadStatusBaselineScope? Scope, UploadStatusProjection? Projection)>
+        ResolvePartialComparison(Repository repo, Build build, Commit? commit, CancellationToken cancellationToken)
+    {
+        var result = await BuildComparer.CompareAsync(session, baseResolver, repo, build, commit, cancellationToken);
+        var resolved = result.Base;
+
+        var scope = new UploadStatusBaselineScope("scoped",
+            resolved.RequestedSha, resolved.ResolvedSha, resolved.Mode,
+            result.Partial?.FilesInScope, result.Partial?.PrunedFiles);
+
+        if (result.Partial is null)
+            return (null, scope, null);
+
+        return (
+            new UploadStatusBaseline(resolved.ResolvedSha!, resolved.Branch, result.Partial.ScopedBaseline),
+            scope,
+            new UploadStatusProjection(result.Partial.Projection, result.IncompleteReasons.Length == 0, result.IncompleteReasons));
     }
 
     /// <summary>
@@ -261,9 +310,32 @@ public partial class UploadsController : ControllerBase
         CoverageSummary? Coverage,
         UploadStatusBaseline? Baseline,
         IReadOnlyList<UploadStatusSession> Sessions,
-        string? CommitUrl);
+        string? CommitUrl,
+        bool Partial = false,
+        UploadStatusBaselineScope? BaselineScope = null,
+        UploadStatusProjection? Projection = null,
+        PatchCoverage? Patch = null,
+        IReadOnlyDictionary<string, CoverageSummary>? Flags = null);
 
     public sealed record UploadStatusBaseline(string Sha, string? Branch, CoverageSummary? Coverage);
+
+    /// <summary>
+    /// States what the partial comparison's denominator actually is: <c>Mode</c>
+    /// is "scoped" (the only value yet — "whole" builds carry no scope object),
+    /// <c>BaseResolution</c> is exact | mergeBase | walked | none, and the two
+    /// shas make any substitution visible. Null counts mean "not computed yet".
+    /// </summary>
+    public sealed record UploadStatusBaselineScope(
+        string Mode, string? RequestedBaseSha, string? ResolvedBaseSha, string BaseResolution,
+        int? FilesInScope, int? PrunedFiles);
+
+    /// <summary>
+    /// The patched whole-workspace projection with its completeness verdict
+    /// (reasons: baseWalked | noFileList | unmatchedPaths | parseErrors). An
+    /// incomplete projection is a best-effort reconstruction — the UI shows a
+    /// danger badge and a gate may choose to abstain.
+    /// </summary>
+    public sealed record UploadStatusProjection(CoverageSummary Coverage, bool Complete, string[] IncompleteReasons);
 
     public sealed record UploadStatusSession(
         string SessionId, string? JobName, string[] Flags, string ParseStatus, string? Error, int FilesCount);
@@ -283,6 +355,8 @@ public partial class UploadsController : ControllerBase
         public string? Flags { get; set; }
         public string? RootDir { get; set; }
         public string? FileList { get; set; }
+        public bool Partial { get; set; }
+        public string? BaseSha { get; set; }
         public IFormFileCollection Files { get; set; } = new FormFileCollection();
     }
 

@@ -8,7 +8,7 @@ import { BsBreadcrumbComponent, BsBreadcrumbItemComponent } from '@mintplayer/ng
 import { Color } from '@mintplayer/ng-bootstrap';
 import { BsHierarchyChartComponent, type HierarchyNodeEventDetail } from '@mintplayer/ng-bootstrap/charts/hierarchy';
 import { BsTableComponent } from '@mintplayer/ng-bootstrap/table';
-import { BrowseService, CoverageHierarchyNode, TreeResponse } from '../../services/browse.service';
+import { BrowseService, CoverageHierarchyNode, CoverageSummary, TreeResponse } from '../../services/browse.service';
 import { CoverageBarComponent } from '../coverage-bar/coverage-bar.component';
 
 /**
@@ -37,6 +37,22 @@ export class CommitFilesPanelComponent {
   readonly chartRootId = signal<string | undefined>('/');
   readonly warningColor = Color.warning;
 
+  // Per-flag totals of the shown build; a selected flag narrows the folder
+  // list to that flag's own merged tree (the chart stays whole-build).
+  readonly flagTotals = signal<Record<string, CoverageSummary> | null>(null);
+  readonly selectedFlag = signal<string | null>(null);
+
+  readonly flagEntries = computed(() => {
+    const totals = this.flagTotals();
+    if (!totals) return [];
+    return Object.entries(totals).map(([flag, coverage]) => ({
+      flag,
+      rate: coverage.linesCoverable > 0
+        ? `${((coverage.linesCovered / coverage.linesCoverable) * 100).toFixed(1)}%`
+        : '—',
+    }));
+  });
+
   /** Segments of the current folder path, each with its cumulative path for the breadcrumb. */
   readonly pathSegments = computed(() => {
     const path = this.currentPath();
@@ -61,11 +77,18 @@ export class CommitFilesPanelComponent {
       this.hierarchy.set(null);
       this.currentPath.set('');
       this.chartRootId.set('/');
+      this.selectedFlag.set(null);
+      this.flagTotals.set(null);
       await this.openFolder('');
       try {
         this.hierarchy.set(await this.browse.getHierarchy(owner, name, sha));
       } catch {
         this.hierarchy.set(null);
+      }
+      try {
+        this.flagTotals.set((await this.browse.getCommit(owner, name, sha)).flagTotals ?? null);
+      } catch {
+        this.flagTotals.set(null);
       }
     });
   }
@@ -75,10 +98,16 @@ export class CommitFilesPanelComponent {
     this.chartRootId.set(path || '/');
     this.tree.set(null);
     try {
-      this.tree.set(await this.browse.getTree(this.owner(), this.name(), this.sha(), path || undefined));
+      this.tree.set(await this.browse.getTree(this.owner(), this.name(), this.sha(), path || undefined, this.selectedFlag() ?? undefined));
     } catch {
       this.tree.set({ buildId: '', entries: [], unmatchedFiles: [] });
     }
+  }
+
+  selectFlag(flag: string | null): void {
+    if (flag === this.selectedFlag()) return;
+    this.selectedFlag.set(flag);
+    void this.openFolder(this.currentPath());
   }
 
   openFile(path: string): void {

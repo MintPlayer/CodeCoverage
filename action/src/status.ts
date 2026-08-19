@@ -19,6 +19,29 @@ export interface UploadStatus {
   baseline?: { sha: string; branch?: string | null; coverage?: CoverageSummary | null } | null;
   sessions?: { sessionId: string; jobName?: string | null; parseStatus: string; error?: string | null }[];
   commitUrl?: string | null;
+  /** True when the build declared itself a subset (nx affected). */
+  partial?: boolean;
+  /** Which base the comparison actually used, and how far it strayed. */
+  baselineScope?: {
+    mode: string;
+    requestedBaseSha?: string | null;
+    resolvedBaseSha?: string | null;
+    baseResolution: string;
+    filesInScope?: number | null;
+    prunedFiles?: number | null;
+  } | null;
+  /** Patched whole-workspace projection with its completeness verdict. */
+  projection?: { coverage: CoverageSummary; complete: boolean; incompleteReasons: string[] } | null;
+  /** Added-lines coverage vs the diff base. */
+  patch?: {
+    diffBaseRef?: string | null;
+    mergeBaseSha?: string | null;
+    linesCovered: number;
+    linesCoverable: number;
+    filesInDiff: number;
+    filesMatched: number;
+    diffTruncated: boolean;
+  } | null;
 }
 
 export interface WaitOptions {

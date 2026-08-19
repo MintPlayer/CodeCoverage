@@ -16,6 +16,10 @@ public class BuildTreeSummary
     public List<TreeFileSummary> Files { get; set; } = [];
 
     public static string DocumentId(string buildId) => $"{buildId}/tree";
+
+    /// <summary>Per-flag tree, from that flag's merged file documents only.</summary>
+    public static string FlagDocumentId(string buildId, string flag)
+        => $"{buildId}/flags/{FileCoverage.SanitizeFlag(flag)}/tree";
 }
 
 public class TreeFileSummary

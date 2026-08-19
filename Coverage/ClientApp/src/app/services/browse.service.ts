@@ -59,6 +59,8 @@ export interface CommitDetail extends CommitInfo {
   /** Commit document id — parentId for the generic Spark sub-queries. */
   id: string;
   latestBuildId?: string;
+  /** Per-flag totals of the latest build; keys are sanitized flag names, the same values getTree's flag filter accepts. */
+  flagTotals?: Record<string, CoverageSummary> | null;
   builds: BuildInfo[];
 }
 
@@ -169,9 +171,10 @@ export class BrowseService {
       `/api/browse/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/commits/${encodeURIComponent(sha)}`));
   }
 
-  getTree(owner: string, name: string, sha: string, path?: string): Promise<TreeResponse> {
+  getTree(owner: string, name: string, sha: string, path?: string, flag?: string): Promise<TreeResponse> {
     let params = new HttpParams();
     if (path) params = params.set('path', path);
+    if (flag) params = params.set('flag', flag);
     return firstValueFrom(this.http.get<TreeResponse>(
       `/api/browse/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/commits/${encodeURIComponent(sha)}/tree`, { params }));
   }
@@ -191,4 +194,25 @@ export class BrowseService {
     return firstValueFrom(this.http.post<{ badgeToken: string }>(
       `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/settings/badge-token`, {}));
   }
+
+  getGate(owner: string, name: string): Promise<GateSettings> {
+    return firstValueFrom(this.http.get<GateSettings>(
+      `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/settings/gate`));
+  }
+
+  putGate(owner: string, name: string, gate: GateSettings): Promise<GateSettings> {
+    return firstValueFrom(this.http.put<GateSettings>(
+      `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/settings/gate`, gate));
+  }
+}
+
+/** Mirror of the server's GateSettings; the GET spells every default out. */
+export interface GateSettings {
+  projectMode: 'auto' | 'fixed';
+  projectTarget?: number | null;
+  projectThreshold: number;
+  projectBasis: 'scoped' | 'projection';
+  patchTarget?: number | null;
+  patchThreshold: number;
+  blocking: boolean;
 }

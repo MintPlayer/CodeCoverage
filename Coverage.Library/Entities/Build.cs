@@ -44,6 +44,22 @@ public class Build
 
     public string? EventName { get; set; }
 
+    /// <summary>
+    /// Declared by the uploader: this run measured only a subset of the
+    /// workspace (e.g. <c>nx affected</c> on a pull request). Comparisons must
+    /// scope or project rather than read the totals as whole-workspace, and a
+    /// partial build never becomes a repository's headline number.
+    /// </summary>
+    public bool Partial { get; set; }
+
+    /// <summary>
+    /// The base sha the uploader's affected-computation actually ran against
+    /// (what was passed to <c>nx affected --base</c>). Declared, not inferred —
+    /// deliberately a dedicated field rather than <see cref="Entities.Commit.ParentSha"/>,
+    /// which has two writers and a history of meaning drift and stays a hint.
+    /// </summary>
+    public string? DeclaredBaseSha { get; set; }
+
     public DateTime CreatedAtUtc { get; set; }
 
     public DateTime? LastUploadAtUtc { get; set; }
@@ -56,6 +72,33 @@ public class Build
     public List<BuildSession> Sessions { get; set; } = [];
 
     public CoverageSummary? Coverage { get; set; }
+
+    /// <summary>Added-lines coverage vs the diff base; null when no diff was obtainable.</summary>
+    public PatchCoverage? Patch { get; set; }
+
+    /// <summary>
+    /// Per-flag totals, keyed by sanitized flag name, computed at finalize
+    /// from the per-flag merged file documents. Null for builds parsed before
+    /// flags gained storage — attribution cannot be recovered from the merged
+    /// build-level documents.
+    /// </summary>
+    public Dictionary<string, CoverageSummary>? FlagCoverage { get; set; }
+
+    /// <summary>Check-run outbox; null until the first publish attempt is enqueued.</summary>
+    public BuildFeedback? Feedback { get; set; }
+
+    /// <summary>Queryable mirror of <see cref="BuildFeedback.State"/> — the sweep cron's filter.</summary>
+    public string? FeedbackState { get; set; }
+
+    /// <summary>Queryable mirror of <see cref="BuildFeedback.NextAttemptAtUtc"/>.</summary>
+    public DateTime? FeedbackNextAttemptAtUtc { get; set; }
+
+    /// <summary>
+    /// The effective gate this build was judged by (settings document merged
+    /// with the base ref's coverage.yml). Snapshotted because a base-dependent
+    /// verdict is unexplainable later without its inputs.
+    /// </summary>
+    public GateSettings? GateSnapshot { get; set; }
 
     public static string DocumentId(long repoGitHubId, string sha, long runId, int runAttempt)
         => $"{Entities.Commit.DocumentId(repoGitHubId, sha)}/builds/{runId}-{runAttempt}";

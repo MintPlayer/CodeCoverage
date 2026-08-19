@@ -6,6 +6,7 @@ import { SparkService } from '@mintplayer/ng-spark/services';
 import { BsSpinnerComponent } from '@mintplayer/ng-bootstrap/spinner';
 import type { PersistentObject } from '@mintplayer/ng-spark/models';
 import { RepoBadgePanelComponent } from '../components/repo-badge-panel/repo-badge-panel.component';
+import { RepoGatePanelComponent } from '../components/repo-gate-panel/repo-gate-panel.component';
 import { RepoTrendPanelComponent } from '../components/repo-trend-panel/repo-trend-panel.component';
 import { RepoSetupPanelComponent } from '../components/repo-setup-panel/repo-setup-panel.component';
 import { CommitFilesExtrasComponent } from './commit-files-extras.component';
@@ -24,7 +25,7 @@ import { rowAttr } from './row-attr';
  */
 @Component({
   selector: 'app-po-detail-page',
-  imports: [SparkPoDetailComponent, BsSpinnerComponent, RepoBadgePanelComponent, RepoTrendPanelComponent, RepoSetupPanelComponent, CommitFilesExtrasComponent],
+  imports: [SparkPoDetailComponent, BsSpinnerComponent, RepoBadgePanelComponent, RepoGatePanelComponent, RepoTrendPanelComponent, RepoSetupPanelComponent, CommitFilesExtrasComponent],
   template: `
     @if (mode() === 'generic') {
       <spark-po-detail [extraContentTemplate]="extras" />
@@ -36,6 +37,7 @@ import { rowAttr } from './row-attr';
       @if (entityType.name === 'Repository') {
         @if (repoOf(po); as repo) {
           <app-repo-badge-panel [owner]="repo.owner" [name]="repo.name" />
+          <app-repo-gate-panel [owner]="repo.owner" [name]="repo.name" />
           <app-repo-trend-panel [owner]="repo.owner" [name]="repo.name" />
           <app-repo-setup-panel />
         }

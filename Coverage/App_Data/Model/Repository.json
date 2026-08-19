@@ -89,6 +89,23 @@
         "renderer": "coverage-sparkline"
       },
       {
+        "id": "e2447502-d8a1-48d5-ad44-c28cd7308a7e",
+        "name": "Gate",
+        "label": {
+          "en": "Gate"
+        },
+        "dataType": "AsDetail",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 10,
+        "asDetailType": "Coverage.Entities.GateSettings",
+        "isArray": false,
+        "inQueryType": false,
+        "showedOn": "PersistentObject",
+        "rules": []
+      },
+      {
         "id": "2eeb1e3b-9a67-40f3-8ed7-052961f44df0",
         "name": "GitHubId",
         "label": {

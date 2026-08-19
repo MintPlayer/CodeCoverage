@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
 import { BsCardComponent, BsCardHeaderComponent } from '@mintplayer/ng-bootstrap/card';
 import { BsSpinnerComponent } from '@mintplayer/ng-bootstrap/spinner';
 import { BsAlertComponent } from '@mintplayer/ng-bootstrap/alert';
@@ -24,6 +25,9 @@ import { CoverageBarComponent } from '../coverage-bar/coverage-bar.component';
 })
 export class CommitFilesPanelComponent {
   private readonly router = inject(Router);
+  // Non-routed component: this resolves to the hosting po/:type/:id route,
+  // which is where the ?flag= query param lives.
+  private readonly route = inject(ActivatedRoute);
   private readonly browse = inject(BrowseService);
 
   owner = input.required<string>();
@@ -72,8 +76,22 @@ export class CommitFilesPanelComponent {
   // invalidating the in-flight hierarchy/commit metadata.
   private treeToken = 0;
   private metaToken = 0;
+  // False until the first reload has run with usable inputs; the query-param
+  // subscription must not fetch before then (input.required would throw).
+  private initialized = false;
 
   constructor() {
+    // The URL is the source of truth for the selected flag: chip clicks only
+    // navigate (selectFlag), and this subscription applies the param — so
+    // reload, back/forward and pasted links all take the same path. Kept
+    // outside the reset effect on purpose: reading the param there would
+    // re-create the U4 snap-back with the router as the tracked source.
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((query) => {
+      const flag = query.get('flag');
+      if (flag === this.selectedFlag()) return;
+      this.selectedFlag.set(flag);
+      if (this.initialized) void this.openFolder(this.currentPath());
+    });
     effect(() => {
       // Re-runs when owner/name/sha change: reset and reload. The body runs
       // untracked — openFolder reads selectedFlag before its first await, and
@@ -92,8 +110,9 @@ export class CommitFilesPanelComponent {
     this.hierarchy.set(null);
     this.currentPath.set('');
     this.chartRootId.set('/');
-    this.selectedFlag.set(null);
+    this.selectedFlag.set(this.route.snapshot.queryParamMap.get('flag'));
     this.flagTotals.set(null);
+    this.initialized = true;
     void this.openFolder('');
     void this.loadCommitMeta(owner, name, sha);
   }
@@ -135,8 +154,14 @@ export class CommitFilesPanelComponent {
 
   selectFlag(flag: string | null): void {
     if (flag === this.selectedFlag()) return;
-    this.selectedFlag.set(flag);
-    void this.openFolder(this.currentPath());
+    // replaceUrl: chip clicks refine the current view rather than creating
+    // history entries; the queryParamMap subscription applies the change.
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { flag },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   openFile(path: string): void {

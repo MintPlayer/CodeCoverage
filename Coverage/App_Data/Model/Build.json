@@ -197,6 +197,21 @@
         "rules": []
       },
       {
+        "id": "7831aaa9-ded8-41be-96c7-9ee956790931",
+        "name": "FlagCoverage",
+        "label": {
+          "en": "Flag Coverage"
+        },
+        "dataType": "string",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 17,
+        "isArray": true,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
         "id": "5e3d9442-d45c-4498-8e39-b6ea6a9905a5",
         "name": "GateSnapshot",
         "label": {

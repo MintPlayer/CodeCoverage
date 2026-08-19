@@ -236,6 +236,10 @@ public partial class BrowseController : ControllerBase
             commit.AuthoredAt,
             commit.Coverage,
             commit.LatestBuildId,
+            // Per-flag totals of the build the page shows; null before flags
+            // had storage. Keys are sanitized flag names — the same values
+            // GetTree's ?flag= accepts.
+            FlagTotals = builds.FirstOrDefault(b => b.Id == commit.LatestBuildId)?.FlagCoverage,
             Builds = builds
                 .OrderByDescending(b => b.CreatedAtUtc)
                 .Select(b => new BuildInfo(b.CiRunId, b.CiRunAttempt, b.Status, b.FinalizeReason, b.WorkflowName,
@@ -247,7 +251,7 @@ public partial class BrowseController : ControllerBase
     /// <summary>One folder level of the commit's coverage tree (drill-down UI).</summary>
     [HttpGet("repos/{owner}/{name}/commits/{sha}/tree")]
     public async Task<ActionResult<TreeResponse>> GetTree(
-        string owner, string name, string sha, [FromQuery] string? path, CancellationToken cancellationToken)
+        string owner, string name, string sha, [FromQuery] string? path, [FromQuery] string? flag, CancellationToken cancellationToken)
     {
         var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
         if (repository is null) return NotFound();
@@ -255,7 +259,19 @@ public partial class BrowseController : ControllerBase
         var commit = await session.LoadAsync<Commit>(Commit.DocumentId(repository.GitHubId, sha), cancellationToken);
         if (commit?.LatestBuildId is null) return NotFound();
 
-        var files = await LoadTreeSummaries(commit.LatestBuildId, cancellationToken);
+        // A flag narrows the tree to that flag's own merged documents; an
+        // unknown flag is an empty tree, not an error — flags are user labels.
+        List<TreeFileSummary> files;
+        if (!string.IsNullOrEmpty(flag))
+        {
+            var flagTree = await session.LoadAsync<BuildTreeSummary>(
+                BuildTreeSummary.FlagDocumentId(commit.LatestBuildId, flag), cancellationToken);
+            files = flagTree?.Files ?? [];
+        }
+        else
+        {
+            files = await LoadTreeSummaries(commit.LatestBuildId, cancellationToken);
+        }
 
         var prefix = string.IsNullOrEmpty(path) ? "" : path.TrimEnd('/') + "/";
         var folders = new Dictionary<string, (int Covered, int Coverable)>(StringComparer.Ordinal);

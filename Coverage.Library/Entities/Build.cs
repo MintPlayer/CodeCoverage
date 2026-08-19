@@ -76,6 +76,14 @@ public class Build
     /// <summary>Added-lines coverage vs the diff base; null when no diff was obtainable.</summary>
     public PatchCoverage? Patch { get; set; }
 
+    /// <summary>
+    /// Per-flag totals, keyed by sanitized flag name, computed at finalize
+    /// from the per-flag merged file documents. Null for builds parsed before
+    /// flags gained storage — attribution cannot be recovered from the merged
+    /// build-level documents.
+    /// </summary>
+    public Dictionary<string, CoverageSummary>? FlagCoverage { get; set; }
+
     /// <summary>Check-run outbox; null until the first publish attempt is enqueued.</summary>
     public BuildFeedback? Feedback { get; set; }
 

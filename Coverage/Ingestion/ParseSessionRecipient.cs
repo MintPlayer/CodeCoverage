@@ -65,11 +65,20 @@ public partial class ParseSessionRecipient : IRecipient<ParseSessionMessage>
                 var result = parser.Parse(content);
                 var normalizer = new PathNormalizer(buildSession.RootDir, result.SourceRoots, fileList);
 
+                // Each parsed file merges into the build-level document AND
+                // one per-flag document per session flag — the only point
+                // where flag attribution still exists; the merged build-level
+                // documents cannot recover it later (max destroys provenance).
                 var normalized = result.Files
                     .Select(parsedFile =>
                     {
                         var (path, matched) = normalizer.Normalize(parsedFile.RawPath);
-                        return (parsedFile, path, matched, documentId: FileCoverage.DocumentId(build.Id!, path));
+                        string[] documentIds =
+                        [
+                            FileCoverage.DocumentId(build.Id!, path),
+                            .. buildSession.Flags.Select(flag => FileCoverage.FlagDocumentId(build.Id!, flag, path)),
+                        ];
+                        return (parsedFile, path, matched, documentIds);
                     })
                     .ToList();
 
@@ -78,7 +87,7 @@ public partial class ParseSessionRecipient : IRecipient<ParseSessionMessage>
                 // per-file loads exhausted the session's request budget ~28
                 // files in — every real-world session parsed zero files.
                 var unseenIds = normalized
-                    .Select(f => f.documentId)
+                    .SelectMany(f => f.documentIds)
                     .Where(id => !touched.ContainsKey(id))
                     .Distinct(StringComparer.Ordinal);
                 foreach (var chunk in unseenIds.Chunk(512))
@@ -91,17 +100,20 @@ public partial class ParseSessionRecipient : IRecipient<ParseSessionMessage>
                     }
                 }
 
-                foreach (var (parsedFile, path, matched, documentId) in normalized)
+                foreach (var (parsedFile, path, matched, documentIds) in normalized)
                 {
-                    if (!touched.TryGetValue(documentId, out var fileCoverage))
+                    foreach (var documentId in documentIds)
                     {
-                        fileCoverage = new FileCoverage { BuildId = build.Id!, Path = path, Matched = matched };
-                        await session.StoreAsync(fileCoverage, documentId, cancellationToken);
-                        touched[documentId] = fileCoverage;
-                    }
+                        if (!touched.TryGetValue(documentId, out var fileCoverage))
+                        {
+                            fileCoverage = new FileCoverage { BuildId = build.Id!, Path = path, Matched = matched };
+                            await session.StoreAsync(fileCoverage, documentId, cancellationToken);
+                            touched[documentId] = fileCoverage;
+                        }
 
-                    fileCoverage.Matched |= matched;
-                    CoverageMerger.MergeInto(fileCoverage, parsedFile, parser.FormatName);
+                        fileCoverage.Matched |= matched;
+                        CoverageMerger.MergeInto(fileCoverage, parsedFile, parser.FormatName);
+                    }
                 }
 
                 parsedAnything = true;
@@ -111,7 +123,9 @@ public partial class ParseSessionRecipient : IRecipient<ParseSessionMessage>
 
             buildSession.ParseStatus = parsedAnything ? "Parsed" : "Failed";
             buildSession.Error = parsedAnything ? null : "No parsable coverage report found in the upload";
-            buildSession.FilesCount = touched.Count;
+            // Build-level documents only — the per-flag copies are the same
+            // files again, not more files.
+            buildSession.FilesCount = touched.Keys.Count(id => !id.Contains("/flags/", StringComparison.Ordinal));
 
             // Persist the merged FileCoverage docs first — the summary streams
             // them back from the server (it must also cover files earlier

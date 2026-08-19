@@ -21,7 +21,10 @@ public static class BuildFinalizer
         build.FinalizeReason = reason;
 
         if (build.Id is not null)
+        {
             await MaterializeTreeSummary(session, build.Id, cancellationToken);
+            build.FlagCoverage = await MaterializeFlagSummaries(session, build.Id, cancellationToken);
+        }
 
         if (build.Commit is not null)
         {
@@ -74,5 +77,63 @@ public static class BuildFinalizer
         }
 
         await session.StoreAsync(summary, BuildTreeSummary.DocumentId(buildId), cancellationToken);
+    }
+
+    /// <summary>
+    /// Streams every per-flag file document ({buildId}/flags/{flag}/files/…)
+    /// into per-flag tree summaries and totals. One stream covers all flags —
+    /// the flag is read back out of the id. Ids without "/files/" under the
+    /// prefix are the per-flag trees a previous finalize wrote; skipped, then
+    /// overwritten. Null (not empty) when no session carried a flag, so old
+    /// unflagged builds and flagless repos look the same.
+    /// </summary>
+    private static async Task<Dictionary<string, CoverageSummary>?> MaterializeFlagSummaries(
+        IAsyncDocumentSession session, string buildId, CancellationToken cancellationToken)
+    {
+        var prefix = $"{buildId}/flags/";
+        var trees = new Dictionary<string, BuildTreeSummary>(StringComparer.Ordinal);
+
+        await using (var stream = await session.Advanced.StreamAsync<FileCoverage>(
+            startsWith: prefix, token: cancellationToken))
+        {
+            while (await stream.MoveNextAsync())
+            {
+                if (stream.Current.Id is not { } id)
+                    continue;
+                var rest = id.AsSpan(prefix.Length);
+                var slash = rest.IndexOf('/');
+                if (slash < 0 || !rest[slash..].StartsWith("/files/"))
+                    continue;
+                var flag = rest[..slash].ToString();
+
+                if (!trees.TryGetValue(flag, out var tree))
+                    trees[flag] = tree = new BuildTreeSummary { BuildId = buildId };
+
+                var file = stream.Current.Document;
+                tree.Files.Add(new TreeFileSummary
+                {
+                    Path = file.Path,
+                    Matched = file.Matched,
+                    LinesCovered = file.Lines.Count(l => l.Status != LineStatus.NotCovered),
+                    LinesCoverable = file.Lines.Count,
+                });
+            }
+        }
+
+        if (trees.Count == 0)
+            return null;
+
+        var totals = new Dictionary<string, CoverageSummary>(StringComparer.Ordinal);
+        foreach (var (flag, tree) in trees)
+        {
+            await session.StoreAsync(tree, BuildTreeSummary.FlagDocumentId(buildId, flag), cancellationToken);
+            totals[flag] = new CoverageSummary
+            {
+                LinesCovered = tree.Files.Sum(f => f.LinesCovered),
+                LinesCoverable = tree.Files.Sum(f => f.LinesCoverable),
+                FilesCount = tree.Files.Count,
+            };
+        }
+        return totals;
     }
 }

@@ -231,7 +231,8 @@ public partial class UploadsController : ControllerBase
             build.Partial,
             baselineScope,
             projection,
-            build.Patch));
+            build.Patch,
+            build.FlagCoverage));
     }
 
     /// <summary>
@@ -313,7 +314,8 @@ public partial class UploadsController : ControllerBase
         bool Partial = false,
         UploadStatusBaselineScope? BaselineScope = null,
         UploadStatusProjection? Projection = null,
-        PatchCoverage? Patch = null);
+        PatchCoverage? Patch = null,
+        IReadOnlyDictionary<string, CoverageSummary>? Flags = null);
 
     public sealed record UploadStatusBaseline(string Sha, string? Branch, CoverageSummary? Coverage);
 

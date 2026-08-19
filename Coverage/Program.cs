@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using Coverage;
 using Coverage.ApiTokens;
+using Coverage.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -270,6 +271,18 @@ app.UseEndpoints(endpoints =>
     endpoints.MapControllers();
     endpoints.MapSpark();
     endpoints.MapGet("/health", () => Results.Ok());
+    // Readiness that can actually fail (#13 U1 / roadmap T0.4): 503 only when
+    // the GitHub App key is decisively unusable. The compose healthcheck keeps
+    // probing /health (a bad key must not restart-loop the container); the
+    // deploy workflow polls this and fails the deploy instead.
+    endpoints.MapGet("/health/ready", async (IGitHubAppReadinessService readiness, CancellationToken cancellationToken) =>
+    {
+        var gitHubApp = await readiness.CheckAsync(cancellationToken);
+        var payload = new { status = gitHubApp.Status == GitHubAppReadiness.Failed ? "unready" : "ready", gitHubApp };
+        return gitHubApp.Status == GitHubAppReadiness.Failed
+            ? Results.Json(payload, statusCode: StatusCodes.Status503ServiceUnavailable)
+            : Results.Json(payload);
+    });
 });
 
 app.UseWhen(

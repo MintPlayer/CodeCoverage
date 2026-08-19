@@ -198,10 +198,11 @@ the host owns the dev server), update this document's status header, then PR.
 - Per-request `BuildFeedback.Error` diagnostics (server config detail; `Attempts`/`NextAttemptAtUtc`
   are the safe candidates if ever needed).
 
-## 4. Upstream asks (Spark) — to file separately
+## 4. Upstream asks (Spark)
 
-1. **`showedOn` hand-edits must survive `--spark-synchronize-model` on `[FromIndex]`-projected
-   entities.** Index membership is a storage fact; `showedOn` is presentation. Same defect class as
+1. **Filed: [MintPlayer.Spark#274](https://github.com/MintPlayer/MintPlayer.Spark/issues/274)** —
+   `showedOn` hand-edits must survive `--spark-synchronize-model` on `[FromIndex]`-projected
+   entities. Index membership is a storage fact; `showedOn` is presentation. Same defect class as
    Spark#253 ("Synchronize must not delete attributes"). `[IgnoreForIndex]` is not a lever here —
    `OwnerLogin`/`IsPrivate`/`Account` are load-bearing in `RepositoryVisibility.Filter` and
    `Account_Repositories`. SP6 measured the wipe as **every-run**, not one-time — see §1; until

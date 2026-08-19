@@ -153,6 +153,26 @@ One-time VPS setup:
    readable by the container's `app` user (UID 1654) — e.g. `chmod 644` or `chown 1654`.
    Beware: if the file is missing at first `up`, Docker silently creates a *directory*
    at that path and App auth fails at runtime.
+
+   **Verify it is the right App's key** — a well-formed key for the *wrong* App (e.g. the
+   development App's) authenticates nothing, and only App-authenticated calls notice:
+   webhooks (secret) and uploads (`covt_`/OIDC) keep working while check-runs and
+   `coverage.yml` loading silently fail. Compare against the fingerprint GitHub shows on
+   the App's General page, without ever printing the key:
+
+   ```bash
+   openssl rsa -in github-app.pem -pubout -outform DER | openssl sha256 -binary | openssl base64
+   ```
+
+   **Replacing the key:** the compose file bind-mounts the single file, which binds the
+   *inode* — `mv`/`scp` over it leaves the container reading the old file. Always
+   `cat new.pem > github-app.pem`, then restart. `GET /health/ready` round-trips an App
+   JWT to GitHub and returns 503 while the key is unusable (each deploy polls it), so a
+   bad key now fails the deploy instead of surfacing hours later.
+
+   **After fixing a bad key:** check-run publishing gives up per build after 5 attempts
+   and never revisits it (`FeedbackState: Failed` is terminal) — a **new build** is
+   required; existing failed builds will not retroactively get their check-runs.
 3. `docker network create web` if it doesn't exist; Traefik must be attached to it, with
    an entrypoint named `websecure` and an ACME resolver named `letsencrypt` (the compose
    labels assume those exact names).

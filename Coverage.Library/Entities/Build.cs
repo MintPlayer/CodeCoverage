@@ -76,6 +76,22 @@ public class Build
     /// <summary>Added-lines coverage vs the diff base; null when no diff was obtainable.</summary>
     public PatchCoverage? Patch { get; set; }
 
+    /// <summary>Check-run outbox; null until the first publish attempt is enqueued.</summary>
+    public BuildFeedback? Feedback { get; set; }
+
+    /// <summary>Queryable mirror of <see cref="BuildFeedback.State"/> — the sweep cron's filter.</summary>
+    public string? FeedbackState { get; set; }
+
+    /// <summary>Queryable mirror of <see cref="BuildFeedback.NextAttemptAtUtc"/>.</summary>
+    public DateTime? FeedbackNextAttemptAtUtc { get; set; }
+
+    /// <summary>
+    /// The effective gate this build was judged by (settings document merged
+    /// with the base ref's coverage.yml). Snapshotted because a base-dependent
+    /// verdict is unexplainable later without its inputs.
+    /// </summary>
+    public GateSettings? GateSnapshot { get; set; }
+
     public static string DocumentId(long repoGitHubId, string sha, long runId, int runAttempt)
         => $"{Entities.Commit.DocumentId(repoGitHubId, sha)}/builds/{runId}-{runAttempt}";
 

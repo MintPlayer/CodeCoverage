@@ -28,6 +28,8 @@ public partial class Builds_Overview
         Index(nameof(VBuild.Sessions), FieldIndexing.No);
         Index(nameof(VBuild.Coverage), FieldIndexing.No);
         Index(nameof(VBuild.Patch), FieldIndexing.No);
+        Index(nameof(VBuild.Feedback), FieldIndexing.No);
+        Index(nameof(VBuild.GateSnapshot), FieldIndexing.No);
     }
 }
 

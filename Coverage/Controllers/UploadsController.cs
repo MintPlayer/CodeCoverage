@@ -247,64 +247,20 @@ public partial class UploadsController : ControllerBase
     private async Task<(UploadStatusBaseline? Baseline, UploadStatusBaselineScope? Scope, UploadStatusProjection? Projection)>
         ResolvePartialComparison(Repository repo, Build build, Commit? commit, CancellationToken cancellationToken)
     {
-        var resolved = commit is null
-            ? new ResolvedBase(build.DeclaredBaseSha, null, ResolvedBase.None, null, null)
-            : await baseResolver.ResolveAsync(repo, commit, build.DeclaredBaseSha, cancellationToken);
+        var result = await BuildComparer.CompareAsync(session, baseResolver, repo, build, commit, cancellationToken);
+        var resolved = result.Base;
 
-        UploadStatusBaselineScope Scope(int? filesInScope = null, int? prunedFiles = null) =>
-            new("scoped", resolved.RequestedSha, resolved.ResolvedSha, resolved.Mode, filesInScope, prunedFiles);
+        var scope = new UploadStatusBaselineScope("scoped",
+            resolved.RequestedSha, resolved.ResolvedSha, resolved.Mode,
+            result.Partial?.FilesInScope, result.Partial?.PrunedFiles);
 
-        if (resolved.BaseBuildId is null)
-            return (null, Scope(), null);
-
-        var headTree = build.Id is null ? null
-            : await session.LoadAsync<BuildTreeSummary>(BuildTreeSummary.DocumentId(build.Id), cancellationToken);
-        if (headTree is null)
-            return (null, Scope(), null);
-
-        var baseTree = await session.LoadAsync<BuildTreeSummary>(BuildTreeSummary.DocumentId(resolved.BaseBuildId), cancellationToken);
-        if (baseTree is null)
-            return (null, Scope(), null);
-
-        var fileList = await ReadHeadFileList(build, cancellationToken);
-        var comparison = PartialComparison.Compute(headTree, baseTree, fileList);
-
-        var reasons = new List<string>();
-        if (resolved.Mode != ResolvedBase.Exact)
-            reasons.Add("baseWalked");
-        if (fileList is null)
-            reasons.Add("noFileList");
-        if (headTree.Files.Any(f => !f.Matched))
-            reasons.Add("unmatchedPaths");
-        if (Build.ClassifyState(build) == "CompleteWithErrors")
-            reasons.Add("parseErrors");
+        if (result.Partial is null)
+            return (null, scope, null);
 
         return (
-            new UploadStatusBaseline(resolved.ResolvedSha!, resolved.Branch, comparison.ScopedBaseline),
-            Scope(comparison.FilesInScope, comparison.PrunedFiles),
-            new UploadStatusProjection(comparison.Projection, reasons.Count == 0, [.. reasons]));
-    }
-
-    /// <summary>
-    /// The head's git file list, needed to prune PR-deleted files from the
-    /// projection. Every job uploads the same `git ls-files` of the same
-    /// commit, so the first session that attached one wins.
-    /// </summary>
-    private async Task<string[]?> ReadHeadFileList(Build build, CancellationToken cancellationToken)
-    {
-        foreach (var buildSession in build.Sessions)
-        {
-            var attachment = await session.Advanced.Attachments.GetAsync(
-                build, UploadAttachments.FileListName(buildSession.SessionId), cancellationToken);
-            if (attachment is null)
-                continue;
-
-            await using var stream = attachment.Stream;
-            using var reader = new StreamReader(stream);
-            var text = await reader.ReadToEndAsync(cancellationToken);
-            return text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        }
-        return null;
+            new UploadStatusBaseline(resolved.ResolvedSha!, resolved.Branch, result.Partial.ScopedBaseline),
+            scope,
+            new UploadStatusProjection(result.Partial.Projection, result.IncompleteReasons.Length == 0, result.IncompleteReasons));
     }
 
     /// <summary>

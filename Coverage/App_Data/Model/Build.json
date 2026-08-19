@@ -120,6 +120,52 @@
         "rules": []
       },
       {
+        "id": "d287dc72-bdb5-48b2-82a7-6ad74309dcde",
+        "name": "Feedback",
+        "label": {
+          "en": "Feedback"
+        },
+        "dataType": "AsDetail",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 17,
+        "asDetailType": "Coverage.Entities.BuildFeedback",
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "bce5895b-a41f-4911-90ad-b44e555a8feb",
+        "name": "FeedbackNextAttemptAtUtc",
+        "label": {
+          "en": "Feedback Next Attempt At Utc"
+        },
+        "dataType": "datetime",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 19,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "2ce95585-bb56-465d-b495-d6d1674360f4",
+        "name": "FeedbackState",
+        "label": {
+          "en": "Feedback State"
+        },
+        "dataType": "string",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 18,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
         "id": "dc719560-c154-4ca6-9b8b-0529593560c0",
         "name": "FinalizedAtUtc",
         "label": {
@@ -146,6 +192,22 @@
         "isVisible": true,
         "isReadOnly": false,
         "order": 13,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "5e3d9442-d45c-4498-8e39-b6ea6a9905a5",
+        "name": "GateSnapshot",
+        "label": {
+          "en": "Gate Snapshot"
+        },
+        "dataType": "AsDetail",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 20,
+        "asDetailType": "Coverage.Entities.GateSettings",
         "isArray": false,
         "showedOn": "Query, PersistentObject",
         "rules": []

@@ -30,11 +30,36 @@ public class GitHubEventsRecipientTests : CoverageRavenTest
     private const string BaseSha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     private const string PreviousTip = "cccccccccccccccccccccccccccccccccccccccc";
 
+    /// <summary>Captures broadcasts so tests can assert what the webhook enqueued.</summary>
+    private sealed class RecordingMessageBus : MintPlayer.Spark.Messaging.Abstractions.IMessageBus
+    {
+        public List<object> Messages { get; } = [];
+
+        public Task BroadcastAsync<TMessage>(TMessage message, CancellationToken cancellationToken = default)
+        {
+            Messages.Add(message!);
+            return Task.CompletedTask;
+        }
+
+        public Task BroadcastAsync<TMessage>(TMessage message, string queueName, CancellationToken cancellationToken = default)
+        {
+            Messages.Add(message!);
+            return Task.CompletedTask;
+        }
+
+        public Task DelayBroadcastAsync<TMessage>(TMessage message, TimeSpan delay, CancellationToken cancellationToken = default)
+        {
+            Messages.Add(message!);
+            return Task.CompletedTask;
+        }
+    }
+
     private static GitHubEventsRecipient CreateRecipient(IAsyncDocumentSession session)
     {
         var services = new ServiceCollection();
         services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.None));
         services.AddSingleton(session);
+        services.AddSingleton<MintPlayer.Spark.Messaging.Abstractions.IMessageBus>(new RecordingMessageBus());
         services.AddScoped<GitHubEventsRecipient>();
         return services.BuildServiceProvider().GetRequiredService<GitHubEventsRecipient>();
     }

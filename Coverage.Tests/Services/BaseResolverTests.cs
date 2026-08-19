@@ -19,6 +19,8 @@ public class BaseResolverTests : CoverageRavenTest
 
     private static Repository Repo(string? defaultBranch = "master") => new()
     {
+        // A production Repository always arrives loaded from the session, id set.
+        Id = Repository.DocumentId(RepoGitHubId),
         GitHubId = RepoGitHubId,
         Name = "repo",
         FullName = "acme/repo",

@@ -1,6 +1,21 @@
 # Coverage analyzer suite — partial uploads, patch coverage, check-runs, thresholds, flags
 
-**Status: planned 2026-08-19 · branch `coverage-analyzer-suite` · one squash-merged PR by explicit decision.**
+**Status: ✅ BUILT 2026-08-19 (M1–M10) · branch `coverage-analyzer-suite` · one squash-merged PR by explicit decision.**
+
+As-built deviations from the plan below, all conscious:
+
+- **M4**: GitHub's 300-file comparison cap is *disclosed* (`Truncated` → `patch-diff-truncated`
+  output, called out in the check-run summary) rather than paginated past — SP-A remains open for a
+  consumer that actually hits it.
+- **M6/M7**: the `coverage.yml` override landed inside M7's publisher as M6's text already said;
+  the settings API and panel shipped in M6.
+- **SP-C** resolved by decision: the walk-back does **not** verify ancestry with a compare call —
+  the substitution is disclosed instead (`baseResolution: walked`), which is cheaper and honest.
+  Revisit only if a force-pushed default branch bites someone in practice.
+- **D4 hardened**: `BuildFinalizer` now refuses to promote a partial build to
+  `Repository.LatestCoverage` under *any* branch condition — closing the
+  `DefaultBranch is null` hole OIDC-provisioned repos had.
+- Flag names sanitize to `[a-z0-9._-]` and per-flag totals key by the sanitized name.
 
 This is the umbrella PRD/plan for everything a coverage analyzer still needs on top of
 [#11](https://github.com/MintPlayer/CodeCoverage/issues/11) (scoped baseline for partial

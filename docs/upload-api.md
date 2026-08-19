@@ -182,6 +182,12 @@ and it is returned here so the gate never has to reach for a second, less approp
 `baseline` is `null` when the default branch has no other finalized coverage yet — a first upload,
 where a ratchet must pass by definition. Treat null as "pass", not as an error.
 
+A null baseline is **not only a first-upload condition.** A default-branch workflow using
+`cancel-in-progress: true` loses the superseded run before its upload step, so that commit simply has
+no coverage — measured at ~5% of default-branch runs in a real consumer repo. Any gate that treats a
+null baseline as an error will fail on perfectly healthy repositories; the correct behaviour is
+always *abstain*.
+
 *(If the repository was auto-provisioned by an OIDC upload rather than by installing the GitHub App,
 the server does not know its default branch, and the baseline is taken from the polled commit's own
 branch instead.)*
@@ -263,7 +269,77 @@ rate() { jq -r 'if .linesCoverable > 0 then .linesCovered / .linesCoverable * 10
 requiring strict non-decrease: line counts move by a line or two for reasons that have nothing to do
 with test quality.
 
-**This is the interim shape.** The service will publish `coverage/project` and `coverage/patch` check
-runs directly to GitHub, at which point you can require those in branch protection and delete the
-workflow step. Those two names are fixed, so a gate published today under the name `coverage/project`
-cuts over with no branch-protection change.
+**The service now also publishes `coverage/project` and `coverage/patch` check runs** directly to
+GitHub for repositories with the App installed (with Checks read-write accepted — see the README's
+permission notes). You can require those names in branch protection and delete the workflow-side
+gate. The rules they judge by live in the repository's **Coverage gate** settings panel, overridable
+per field by a `coverage.yml` in the repo — read from the **base ref**, so a pull request cannot
+rewrite the policy it is judged by:
+
+```yaml
+gate:
+  projectMode: auto        # auto = ratchet against the base; fixed = compare to projectTarget
+  projectTarget: 80        # percent, fixed mode only
+  projectThreshold: 1      # allowed drop, percentage points
+  projectBasis: scoped     # what a partial build's project check judges: scoped | projection
+  patchTarget: 80          # percent of added lines; omit to keep the patch check informational
+  patchThreshold: 5
+  blocking: false          # false (default): checks post numbers but never fail
+```
+
+Two rules the checks live by: **a missing baseline or diff is neutral, never red** (abstaining is
+routine — see above), and with `blocking: false` the same numbers post with a neutral conclusion, so
+you can watch the verdicts before letting them block anything.
+
+## Partial uploads (`nx affected`)
+
+A monorepo PR that runs `nx affected --target=test` measures only the affected projects. Declare
+that, and the comparison stays honest instead of reading as a 98% collapse:
+
+- Form fields `partial` (`true`) and `baseSha` (the sha your affected-computation ran against — what
+  you passed to `nx affected --base`). Action inputs: `partial`, `base-sha`.
+
+For a partial build, `GET /api/uploads/status` changes meaning in one place and adds two objects:
+
+- **`baseline` becomes scoped**: the base commit's coverage restricted to the paths this build
+  measured — a like-for-like ratchet. `coverage` (only the measured files) compares against it
+  directly.
+- **`projection`** is the patched whole-workspace total: the base build's per-file tree with your
+  measured files overwritten and PR-deleted files pruned (via the uploaded `fileList`), summed at
+  read time. It *asserts* unmeasured files unchanged — which is exactly what `nx affected` earns —
+  and carries its own verdict: `complete` plus `incompleteReasons`
+  (`baseWalked | noFileList | unmatchedPaths | parseErrors`). An incomplete projection is best
+  effort; the UI shows a danger badge for it, and a strict gate should abstain on it
+  (`projection-complete` action output).
+- **`baselineScope`** states the denominator: `requestedBaseSha` vs `resolvedBaseSha` and
+  `baseResolution` (`exact | mergeBase | walked | none`). The server uses your declared base when it
+  has usable data for it; otherwise it resolves the PR merge-base via GitHub's compare API; otherwise
+  it walks to the newest covered default-branch commit — and always tells you which it did. `none`
+  means abstain, never error.
+
+Partial builds never become the repository's headline number or badge. Patch coverage (`patch` in
+the response) is computed from your own build's line data plus the diff, so it works even when the
+base has no coverage at all; added lines in projects the run didn't measure are **skipped, not
+counted as misses**.
+
+Hazards to know: `nx affected` says nothing about workspace-root config changes (Nx ships
+`sharedGlobals` empty), so an instrumentation-config change should be treated as a re-baseline; and
+the comparison base for a stacked PR (branch-of-a-branch) usually widens to the default branch —
+disclosed via `baseResolution`, degraded, never corrupted.
+
+## Flags
+
+Flags label an upload (`flags: unit,linux` on the action). Sessions carrying a flag additionally
+merge into that flag's own per-file documents, so a finalized build reports per-flag totals: the
+`flags` map on `/status`, `flagTotals` + a `?flag=` tree filter on the browse API, and flag chips on
+the commit page. Flag names are sanitized to `[a-z0-9._-]` (they become document-id segments); builds
+uploaded before flags had storage report no per-flag data — attribution can't be reconstructed from
+merged documents.
+
+## Retention
+
+A **merged** pull request's build data (builds, per-file line data, per-flag documents, tree
+summaries) is deleted when the `pull_request closed` webhook arrives; the commit keeps its summary
+number for display. Closed-but-unmerged PRs keep their data. Repositories without the App installed
+get no webhook and therefore no cleanup — a known, accepted gap. Anything that compared against a
+since-deleted base degrades to the walk-back described above, disclosed in `baseResolution`.

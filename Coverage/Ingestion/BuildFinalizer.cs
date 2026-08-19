@@ -43,7 +43,13 @@ public static class BuildFinalizer
                     var repository = await session.LoadAsync<Repository>(commit.Repository, cancellationToken);
                     // Repo-level coverage tracks the default branch; a repo that
                     // never had data accepts any branch rather than showing nothing.
+                    //
+                    // Never a partial build (issue #11 D4): its total is a
+                    // subset's, and OIDC-provisioned repos have no DefaultBranch,
+                    // so without the Partial guard a PR-branch nx-affected run
+                    // would overwrite the headline the badge serves.
                     if (repository is not null
+                        && !build.Partial
                         && (repository.LatestCoverage is null
                             || repository.DefaultBranch is null
                             || string.Equals(commit.Branch, repository.DefaultBranch, StringComparison.Ordinal)))

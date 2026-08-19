@@ -1,3 +1,4 @@
+using System.Globalization;
 using Coverage.Entities;
 using Coverage.Ingestion;
 using Coverage.Services;
@@ -35,12 +36,12 @@ public static class GateEvaluator
         {
             // Routine, not exceptional: cancelled base runs, first uploads,
             // unresolvable stacked bases. A gate that reddens here gets turned off.
-            return new CheckVerdict("neutral", null, $"{headRate:0.0}% — no baseline to compare against", summary);
+            return new CheckVerdict("neutral", null, Inv($"{headRate:0.0}% — no baseline to compare against"), summary);
         }
 
         var passed = headRate.Value >= baseRate.Value - gate.ProjectThreshold;
         var delta = headRate.Value - baseRate.Value;
-        var title = $"{headRate:0.0}% ({delta:+0.0;-0.0;±0.0}% vs {benchmark} {baseRate:0.0}%)";
+        var title = Inv($"{headRate:0.0}% ({delta:+0.0;-0.0;±0.0}% vs {benchmark} {baseRate:0.0}%)");
         return new CheckVerdict(Conclude(gate, passed), passed, title, summary);
     }
 
@@ -54,14 +55,14 @@ public static class GateEvaluator
 
         var rate = patch.LinesCovered * 100.0 / patch.LinesCoverable;
         var truncation = patch.DiffTruncated ? " The diff hit GitHub's 300-file cap, so this under-reports." : "";
-        var detail = $"{patch.LinesCovered} of {patch.LinesCoverable} added lines covered across {patch.FilesMatched} measured file(s) " +
-                     $"({patch.FilesInDiff} in the diff; unmeasured files are skipped, not counted as misses).{truncation}";
+        var detail = Inv($"{patch.LinesCovered} of {patch.LinesCoverable} added lines covered across {patch.FilesMatched} measured file(s) ") +
+                     Inv($"({patch.FilesInDiff} in the diff; unmeasured files are skipped, not counted as misses).{truncation}");
 
         if (gate.PatchTarget is null)
-            return new CheckVerdict("neutral", null, $"{rate:0.0}% of added lines covered", $"{detail}\n\nNo patch target is configured — informational only.");
+            return new CheckVerdict("neutral", null, Inv($"{rate:0.0}% of added lines covered"), $"{detail}\n\nNo patch target is configured — informational only.");
 
         var passed = rate >= gate.PatchTarget.Value - gate.PatchThreshold;
-        var title = $"{rate:0.0}% of added lines covered (target {gate.PatchTarget:0.0}%)";
+        var title = Inv($"{rate:0.0}% of added lines covered (target {gate.PatchTarget:0.0}%)");
         return new CheckVerdict(Conclude(gate, passed), passed, title, detail);
     }
 
@@ -87,14 +88,17 @@ public static class GateEvaluator
         }
 
         lines.Add(baseRate is null
-            ? $"Head: {headRate:0.0}%. No baseline resolved — informational."
-            : $"Head: {headRate:0.0}%, benchmark: {baseRate:0.0}%, allowed drop: {gate.ProjectThreshold:0.0} points.");
+            ? Inv($"Head: {headRate:0.0}%. No baseline resolved — informational.")
+            : Inv($"Head: {headRate:0.0}%, benchmark: {baseRate:0.0}%, allowed drop: {gate.ProjectThreshold:0.0} points."));
 
         if (!gate.Blocking)
             lines.Add("This check is informational (Blocking is off in the repository's coverage gate).");
 
         return string.Join("\n\n", lines);
     }
+
+    /// <summary>Check-run text goes to GitHub, not to this server's locale.</summary>
+    private static string Inv(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
 
     private static double? Rate(CoverageSummary? summary)
         => summary is { LinesCoverable: > 0 } ? summary.LinesCovered * 100.0 / summary.LinesCoverable : null;

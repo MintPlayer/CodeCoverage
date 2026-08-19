@@ -11,6 +11,7 @@ namespace Coverage.Services;
 public partial class BaseResolver : IBaseResolver
 {
     [Inject] private readonly IAsyncDocumentSession session;
+    [Inject] private readonly IGitHubDiffService diffService;
 
     // Generous enough to step over a run of cancelled/uncovered default-branch
     // commits, small enough that a repo with no usable base at all answers fast.
@@ -27,7 +28,26 @@ public partial class BaseResolver : IBaseResolver
                 return new ResolvedBase(requested, declared!.Sha, ResolvedBase.Exact, declaredBuildId, declared.Coverage, declared.Branch);
         }
 
-        // M4 slots the compare-API merge-base in here, between exact and walk.
+        // The PR merge-base with the default branch, from GitHub's compare API.
+        // Null whenever no API path exists (private repo without the App) or
+        // the call fails — the walk below is the answer to both.
+        if (repository.DefaultBranch is not null)
+        {
+            long? installationId = null;
+            if (repository.Account is not null)
+                installationId = (await session.LoadAsync<Account>(repository.Account, cancellationToken))?.InstallationId;
+
+            var comparison = await diffService.CompareAsync(repository, installationId, repository.DefaultBranch, head.Sha, cancellationToken);
+            var mergeBaseSha = comparison?.MergeBaseSha;
+            if (mergeBaseSha is not null
+                && !string.Equals(mergeBaseSha, head.Sha, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(mergeBaseSha, requested, StringComparison.OrdinalIgnoreCase))
+            {
+                var mergeBase = await session.LoadAsync<Commit>(Entities.Commit.DocumentId(repository.GitHubId, mergeBaseSha), cancellationToken);
+                if (await UsableBuildIdAsync(mergeBase, cancellationToken) is { } mergeBuildId)
+                    return new ResolvedBase(requested, mergeBase!.Sha, ResolvedBase.MergeBase, mergeBuildId, mergeBase.Coverage, mergeBase.Branch);
+            }
+        }
 
         // Same branch fallback as ResolveBaseline: OIDC-provisioned repos never
         // learn their default branch, so the head's own branch beats nothing.

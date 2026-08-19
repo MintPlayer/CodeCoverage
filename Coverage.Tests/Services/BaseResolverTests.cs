@@ -66,7 +66,7 @@ public class BaseResolverTests : CoverageRavenTest
     {
         WaitForIndexing(store);
         using var session = store.OpenAsyncSession();
-        var resolver = new BaseResolver(session);
+        var resolver = new BaseResolver(session, new ScriptedDiffService());
         return await resolver.ResolveAsync(Repo(defaultBranch), head, declared, CancellationToken.None);
     }
 
@@ -154,6 +154,43 @@ public class BaseResolverTests : CoverageRavenTest
         resolved.Mode.Should().Be(ResolvedBase.None);
         resolved.RequestedSha.Should().Be("gone000");
         resolved.BaseBuildId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task The_compare_api_merge_base_beats_the_walk_when_the_declared_base_is_unusable()
+    {
+        using var store = GetDocumentStore();
+        // The true merge base is older than the walk's favourite — the walk
+        // would pick newest0, the compare API knows better.
+        await SeedCovered(store, "mbase00", "master", DateTimeOffset.UtcNow.AddDays(-3));
+        await SeedCovered(store, "newest0", "master", DateTimeOffset.UtcNow.AddHours(-1));
+        var head = await SeedUncovered(store, "head000", "feature");
+
+        WaitForIndexing(store);
+        using var session = store.OpenAsyncSession();
+        var resolver = new BaseResolver(session, new ScriptedDiffService(new CommitComparison("mbase00", [], false)));
+        var resolved = await resolver.ResolveAsync(Repo(), head, "gone000", CancellationToken.None);
+
+        resolved.Mode.Should().Be(ResolvedBase.MergeBase);
+        resolved.ResolvedSha.Should().Be("mbase00");
+        resolved.RequestedSha.Should().Be("gone000");
+    }
+
+    [Fact]
+    public async Task An_unusable_merge_base_still_falls_through_to_the_walk()
+    {
+        using var store = GetDocumentStore();
+        await SeedCovered(store, "mbase00", "master", DateTimeOffset.UtcNow.AddDays(-3), treeDeleted: true);
+        await SeedCovered(store, "newest0", "master", DateTimeOffset.UtcNow.AddHours(-1));
+        var head = await SeedUncovered(store, "head000", "feature");
+
+        WaitForIndexing(store);
+        using var session = store.OpenAsyncSession();
+        var resolver = new BaseResolver(session, new ScriptedDiffService(new CommitComparison("mbase00", [], false)));
+        var resolved = await resolver.ResolveAsync(Repo(), head, null, CancellationToken.None);
+
+        resolved.Mode.Should().Be(ResolvedBase.Walked);
+        resolved.ResolvedSha.Should().Be("newest0");
     }
 
     [Fact]

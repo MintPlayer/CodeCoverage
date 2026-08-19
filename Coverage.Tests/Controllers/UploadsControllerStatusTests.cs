@@ -70,6 +70,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Coverage:BaseUrl"] = "https://coverage.example.com" })
             .Build());
+        services.AddSingleton<IGitHubDiffService>(new Services.ScriptedDiffService());
         services.AddScoped<IBaseResolver, BaseResolver>();
         services.AddScoped<UploadsController>();
 

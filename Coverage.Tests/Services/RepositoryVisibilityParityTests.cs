@@ -1,4 +1,5 @@
 using Coverage.Entities;
+using Coverage.Indexes;
 using Coverage.Services;
 using FluentAssertions;
 using Raven.Client.Documents;
@@ -67,7 +68,7 @@ public class RepositoryVisibilityParityTests : CoverageRavenTest
         using var session = store.OpenAsyncSession();
 
         // The /spark surface: a row filter pushed down to RavenDB.
-        var throughRowFilter = await session.Query<Repository>()
+        var throughRowFilter = await session.Query<Repository, Repositories_Overview>()
             .Where(RepositoryVisibility.Filter(allowedOwners))
             .ToListAsync();
 
@@ -90,7 +91,7 @@ public class RepositoryVisibilityParityTests : CoverageRavenTest
         using var session = store.OpenAsyncSession();
         string[] allowed = ["ACME"];
 
-        var throughRowFilter = await session.Query<Repository>()
+        var throughRowFilter = await session.Query<Repository, Repositories_Overview>()
             .Where(RepositoryVisibility.Filter(allowed))
             .ToListAsync();
 

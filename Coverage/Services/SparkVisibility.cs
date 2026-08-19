@@ -28,7 +28,7 @@ public partial class SparkVisibility : ISparkVisibility
     private async Task<string[]> QueryVisibleRepositoryIdsAsync()
     {
         var allowed = await GetAllowedOwnersAsync();
-        var ids = await session.Query<Repository>()
+        var ids = await session.Query<Repository, Indexes.Repositories_Overview>()
             .Where(RepositoryVisibility.Filter(allowed))
             .Select(r => r.Id)
             .ToListAsync();

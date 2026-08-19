@@ -1,6 +1,13 @@
 import { ChangeDetectionStrategy, Component, effect, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Color } from '@mintplayer/ng-bootstrap';
 import { BsCardComponent, BsCardHeaderComponent, BsCardBodyComponent } from '@mintplayer/ng-bootstrap/card';
+import { BsSelectComponent } from '@mintplayer/ng-bootstrap/select';
+import { BsGridComponent, BsGridColumnDirective, BsGridRowDirective, BsColFormLabelDirective } from "@mintplayer/ng-bootstrap/grid";
+import { BsForDirective } from "@mintplayer/ng-bootstrap/for";
+import { BsFormComponent, BsFormControlDirective } from "@mintplayer/ng-bootstrap/form";
+import { BsCheckboxComponent } from "@mintplayer/ng-bootstrap/checkbox";
+import { BsButtonTypeDirective } from "@mintplayer/ng-bootstrap/button-type";
 import { BrowseService, GateSettings } from '../../services/browse.service';
 
 /**
@@ -11,65 +18,66 @@ import { BrowseService, GateSettings } from '../../services/browse.service';
  */
 @Component({
   selector: 'app-repo-gate-panel',
-  imports: [FormsModule, BsCardComponent, BsCardHeaderComponent, BsCardBodyComponent],
+  imports: [FormsModule, BsCardComponent, BsCardHeaderComponent, BsCardBodyComponent, BsSelectComponent, BsGridComponent, BsGridColumnDirective, BsGridRowDirective, BsForDirective, BsFormComponent, BsFormControlDirective, BsColFormLabelDirective, BsCheckboxComponent, BsButtonTypeDirective],
   template: `
     @if (canManage() && gate(); as g) {
       <bs-card class="mt-3 d-block">
         <bs-card-header><i class="bi bi-shield-check"></i> Coverage gate</bs-card-header>
         <bs-card-body>
-          <div class="row g-3">
-            <div class="col-sm-4">
-              <label class="form-label small mb-1">Project comparison</label>
-              <select class="form-select form-select-sm" [(ngModel)]="g.projectMode">
-                <option value="auto">Ratchet against the base commit</option>
-                <option value="fixed">Fixed target</option>
-              </select>
-            </div>
-            @if (g.projectMode === 'fixed') {
-              <div class="col-sm-4">
-                <label class="form-label small mb-1">Project target (%)</label>
-                <input type="number" class="form-control form-control-sm" min="0" max="100" step="0.1" [(ngModel)]="g.projectTarget">
+          <bs-grid>
+            <bs-form>
+              <div bsRow class="g-3">
+                <div [sm]="4">
+                  <label [bsFor]="projectMode" bsColFormLabel class="mb-1">Project comparison</label>
+                  <bs-select #projectMode [(ngModel)]="g.projectMode">
+                    <option [ngValue]="'auto'">Ratchet against the base commit</option>
+                    <option [ngValue]="'fixed'">Fixed target</option>
+                  </bs-select>
+                </div>
+                @if (g.projectMode === 'fixed') {
+                  <div [sm]="4">
+                    <label [bsFor]="projectTarget" bsColFormLabel class="mb-1">Project target (%)</label>
+                    <input type="number" #projectTarget min="0" max="100" step="0.1" [(ngModel)]="g.projectTarget">
+                  </div>
+                }
+                <div [sm]="4">
+                  <label [bsFor]="projectThreshold" bsColFormLabel class="mb-1">Allowed drop (points)</label>
+                  <input type="number" #projectThreshold min="0" max="100" step="0.1" [(ngModel)]="g.projectThreshold">
+                </div>
+                <div [sm]="4">
+                  <label [bsFor]="projectBasis" bsColFormLabel class="mb-1">Partial builds judge</label>
+                  <bs-select [(ngModel)]="g.projectBasis" #projectBasis>
+                    <option [ngValue]="'scoped'">Scoped baseline (like-for-like)</option>
+                    <option [ngValue]="'projection'">Patched projection (whole workspace)</option>
+                  </bs-select>
+                </div>
+                <div [sm]="4">
+                  <label [bsFor]="patchTarget" bsColFormLabel class="mb-1">Patch target (%)</label>
+                  <input type="number" #patchTarget min="0" max="100" step="0.1"
+                        placeholder="off" [(ngModel)]="g.patchTarget">
+                </div>
+                <div [sm]="4">
+                  <label [bsFor]="patchThreshold" bsColFormLabel class="mb-1">Patch tolerance (points)</label>
+                  <input type="number" #patchThreshold min="0" max="100" step="0.1" [(ngModel)]="g.patchThreshold">
+                </div>
               </div>
-            }
-            <div class="col-sm-4">
-              <label class="form-label small mb-1">Allowed drop (points)</label>
-              <input type="number" class="form-control form-control-sm" min="0" max="100" step="0.1" [(ngModel)]="g.projectThreshold">
-            </div>
-            <div class="col-sm-4">
-              <label class="form-label small mb-1">Partial builds judge</label>
-              <select class="form-select form-select-sm" [(ngModel)]="g.projectBasis">
-                <option value="scoped">Scoped baseline (like-for-like)</option>
-                <option value="projection">Patched projection (whole workspace)</option>
-              </select>
-            </div>
-            <div class="col-sm-4">
-              <label class="form-label small mb-1">Patch target (%)</label>
-              <input type="number" class="form-control form-control-sm" min="0" max="100" step="0.1"
-                     placeholder="off" [(ngModel)]="g.patchTarget">
-            </div>
-            <div class="col-sm-4">
-              <label class="form-label small mb-1">Patch tolerance (points)</label>
-              <input type="number" class="form-control form-control-sm" min="0" max="100" step="0.1" [(ngModel)]="g.patchThreshold">
-            </div>
-          </div>
 
-          <div class="form-check form-switch mt-3">
-            <input class="form-check-input" type="checkbox" id="gateBlocking" [(ngModel)]="g.blocking">
-            <label class="form-check-label small" for="gateBlocking">
-              Blocking — failed checks turn red. Off, the checks post the same numbers but never fail.
-            </label>
-          </div>
+              <bs-checkbox name="gateBlocking" [(ngModel)]="g.blocking">
+                Blocking — failed checks turn red. Off, the checks post the same numbers but never fail.
+              </bs-checkbox>
 
-          <div class="d-flex align-items-center gap-2 mt-3">
-            <button class="btn btn-sm btn-primary" (click)="save()" [disabled]="saving()">
-              <i class="bi bi-save"></i> Save gate
-            </button>
-            @if (savedAt()) { <span class="small text-success">Saved.</span> }
-            @if (error()) { <span class="small text-danger">{{ error() }}</span> }
-          </div>
-          <div class="small text-muted mt-2">
-            A <code>coverage.yml</code> in the repository overrides these per field, read from the base branch.
-          </div>
+              <div class="d-flex align-items-center gap-2 mt-3">
+                <button [color]="colors.primary" (click)="save()" [disabled]="saving()">
+                  <i class="bi bi-save"></i> Save gate
+                </button>
+                @if (savedAt()) { <span class="small text-success">Saved.</span> }
+                @if (error()) { <span class="small text-danger">{{ error() }}</span> }
+              </div>
+              <div class="small text-muted mt-2">
+                A <code>coverage.yml</code> in the repository overrides these per field, read from the base branch.
+              </div>
+            </bs-form>
+          </bs-grid>
         </bs-card-body>
       </bs-card>
     }
@@ -82,6 +90,7 @@ export class RepoGatePanelComponent {
   owner = input.required<string>();
   name = input.required<string>();
 
+  readonly colors = Color;
   readonly canManage = signal(false);
   readonly gate = signal<GateSettings | null>(null);
   readonly saving = signal(false);

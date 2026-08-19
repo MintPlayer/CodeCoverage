@@ -23,7 +23,7 @@
         "query": "GetAccounts",
         "referenceType": "Coverage.Entities.Account",
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -38,7 +38,7 @@
         "isReadOnly": false,
         "order": 10,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -69,7 +69,7 @@
         "isReadOnly": false,
         "order": 9,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -84,7 +84,7 @@
         "isReadOnly": false,
         "order": 5,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "Query",
         "rules": [],
         "renderer": "coverage-sparkline"
       },
@@ -117,7 +117,7 @@
         "isReadOnly": false,
         "order": 2,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -132,7 +132,7 @@
         "isReadOnly": false,
         "order": 8,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -164,7 +164,7 @@
         "isReadOnly": false,
         "order": 12,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -211,7 +211,7 @@
         "isReadOnly": false,
         "order": 7,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       }
     ],

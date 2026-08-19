@@ -21,7 +21,7 @@
         "isReadOnly": false,
         "order": 8,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -36,7 +36,7 @@
         "isReadOnly": false,
         "order": 7,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -53,7 +53,7 @@
         "query": "GetCommits",
         "referenceType": "Coverage.Entities.Commit",
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -101,7 +101,7 @@
         "isReadOnly": false,
         "order": 9,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -116,7 +116,7 @@
         "isReadOnly": false,
         "order": 10,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -132,7 +132,7 @@
         "order": 17,
         "asDetailType": "Coverage.Entities.BuildFeedback",
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -147,7 +147,7 @@
         "isReadOnly": false,
         "order": 19,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -162,7 +162,7 @@
         "isReadOnly": false,
         "order": 18,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -177,7 +177,7 @@
         "isReadOnly": false,
         "order": 12,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": [],
         "renderer": "date-time"
       },
@@ -193,7 +193,7 @@
         "isReadOnly": false,
         "order": 13,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -208,7 +208,7 @@
         "isReadOnly": false,
         "order": 17,
         "isArray": true,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -224,7 +224,7 @@
         "order": 20,
         "asDetailType": "Coverage.Entities.GateSettings",
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -239,7 +239,7 @@
         "isReadOnly": false,
         "order": 11,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": [],
         "renderer": "date-time"
       },
@@ -255,7 +255,7 @@
         "isReadOnly": false,
         "order": 8,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -271,7 +271,7 @@
         "order": 16,
         "asDetailType": "Coverage.Entities.PatchCoverage",
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -333,7 +333,7 @@
         "isReadOnly": false,
         "order": 9,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "showedOn": "PersistentObject",
         "rules": []
       }
     ],

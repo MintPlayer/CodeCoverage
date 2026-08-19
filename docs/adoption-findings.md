@@ -70,13 +70,21 @@ returns before `builder.Build()`, so it needs no database) and `git diff` the mo
 reads the committed JSON), but the regression test becomes the *only* guard and the upstream issue
 becomes urgent rather than nice-to-have. Either way the result is recorded in §4.
 
-**Interim result (2026-08-19, clean tree at `45354c0`):** a bare `--spark-synchronize-model` run
-produced **zero diff** in `App_Data` — steady-state synchronize does not rewrite `showedOn`. The
-`45354c0` wipe therefore fired at first *discovery* of the `[FromIndex]` projection, when
-synchronize re-derived `showedOn` from query-type membership. The owner confirms this re-derivation
-is not supposed to happen at all — upstream ask §4.1 stands regardless. The definitive half
-(does a hand-edit back to `"PersistentObject"` survive a re-run *while the projection exists*?)
-is answered at M6.
+**Resolved (2026-08-19, measured at M6): hand-edits do NOT survive.** Two runs settle it:
+
+1. A bare `--spark-synchronize-model` on the clean tree produced zero diff — misleadingly, because
+   the committed values already *matched* the derived ones.
+2. After hand-editing the curated `showedOn` values back, a re-run **reverted every one of them**.
+
+So synchronize re-derives `showedOn` from index-projection membership on **every** run for
+`[FromIndex]` entities, exactly as `docs/adopt-generated-indexes.md` recorded. The owner confirms
+this re-derivation is not supposed to happen at all — upstream ask §4.1 is a real Spark defect, not
+a nice-to-have. Spark preview.53 has no attribute-level lever (`[IgnoreForIndex]` is the only knob
+and is unusable here). Consequences for M6: the curated JSON is committed and works at runtime
+(`ModelLoader` reads the file; `--spark-verify-model` passes — confirmed — because it doesn't hash
+`showedOn`), and `ModelColumnGuardTests` is the **only** thing standing between the next
+synchronize run and a silent re-wipe. Until the Spark fix ships, anyone running synchronize must
+re-apply the M6 `showedOn` edits when the guard trips.
 
 ## 2. Milestones
 
@@ -144,11 +152,12 @@ Commit after each. Highest user-visible impact first, per the issue.
 
 ### M6 — U5: restore the curated grids + pin them 💄
 
-- `Coverage/App_Data/Model/Repository.json`: `Name`→order 1, `LatestCoverage`→2, `FullName`→3,
-  `LatestCoverageSha`→4; `Account`, `OwnerLogin`, `IsPrivate`, `DefaultBranch`, `Archived`,
-  `LatestCoverageAtUtc` → `"showedOn": "PersistentObject"` (pattern: `Commit.json`'s `Repository`
-  attribute, which kept its trim because `Commit` has no `[GenerateIndex]`). Row link lands back
-  on the repository name.
+- `Coverage/App_Data/Model/Repository.json`: `Account`, `OwnerLogin`, `IsPrivate`, `DefaultBranch`,
+  `Archived`, `LatestCoverageAtUtc`, `GitHubId` → `"showedOn": "PersistentObject"`, `FullName` →
+  `"Query"` — byte-for-byte the `049fe9b` curated values. *(As built: no `order` renumbering —
+  the relative order already puts `Name` first once `Account` leaves the grid, and `45354c0`
+  never touched `order`, so restoring `showedOn` alone reproduces master's grid.)* Row link lands
+  back on the repository name.
 - `Coverage/App_Data/Model/Build.json`: same restore to M6-of-`049fe9b`'s curated set
   (`Run | Status | Sessions | Coverage | Created`), demoting `FeedbackState`, `GateSnapshot`,
   `FinalizeReason`, etc. to detail-only.
@@ -195,7 +204,8 @@ the host owns the dev server), update this document's status header, then PR.
    entities.** Index membership is a storage fact; `showedOn` is presentation. Same defect class as
    Spark#253 ("Synchronize must not delete attributes"). `[IgnoreForIndex]` is not a lever here —
    `OwnerLogin`/`IsPrivate`/`Account` are load-bearing in `RepositoryVisibility.Filter` and
-   `Account_Repositories`. (SP6's outcome refines the severity — see §1.)
+   `Account_Repositories`. SP6 measured the wipe as **every-run**, not one-time — see §1; until
+   this is fixed upstream, the downstream model JSON can only be defended by a test.
 2. **Per-query column selection/ordering** — `SparkQuery.Columns` server-side or a
    `columns`/`hiddenColumns` input on `spark-sub-query`/`spark-query-list` — so a global
    repositories view can keep `Account` while account-scoped views drop it. Until then D6's

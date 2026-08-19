@@ -81,7 +81,9 @@ export interface TreeEntry {
 export interface TreeResponse {
   buildId: string;
   entries: TreeEntry[];
+  /** Sample of unmatched paths (capped server-side); unmatchedTotal is the real count. */
   unmatchedFiles: string[];
+  unmatchedTotal: number;
 }
 
 /** Matches bs-hierarchy-chart's HierarchyNode: id = repo path ('/' for root). */

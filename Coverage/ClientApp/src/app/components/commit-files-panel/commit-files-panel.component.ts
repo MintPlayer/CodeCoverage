@@ -148,7 +148,7 @@ export class CommitFilesPanelComponent {
       this.tree.set(tree);
     } catch {
       if (token !== this.treeToken) return;
-      this.tree.set({ buildId: '', entries: [], unmatchedFiles: [] });
+      this.tree.set({ buildId: '', entries: [], unmatchedFiles: [], unmatchedTotal: 0 });
     }
   }
 

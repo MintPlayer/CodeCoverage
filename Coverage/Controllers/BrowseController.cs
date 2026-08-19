@@ -37,7 +37,13 @@ public partial class BrowseController : ControllerBase
         string? WorkflowName, DateTime CreatedAtUtc, CoverageSummary? Coverage, IEnumerable<SessionInfo> Sessions);
     public sealed record SessionInfo(string SessionId, string? JobName, string[] Flags, string ParseStatus, string? Error, int FilesCount);
     public sealed record TreeEntry(string Name, string Path, bool IsFile, int LinesCovered, int LinesCoverable);
-    public sealed record TreeResponse(string BuildId, IEnumerable<TreeEntry> Entries, IEnumerable<string> UnmatchedFiles);
+    public sealed record TreeResponse(string BuildId, IEnumerable<TreeEntry> Entries, IEnumerable<string> UnmatchedFiles,
+        int UnmatchedTotal = 0);
+
+    // UnmatchedFiles is a sample; UnmatchedTotal carries the real count so the
+    // UI can disclose truncation ("showing 50 of 314") instead of passing the
+    // cap off as the total (#13 U3).
+    private const int UnmatchedSampleSize = 50;
 
     [HttpGet("accounts/{login}/repos")]
     public async Task<ActionResult<IEnumerable<RepoInfo>>> GetAccountRepos(string login, CancellationToken cancellationToken)
@@ -298,11 +304,12 @@ public partial class BrowseController : ControllerBase
             .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
             .Concat(entries.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase));
 
-        var unmatched = string.IsNullOrEmpty(path)
-            ? files.Where(f => !f.Matched).Select(f => f.Path).Take(50)
-            : Enumerable.Empty<string>();
+        List<string> unmatched = string.IsNullOrEmpty(path)
+            ? files.Where(f => !f.Matched).Select(f => f.Path).Take(UnmatchedSampleSize).ToList()
+            : [];
+        var unmatchedTotal = string.IsNullOrEmpty(path) ? files.Count(f => !f.Matched) : 0;
 
-        return Ok(new TreeResponse(commit.LatestBuildId, result, unmatched));
+        return Ok(new TreeResponse(commit.LatestBuildId, result, unmatched, unmatchedTotal));
     }
 
     /// <summary>

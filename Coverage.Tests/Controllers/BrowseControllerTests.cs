@@ -96,4 +96,65 @@ public class BrowseControllerTests : CoverageRavenTest
         builds[0].GetProperty("RunId").GetInt64().Should().Be(42);
         builds[0].GetProperty("RunAttempt").GetInt32().Should().Be(1);
     }
+
+    /// <summary>
+    /// #13 U3: the unmatched-files list is a capped sample, and the UI used to
+    /// render the sample's length as if it were the total (314 unmatched files
+    /// read as 50). The response must carry the real count alongside the sample.
+    /// </summary>
+    [Fact]
+    public async Task GetTree_discloses_the_real_unmatched_count_alongside_the_capped_sample()
+    {
+        using var store = GetDocumentStore();
+        const long repoId = 2;
+        const string sha = "aa11284939350991803acc84ced894ade844b9f0";
+        var buildId = Build.DocumentId(repoId, sha, runId: 7, runAttempt: 1);
+
+        using (var seed = store.OpenAsyncSession())
+        {
+            await seed.StoreAsync(new Repository
+            {
+                GitHubId = repoId,
+                Name = "repo",
+                FullName = "owner/repo",
+                OwnerLogin = "owner",
+                IsPrivate = false,
+            }, Repository.DocumentId(repoId));
+            await seed.StoreAsync(new Commit
+            {
+                Sha = sha,
+                Repository = Repository.DocumentId(repoId),
+                LatestBuildId = buildId,
+            }, Commit.DocumentId(repoId, sha));
+
+            var files = new List<TreeFileSummary>
+            {
+                new() { Path = "src/matched.ts", Matched = true, LinesCovered = 1, LinesCoverable = 2 },
+            };
+            for (var i = 0; i < 314; i++)
+            {
+                files.Add(new TreeFileSummary { Path = $"lib{i}/index.ts", Matched = false });
+            }
+            await seed.StoreAsync(new BuildTreeSummary { BuildId = buildId, Files = files },
+                BuildTreeSummary.DocumentId(buildId));
+
+            await seed.SaveChangesAsync();
+        }
+        WaitForIndexing(store); // ResolveVisibleRepository queries by FullName
+
+        using var session = store.OpenAsyncSession();
+        var controller = CreateController(session);
+
+        var root = (BrowseController.TreeResponse)((OkObjectResult)
+            (await controller.GetTree("owner", "repo", sha, path: null, flag: null, CancellationToken.None)).Result!).Value!;
+        root.UnmatchedFiles.Should().HaveCount(50, "the sample stays capped");
+        root.UnmatchedTotal.Should().Be(314, "the real count must be disclosed");
+
+        // Subfolder responses carry no unmatched info at all today; the total
+        // must agree with the (empty) sample rather than leak the root count.
+        var sub = (BrowseController.TreeResponse)((OkObjectResult)
+            (await controller.GetTree("owner", "repo", sha, path: "src", flag: null, CancellationToken.None)).Result!).Value!;
+        sub.UnmatchedFiles.Should().BeEmpty();
+        sub.UnmatchedTotal.Should().Be(0);
+    }
 }

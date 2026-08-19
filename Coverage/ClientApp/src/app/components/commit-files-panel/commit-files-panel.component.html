@@ -60,8 +60,11 @@
   @if (tree(); as t) {
     @if (t.unmatchedFiles.length > 0) {
       <bs-alert [type]="warningColor" class="d-block mb-2">
-        {{ t.unmatchedFiles.length }} report path(s) couldn't be matched to the repository tree
+        {{ t.unmatchedTotal }} report path(s) couldn't be matched to the repository tree
         (e.g. {{ t.unmatchedFiles[0] }}). Check the action's <code>rootDir</code>/checkout.
+        @if (t.unmatchedFiles.length < t.unmatchedTotal) {
+          <span class="d-block small">Showing {{ t.unmatchedFiles.length }} of {{ t.unmatchedTotal }} unmatched paths.</span>
+        }
       </bs-alert>
     }
     @if (t.entries.length === 0) {

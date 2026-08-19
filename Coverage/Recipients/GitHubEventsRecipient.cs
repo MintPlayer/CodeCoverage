@@ -143,7 +143,14 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
 
         var commit = await GetOrCreateCommit(evt.Repository.Id, evt.After, ct);
         commit.Branch = branch;
-        commit.ParentSha = evt.Before;
+        // Deliberately does NOT write ParentSha. `evt.Before` is the previous
+        // ref tip, which is not this commit's parent in three of the six push
+        // shapes: a push of five commits creates one document (the head), so
+        // Before is the tip five commits back; a branch creation gives the
+        // all-zero sha; a force-push gives an abandoned tip that need not be an
+        // ancestor at all. It also raced the PR-event writer below for the same
+        // field, so whichever arrived last decided what the value meant. One
+        // writer, one meaning — see docs/upload-result-contract.md §5.
         commit.Message = evt.HeadCommit.Message;
         if (DateTimeOffset.TryParse(evt.HeadCommit.Timestamp, out var timestamp))
             commit.AuthoredAt = timestamp;
@@ -159,6 +166,14 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
         commit.Branch = pr.Head.Ref;
         commit.PullRequestNumber = (int)evt.Number;
         commit.Message ??= pr.Title;
+        // The sole writer of ParentSha, and the only one that ever meant
+        // anything: the PR's base tip. Plain `=` rather than `??=` because
+        // GitHub re-sends `synchronize` with an updated base when the base
+        // branch advances, and freezing the first-seen base would quietly go
+        // stale; a moved head is a new document, so this never corrupts an
+        // earlier commit. Still only a hint for finding the PR — patch coverage
+        // resolves its own merge base at compute time.
+        commit.ParentSha = pr.Base.Sha;
     }
 
     private async Task<Account> GetOrCreateAccount(long gitHubId, CancellationToken ct)

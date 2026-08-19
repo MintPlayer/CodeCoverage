@@ -29,13 +29,8 @@ public partial class RepositoryActions : DefaultPersistentObjectActions<Reposito
         // the per-row `can` block intersects type-level rights, so no
         // write-action special-casing is needed here.
         // Empty for anonymous viewers → the filter reduces to "public only".
-        // Raven's .In() is the list-membership shape its provider translates
-        // inside an OrElse (Contains fails: MemoryExtensions binding on .NET 10,
-        // TypedParameterExpression on List<string>.Contains). RavenDB.Client's
-        // In() also has a real in-memory implementation, which the framework's
-        // compiled single-row checks (detail/edit/delete) rely on.
         var owners = await visibility.GetAllowedOwnersAsync();
-        return r => !r.IsPrivate || r.OwnerLogin.In(owners);
+        return RepositoryVisibility.Filter(owners);
     }
 
     /// <summary>BadgeToken grants badge access on private repos — managers only.</summary>
@@ -55,6 +50,7 @@ public partial class RepositoryActions : DefaultPersistentObjectActions<Reposito
     public IRavenQueryable<Repository> Account_Repositories(CustomQueryArgs args)
     {
         args.EnsureParent("Account");
-        return session.Query<Repository>().Where(r => r.Account == args.Parent!.Id);
+        return session.Query<Repository, Indexes.Repositories_Overview>()
+            .Where(r => r.Account == args.Parent!.Id);
     }
 }

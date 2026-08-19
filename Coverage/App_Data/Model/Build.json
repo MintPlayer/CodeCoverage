@@ -3,6 +3,8 @@
     "id": "2487903b-6dc7-4540-a99c-fc94c5d92551",
     "name": "Build",
     "clrType": "Coverage.Entities.Build",
+    "queryType": "Coverage.Indexes.VBuild",
+    "indexName": "Builds_Overview",
     "breadcrumb": "{CiRunId}",
     "tabs": [],
     "groups": [],
@@ -19,7 +21,7 @@
         "isReadOnly": false,
         "order": 8,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {
@@ -34,7 +36,7 @@
         "isReadOnly": false,
         "order": 7,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {
@@ -51,7 +53,7 @@
         "query": "GetCommits",
         "referenceType": "Coverage.Entities.Commit",
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {
@@ -99,7 +101,7 @@
         "isReadOnly": false,
         "order": 10,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {
@@ -114,7 +116,7 @@
         "isReadOnly": false,
         "order": 12,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": [],
         "renderer": "date-time"
       },
@@ -130,7 +132,7 @@
         "isReadOnly": false,
         "order": 13,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {
@@ -145,7 +147,7 @@
         "isReadOnly": false,
         "order": 11,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": [],
         "renderer": "date-time"
       },
@@ -208,7 +210,7 @@
         "isReadOnly": false,
         "order": 9,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       }
     ],

@@ -97,6 +97,110 @@ during the Coverage-analyzer investigation (see `docs/PRD.md` in MintPlayer/Code
 §10 and PLAN.md M0). Branch from `master` (note: local checkout sits on `security-audit`,
 one docs-only commit ahead — confirm intended base). One PR for the lot.
 
+## NEW (2026-08-18): enhancement — rate-limiter gaps + a `SparkTestDriver` licence option
+
+> **✅ RESOLVED** — filed as [MintPlayer.Spark#265](https://github.com/MintPlayer/MintPlayer.Spark/issues/265),
+> fixed by [#266](https://github.com/MintPlayer/MintPlayer.Spark/pull/266), shipped in
+> `10.0.0-preview.52`. Both rate-limiter items below are addressed, plus a third: `SparkTestDriver`
+> now tolerates an absent licence (org secrets are not exposed to fork pull requests) while still
+> failing loudly on an *invalid* one — Coverage's local equivalent is
+> `Coverage.Tests/CoverageRavenTest.cs`.
+>
+> Coverage has adopted it: `spark.AddRateLimiter(o => o.PathPrefixes = [...])` in `Program.cs`, with
+> the hand-rolled `GlobalLimiter` and the manual `app.UseRateLimiter()` deleted. Kept below as the
+> record of what was wrong and why, since the reasoning outlived the workaround.
+>
+> One finding from the review is worth carrying: the fix's first routing guard was a **false
+> positive** for minimal-hosting apps, which never call `UseRouting()` explicitly — `WebApplication`
+> stamps `__GlobalEndpointRouteBuilder`, not the `__EndpointRouteBuilder` the guard checked. Fixed
+> upstream before merge. This app is unaffected either way: it calls `app.UseRouting()` explicitly.
+
+`spark.AddRateLimiter()` is a good primitive that Coverage ended up **not** using, for two
+reasons that are both fixable upstream and neither of which is a criticism of the design.
+
+**1. The path scoping is hardcoded.** `SparkBuilderRateLimiterExtensions.cs:52` tests
+`/spark` and `/connect` literally, and `SparkRateLimiterOptions` exposes only `PermitLimit`
+and `Window`. An app that also wants its own anonymous read surface metered — Coverage has
+`/api/browse`, serving the same documents as `/spark` — cannot say so, and ends up
+hand-rolling a global limiter that duplicates the extension's body.
+
+*Suggested shape*: `PathPrefixes` on `SparkRateLimiterOptions`, defaulting to
+`["/spark", "/connect"]` so nothing changes for existing callers.
+
+**2. The middleware lands after authentication, and callers can't move it.** The extension
+registers `app.UseRateLimiter()` through the builder registry, and `registry.ApplyMiddleware`
+runs at the *end* of `UseSpark` — after `UseAuthentication`. An app whose flood risk is on an
+authenticated ingest endpoint wants the limiter to reject before a token lookup happens, and
+today the only way to get that is to register `UseRateLimiter()` by hand and skip the
+extension entirely (calling both runs `RateLimitingMiddleware` twice, and ASP.NET Core has no
+idempotence marker on it, so every request is charged twice against the same partition).
+
+*Suggested shape*: either place the limiter ahead of `UseAuthentication` inside `UseSpark`
+(it needs only routing, which has already run), or expose the registration point so an app
+can opt into "before auth". A note in the XML doc that the two cannot be combined would be
+worth having regardless — it is a silent double-charge, not an error.
+
+Coverage's local workaround: a hand-configured `GlobalLimiter` scoped to `/spark`, plus named
+policies for its own endpoints, all under one early `app.UseRateLimiter()`. It is deleted in
+favour of configuration the moment (1) and (2) land. Context:
+`docs/upload-result-contract.md` §6.1 / N5.
+
+## NEW (2026-08-19): bug — `[GenerateIndex]` maps complex-typed properties, which Corax faults on every document
+
+**FILED — [Spark#273](https://github.com/MintPlayer/MintPlayer.Spark/issues/273)**, open. Hit while
+adopting `[GenerateIndex]` here (`preview.53`): the generator maps every model property verbatim
+with default indexing, and Corax throws `NotSupportedInCoraxException` on any non-null complex value
+— so `Builds_Overview` (`Sessions`, `Coverage`) and `Repositories_Overview` (`LatestCoverage`)
+faulted on every document, ending with zero index entries and empty grids. No compile-time signal;
+the demos never trip it because the only `[GenerateIndex]` demo entity (`Fleet.Car`) has no complex
+field on disk.
+
+The issue carries the full PRD: auto-classify complex properties in `Describe()` and emit
+`Index(name, FieldIndexing.No)` while keeping them mapped and stored (dropping them instead would
+blank AsDetail columns — `EntityMapper` reads the full object off the projection and silently skips
+absent properties), a new `SPARK_INDEX_010` Info diagnostic, and a follow-up that derives a sortable
+scalar companion from the complex type's `[Breadcrumb]` template riding the existing
+`{Name}Sort`/`[IgnoreProperty]`/`ResolveSortProperty` convention — under a **generated name distinct
+from the entity property**, which is structural: `ModelSynchronizer` throws on a same-name type
+mismatch between projection and entity. Eight spikes enumerated, including duplicate-`Index()`
+semantics (decides how our workaround is retired) and `System.Drawing.Color`'s persistence shape
+(decides whether Fleet is latently broken).
+
+**Local workaround until it ships**: `Coverage/Indexes/GeneratedIndexes.ComplexFields.cs` — the
+`OnInitialize()` partials calling `Index(..., FieldIndexing.No)` per complex field. **Delete it when
+the fixed generator lands**, or the same field is configured twice.
+
+## NEW (2026-08-18): bug — `IndexRegistry` silently rebinds a collection to whichever index registers last
+
+**FILED — [Spark#272](https://github.com/MintPlayer/MintPlayer.Spark/issues/272)**, open. Found while
+scoping `[GenerateIndex]` adoption ([#269](https://github.com/MintPlayer/MintPlayer.Spark/pull/269),
+`preview.53`) for this repo.
+
+`IndexRegistry.RegisterIndex` guards on `_byIndexName` and then assigns
+`_byCollectionType[collectionType]` **unconditionally**
+([`IndexRegistry.cs:88`](https://github.com/MintPlayer/MintPlayer.Spark/blob/023ec43b097a338e2dcc801119a32ec4d6823185/libs/spark/MintPlayer.Spark/Services/IndexRegistry.cs#L88)).
+Two differently-named indexes over the same entity therefore both register, and the collection ends up
+bound to whichever `Assembly.GetTypes()` reached last — no build signal, no startup signal.
+
+`SPARK_INDEX_004` is the only thing preventing it today, and it does not cover the general case: it
+sees one compilation, so it catches a generated index colliding with a hand-written one but not two
+hand-written indexes, nor a collision across assemblies contributed via `AddIndexesFrom(...)`. It is
+also an analyzer diagnostic, so `.editorconfig` can switch it off and get the coin flip instead of a
+clean failure. Its own doc-comment describes the runtime as "keys registrations by collection type and
+silently skips duplicates", which is not what the code does — the practical difference being that the
+index which stops serving queries is the one you did not touch.
+
+Underneath sits a design question the issue also raises: `_byCollectionType` is a
+`Dictionary<Type, IndexRegistration>`, so Spark structurally cannot represent more than one index per
+entity, while RavenDB treats several indexes over a collection as routine. That is what blocks a
+generated `VCommit` coexisting with our hand-written `Commits_ByRepository` — see
+`docs/adopt-generated-indexes.md` §2. Proposed upstream: guard `_byCollectionType` the way
+`_byIndexName` is guarded (deterministic first-wins), fix the doc-comment, and optionally allow
+coexistence by making the collection binding an *explicit* default rather than an implicit one.
+
+**Not blocking us.** Our plan routes around it entirely by persisting `Commit.Date` and
+`Commit.HasCoverage` so one generated index replaces the hand-written one.
+
 ## 1. Bug: typed webhook messages produce invalid queue names (likely High)
 
 **Symptom**: any app with a typed `IRecipient<GitHubWebhookMessage<TEvent>>` faults at

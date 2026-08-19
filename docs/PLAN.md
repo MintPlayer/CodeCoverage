@@ -2,10 +2,13 @@
 
 Companion to [PRD.md](PRD.md). Milestones are ordered so that every stage produces something demonstrable, upstream PRs are unblocked early, and the layering rule (generic → upstream repo) is respected. Target: **one PR per repo** per milestone group.
 
-> **Where the work is now (2026-08-17).** M0–M10 are built and deployed; this document is the record
-> of how they were sequenced. Active work has moved to
-> [adopt-spark-generic-ui.md](adopt-spark-generic-ui.md) — replacing the hand-written pages with
-> Spark's generic ones — on branch `adopt-spark-generic-ui`. Two things below read as stale: the
+> **Where the work is now (2026-08-18).** M0–M10 are built and deployed; this document is the record
+> of how they were sequenced. The generic-UI adoption
+> ([adopt-spark-generic-ui.md](adopt-spark-generic-ui.md)) shipped in #8. Active work is
+> [upload-result-contract.md](upload-result-contract.md) — the upload result contract, a status
+> endpoint a CI gate can poll, and the `ParentSha` disarm — on branch `upload-status-contract`,
+> answering [issue #9](https://github.com/MintPlayer/CodeCoverage/issues/9) from the first real
+> consumer. It also records the resolution of roadmap §7.1 (repo config files: **yes**). Two things below read as stale: the
 > **R4-H1** row-level-auth finding referenced in M0 step 0 turned out to be a fabricated identifier
 > (Spark's own audit says so) and row-level security has since shipped upstream in
 > `10.0.0-preview.44`–`.46`; and the preview pins named throughout are historical — the current
@@ -259,6 +262,13 @@ https://bootstrap.mintplayer.com/enterprise/datatables, "Tree mode — expandabl
 adopting it is M9.28; only the commit list has a static index (tree/hierarchy read the
 materialized `BuildTreeSummary` since M9.20); typed webhook recipients were deliberately
 skipped (M8 step 2.3 note).
+
+**Static indexes (2026-08-19): `Build`, `Repository` and `Account` are `[GenerateIndex]`-generated**
+(`preview.53`); their grids and every hand-written lookup run through `*_Overview` indexes instead of
+auto-indexes. `Commit` stays hand-written (`Commits_ByRepository` — the coalesced sort field is not
+expressible, and one index per entity is enforced). See
+[adopt-generated-indexes.md](adopt-generated-indexes.md) for the as-built record and the two upstream
+defects it surfaced (Spark#272, Spark#273 — the latter has a local workaround to delete when fixed).
 
 ## Sequencing notes
 

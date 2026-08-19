@@ -7,6 +7,7 @@ namespace Coverage.Entities;
 /// Document id is Repositories/{GitHubId} so webhook upserts are idempotent.
 /// </summary>
 [Breadcrumb("{FullName}")]
+[GenerateIndex]
 public class Repository
 {
     public string? Id { get; set; }
@@ -32,7 +33,14 @@ public class Repository
     /// <summary>
     /// Grants access to the rendered badge SVG only — never report data.
     /// Set for private repositories; independently rotatable.
+    ///
+    /// [IgnoreForIndex] because index membership is opt-out: without it this
+    /// lands in VRepository, and synchronize then marks every projected field
+    /// queryable — putting a live badge token in the /spark repository grid,
+    /// which security.json grants to Everyone. Nothing filters or sorts on it,
+    /// so the index has no use for it either.
     /// </summary>
+    [IgnoreForIndex]
     public string? BadgeToken { get; set; }
 
     /// <summary>

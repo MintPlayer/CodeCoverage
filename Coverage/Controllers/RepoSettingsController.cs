@@ -25,7 +25,7 @@ public partial class RepoSettingsController : ControllerBase
     [HttpPost("badge-token")]
     public async Task<ActionResult<object>> RotateBadgeToken(string owner, string name, CancellationToken cancellationToken)
     {
-        var repository = await session.Query<Repository>()
+        var repository = await session.Query<Repository, Indexes.Repositories_Overview>()
             .Where(r => r.FullName == $"{owner}/{name}")
             .FirstOrDefaultAsync(cancellationToken);
         if (repository is null) return NotFound();

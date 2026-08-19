@@ -62,6 +62,60 @@ Without `finish`, the server auto-finalizes ~2 minutes after the last upload
 | `finish` | Finalize the build after this upload (`false`) |
 | `fail-ci-if-error` | Fail the step on upload errors (`false`) |
 | `disable-search` | Only use explicitly listed `files` (`false`) |
+| `wait-for-finalize` | Wait for parsing to finish and publish the result as outputs (`false`) |
+| `wait-timeout` | Seconds to wait (`1800` — the server's own ceiling) |
+| `wait-poll-interval` | Seconds between polls (`5`, easing off after the first minute) |
+
+## Gating a PR on the result
+
+By default the upload is fire-and-forget: parsing is asynchronous and an upload should
+not hold a CI job hostage to parser latency. Set `wait-for-finalize: true` when you
+want the number in the same job — typically to fail a PR whose coverage dropped.
+
+```yaml
+      - uses: MintPlayer/CodeCoverage/action@master
+        id: coverage
+        with:
+          url: https://coverage.example.com
+          use-oidc: true
+          finish: true              # without this you wait out the ~2-minute debounce
+          wait-for-finalize: true
+          fail-ci-if-error: true    # a failed parse should fail the gate, not pass it
+
+      - name: Coverage may not decrease
+        if: steps.coverage.outputs.baseline-line-rate != ''
+        env:
+          NOW: ${{ steps.coverage.outputs.line-rate }}
+          WAS: ${{ steps.coverage.outputs.baseline-line-rate }}
+          BASE: ${{ steps.coverage.outputs.baseline-sha }}
+        run: |
+          echo "$NOW% now, $WAS% on $BASE"
+          awk -v now="$NOW" -v was="$WAS" 'BEGIN { exit (now >= was - 0.1) ? 0 : 1 }' ||
+            { echo "::error::coverage dropped from $WAS% to $NOW%"; exit 1; }
+```
+
+**Pair it with `finish: true`.** Without it the wait includes the server's ~2-minute
+debounce, which will dominate everything else.
+
+`baseline-*` is the latest coverage on the default branch excluding this commit — so a
+no-decrease check needs no second API call. It is **empty on a first upload**, where a
+ratchet has nothing to compare against and must pass; the `if:` above is what makes
+that case pass rather than crash.
+
+`line-rate` is empty when there are no coverable lines. `0/0` is no data, not 100% —
+treating it as a percentage is how an uninstrumented file scores perfectly.
+
+Outputs: `state`, `build-status`, `finalize-reason`, `lines-covered`,
+`lines-coverable`, `line-rate`, `branches-covered`, `branches-total`, `branch-rate`,
+`files-count`, `commit-url`, `baseline-sha`, `baseline-lines-covered`,
+`baseline-lines-coverable`, `baseline-line-rate` — plus `build-id` and `session-id`,
+which are set without waiting.
+
+Branch on **`state`** and nothing else: `Complete`, `CompleteWithErrors` (a real number
+that under-counts, because a report failed to parse) or `InFlight` (never seen after a
+successful wait). With `fail-ci-if-error: true`, `CompleteWithErrors` and a timeout both
+fail the step. The full contract, including how to poll it yourself, is in
+[docs/upload-api.md](../docs/upload-api.md).
 
 On `pull_request` events the action reports the PR **head** SHA (never the ephemeral
 merge commit), and it sends `git ls-files` so the server can match report paths that

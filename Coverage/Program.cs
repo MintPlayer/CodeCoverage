@@ -10,6 +10,7 @@ using MintPlayer.AspNetCore.SpaServices.Extensions;
 using MintPlayer.Spark;
 using MintPlayer.Spark.Abstractions.Authentication;
 using MintPlayer.Spark.Authorization.Extensions;
+using MintPlayer.Spark.Extensions;
 using MintPlayer.Spark.Authorization.Identity;
 using MintPlayer.Spark.Messaging;
 using MintPlayer.Spark.Webhooks.GitHub.Extensions;
@@ -31,6 +32,8 @@ builder.Services.AddControllers()
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
+// Bounded, and separate from the shared cache on purpose — see SourceContentCache.
+builder.Services.AddSingleton<Coverage.Services.ISourceContentCache, Coverage.Services.SourceContentCache>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddCoverage();
 builder.Services.AddSpark(builder.Configuration, spark =>
@@ -85,9 +88,27 @@ builder.Services.AddSpark(builder.Configuration, spark =>
     spark.AddCredentialScheme<AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>(
         ApiTokenAuthenticationHandler.SchemeName);
 
+    // Meters /spark (Spark's generic query API — a second anonymous read surface
+    // over the same documents as /api/browse) and /api/browse itself, one bucket
+    // per client IP. Registered at the BeforeAuthentication stage since
+    // preview.52, so a flood is rejected before a covt_ token lookup is paid for
+    // — which is why this replaced a hand-rolled GlobalLimiter rather than
+    // sitting alongside one. Assigning PathPrefixes replaces the defaults, hence
+    // /connect is listed even though this app has no Identity endpoints: naming
+    // it costs nothing and stops the omission becoming a surprise if one is ever
+    // added. Named policies below still apply per endpoint on top of this.
+    spark.AddRateLimiter(rateLimiter =>
+        rateLimiter.PathPrefixes = ["/spark", "/connect", "/api/browse"]);
+
     spark.AddMessaging();
     spark.AddRecipients();
     spark.AddCronJobs();
+    // Pending ISparkMigration classes run inside UseSpark(), after indexes are
+    // created and before the app serves — once per database, in Version order,
+    // under a cluster-wide lock. Committed and replayed automatically, so a
+    // restored backup or a fresh environment can't miss one the way a hand-run
+    // patch in Raven Studio can.
+    spark.AddMigrations();
     spark.AddGithubWebhooks(options =>
     {
         options.WebhookSecret = builder.Configuration["GitHub:WebhookSecret"] ?? string.Empty;
@@ -147,11 +168,11 @@ builder.Services.AddAuthentication()
         };
     });
 
-// Spark's built-in rate limiter only covers /spark/* — our ingest endpoints
-// need their own, partitioned per token (falling back to client IP).
-// The limiter middleware runs BEFORE authentication (UseSpark wires auth
-// later in the pipeline), so context.User is always anonymous here — the
-// partition key must come from the presented credential itself, not claims.
+// Ingest endpoints are partitioned per token (falling back to client IP).
+// The limiter middleware runs BEFORE authentication, so context.User is always
+// anonymous here — the partition key must come from the presented credential
+// itself, not claims. That ordering is the framework's since preview.52; before
+// it, this app hand-rolled the limiter specifically to keep it.
 static string UploadsPartitionKey(HttpContext context)
 {
     var authorization = context.Request.Headers.Authorization.ToString();
@@ -167,11 +188,39 @@ static string UploadsPartitionKey(HttpContext context)
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Browsing is anonymous for public repositories, and GetFile costs a GitHub
+    // fetch per uncached path against the installation's shared rate limit — so
+    // an unmetered crawler spends a budget every tenant depends on. Roomy enough
+    // that the SPA never notices: a page view is a handful of requests.
+    options.AddPolicy("browse", context => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 300,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
     options.AddPolicy("uploads", context => RateLimitPartition.GetFixedWindowLimiter(
         partitionKey: UploadsPartitionKey(context),
         _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 60,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+    // Polling the status endpoint is metered separately from uploading to it.
+    // Same partition — a CI caller gets its own bucket keyed on its token, never
+    // collateral damage from a crawler on a shared IP — but a much higher limit,
+    // because the two are nothing alike: `uploads` is sized for 50 MB payloads,
+    // while a gate waiting on a build spends 12 requests/minute per waiting job
+    // and a workflow may wait in several. Sharing one bucket would throttle the
+    // poll and starve the uploads it is waiting for.
+    options.AddPolicy("uploads-status", context => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: UploadsPartitionKey(context),
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 300,
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
@@ -209,7 +258,11 @@ app.UseStaticFiles();
 app.UseSpaStaticFilesImproved();
 
 app.UseRouting();
-app.UseRateLimiter();
+// No app.UseRateLimiter() here: spark.AddRateLimiter() registers it through the
+// builder registry, at the BeforeAuthentication stage. Calling it here as well
+// would put two RateLimitingMiddleware instances in the pipeline — ASP.NET Core
+// has no idempotence marker on either — so every request would take two leases
+// from the same partition and silently get half its configured budget.
 app.UseSpark();
 
 app.UseEndpoints(endpoints =>

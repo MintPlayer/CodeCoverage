@@ -11,6 +11,7 @@ Built on [MintPlayer.Spark](https://github.com/MintPlayer/MintPlayer.Spark)
 - **Product & architecture**: [docs/PRD.md](docs/PRD.md)
 - **Milestone plan**: [docs/PLAN.md](docs/PLAN.md)
 - **The upload GitHub Action**: [action/README.md](action/README.md) (`uses: MintPlayer/CodeCoverage/action@master`)
+- **The upload API contract** (states, polling, gating a PR): [docs/upload-api.md](docs/upload-api.md)
 - **Upstream (Spark) work items**: [docs/spark-handoff.md](docs/spark-handoff.md)
 
 ## Local development
@@ -109,6 +110,21 @@ dotnet run --project Coverage --launch-profile "Verify model"
 
 Both commands return before the host is built, so they need no database and no free port —
 they are safe to run while the app is running.
+
+## Which HTTP surfaces you may build on
+
+**`/api/uploads/*` is the public contract.** Uploading reports, finishing a build and reading a
+run's result are documented in [docs/upload-api.md](docs/upload-api.md) and will stay compatible:
+fields get added, never removed or repurposed. If you are automating anything — a merge gate, a
+dashboard, a bot — this is the surface to use. It authenticates with an upload token or with GitHub
+Actions OIDC, so it works for private repositories.
+
+**`/api/browse/*` and `/spark/*` are internal to the web UI, with no compatibility promise.** They
+exist to serve this app's own pages, they are unversioned and undocumented, and they are reshaped
+whenever the UI is. They also cannot do what an automated caller needs: they authorize against a
+signed-in human's GitHub access — so no CI credential can read a private repository through them —
+and they answer `404` identically for "no data yet" and "not allowed". Building a gate on them will
+work right up until it doesn't.
 
 ## Deployment
 

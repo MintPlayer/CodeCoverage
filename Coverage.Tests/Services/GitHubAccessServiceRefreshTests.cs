@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using MintPlayer.Spark.Authorization.Identity;
 using Raven.Client.Documents;
 using Raven.Client.Documents.Session;
+using Coverage.Tests;
 using Raven.TestDriver;
 using Xunit;
 
@@ -20,19 +21,8 @@ namespace Coverage.Tests.Services;
 /// clear anything (extends the 3970d22 "failure is not absence" behavior).
 /// Embedded RavenDB backs the success path's installation-id backfill.
 /// </summary>
-public class GitHubAccessServiceRefreshTests : RavenTestDriver
+public class GitHubAccessServiceRefreshTests : CoverageRavenTest
 {
-    static GitHubAccessServiceRefreshTests()
-    {
-        ConfigureServer(new TestServerOptions
-        {
-            Licensing = new Raven.Embedded.ServerOptions.LicensingOptions
-            {
-                ThrowOnInvalidOrMissingLicense = false,
-            },
-        });
-    }
-
     private const string InstallationsJson = """
         {
           "total_count": 1,

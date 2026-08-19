@@ -27,14 +27,9 @@ public partial class SparkVisibility : ISparkVisibility
 
     private async Task<string[]> QueryVisibleRepositoryIdsAsync()
     {
-        // Raven's .In() is the one list-membership shape its LINQ provider
-        // reliably translates inside an OrElse. Plain Contains fails twice on
-        // .NET 10: a string[] receiver binds to untranslatable
-        // MemoryExtensions.Contains, and even List<string>.Contains inside
-        // "!x || list.Contains(y)" throws TypedParameterExpression.
         var allowed = await GetAllowedOwnersAsync();
-        var ids = await session.Query<Repository>()
-            .Where(r => !r.IsPrivate || r.OwnerLogin.In(allowed))
+        var ids = await session.Query<Repository, Indexes.Repositories_Overview>()
+            .Where(RepositoryVisibility.Filter(allowed))
             .Select(r => r.Id)
             .ToListAsync();
         return [.. ids.OfType<string>()];

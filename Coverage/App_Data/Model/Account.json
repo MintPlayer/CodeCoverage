@@ -3,6 +3,8 @@
     "id": "a6c9a501-43a6-44f2-acf1-bafcfb2698cb",
     "name": "Account",
     "clrType": "Coverage.Entities.Account",
+    "queryType": "Coverage.Indexes.VAccount",
+    "indexName": "Accounts_Overview",
     "breadcrumb": "{Login}",
     "tabs": [],
     "groups": [],
@@ -34,7 +36,7 @@
         "isReadOnly": false,
         "order": 1,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {
@@ -49,7 +51,7 @@
         "isReadOnly": false,
         "order": 5,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {

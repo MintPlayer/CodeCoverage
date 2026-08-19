@@ -31,7 +31,7 @@ public partial class BadgeController : ControllerBase
     [ResponseCache(Duration = 300, Location = ResponseCacheLocation.Any)]
     public async Task<IActionResult> Get(string owner, string name, [FromQuery] string? token, [FromQuery] string? branch, CancellationToken cancellationToken)
     {
-        var repository = await session.Query<Repository>()
+        var repository = await session.Query<Repository, Indexes.Repositories_Overview>()
             .Where(r => r.FullName == $"{owner}/{name}")
             .FirstOrDefaultAsync(cancellationToken);
 

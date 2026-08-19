@@ -153,6 +153,14 @@ Three unbounded surfaces, in severity order:
   `GetFile` triggers a live GitHub fetch per uncached path into a process-wide `IMemoryCache`
   registered with no `SizeLimit` (`Program.cs:33`). An anonymous crawler over public repos exhausts
   memory and burns the installation's GitHub rate limit for every tenant.
+  **This bullet is resequenced to ship early, as N5 of
+  [upload-result-contract.md](upload-result-contract.md)** — an outside consumer confirmed it
+  independently, and a CI gate polling the service is exactly the traffic shape a later limit would
+  break, so the machine-readable path (`/api/uploads/status`) ships before or with the bound. Note two
+  corrections found there: `/spark/*` is a **second** unmetered read surface over the same data and
+  must be covered in the same change, and the fix is **not** a `SizeLimit` on the shared cache (that
+  would make every unsized `Set` in the process throw) but a dedicated bounded cache for source
+  content.
 
 ### T0.4 — A readiness endpoint that can fail 🟦 · cost S
 
@@ -397,7 +405,11 @@ structurally cannot do, and checks are requireable in branch protection exactly 
 Statuses would buy only a smaller-sounding permission ask, and the ask is unavoidable either way
 (statuses need Commit statuses:write). So request **Checks: write** and upgrade **Pull requests:
 read → write**; leave Commit statuses ungranted. Publish two runs — `coverage/project` and
-`coverage/patch` — so they can be required independently. Note check runs are App-only: OAuth and
+`coverage/patch` — so they can be required independently. **These two names are a commitment, not a
+preference** ([upload-result-contract.md §4.4](upload-result-contract.md)): the first consumer names
+its interim workflow step `coverage/project` precisely so that branch protection carries over
+unchanged when M11.3 lands, with no coordination at cutover. Renaming them later breaks every
+consumer that required the interim step. Note check runs are App-only: OAuth and
 user tokens cannot create them.
 
 The permission upgrade has a product consequence: **every existing installation must accept the new
@@ -550,11 +562,18 @@ can mint an account-scoped token covering the whole org and revoke everyone else
 
 ## 7. Decisions required before implementation
 
-1. **Reverse the `PRD.md` §1 non-goal on repo config files?** (T1.5) Recommended **yes**, scoped to
-   `ignore` + `fixes` + thresholds, components excluded, with the settings document as the contract
-   and the file as an optional overriding writer. If no, thresholds still work (per-repo UI settings)
-   and display-only patch coverage still ships — but `ignore` has no home, so a **blocking** patch
-   check stays off the table indefinitely, since it would fail PRs that only touch generated code.
+1. ~~**Reverse the `PRD.md` §1 non-goal on repo config files?**~~ (T1.5) — **RESOLVED yes, 2026-08-18**,
+   exactly as recommended: settings document as the contract, file as an optional per-field overriding
+   writer, `Blocking` defaulting to `false`, and policy read from the **base ref for every repository**
+   rather than only public/fork ones. The deciding data point came from the first real consumer on
+   [issue #9](https://github.com/MintPlayer/CodeCoverage/issues/9): thresholds are a standing decision
+   that must not be rewritten by checking out an old commit, while `ignore` genuinely versions with the
+   tree (their workspace generates `*.styles.ts`, `*.generated.ts` and a `metadata/**` subtree, and
+   *which* patterns are generated changes commit to commit). Rationale in
+   [upload-result-contract.md §4.2](upload-result-contract.md). T1.5 / M11.2 is unblocked.
+   *(Original wording: recommended yes, scoped to `ignore` + `fixes` + thresholds, components excluded.
+   If no, thresholds still work via per-repo UI settings and display-only patch coverage still ships —
+   but `ignore` has no home, so a blocking patch check stays off the table indefinitely.)*
 2. **Grant the GitHub App `checks: write` + `pull requests: read → write`?** (T2.1) Gates the
    checks/comment half only. Note this is now a *smaller and later* decision than it looked:
    **patch coverage needs no permission change at all** and can ship first. When you do decide, do it

@@ -13,19 +13,8 @@ using Xunit;
 
 namespace Coverage.Tests.Controllers;
 
-public class BrowseControllerTests : RavenTestDriver
+public class BrowseControllerTests : CoverageRavenTest
 {
-    static BrowseControllerTests()
-    {
-        ConfigureServer(new TestServerOptions
-        {
-            Licensing = new Raven.Embedded.ServerOptions.LicensingOptions
-            {
-                ThrowOnInvalidOrMissingLicense = false,
-            },
-        });
-    }
-
     private sealed class NullContentService : IGitHubContentService
     {
         public Task<string?> GetFileContentAsync(Repository repository, long? installationId, string sha, string path, CancellationToken cancellationToken = default)

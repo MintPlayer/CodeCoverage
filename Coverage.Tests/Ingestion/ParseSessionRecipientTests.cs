@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Raven.Client.Documents;
+using Coverage.Tests;
 using Raven.TestDriver;
 using Xunit;
 
@@ -22,22 +23,8 @@ namespace Coverage.Tests.Ingestion;
 /// sized tests can't catch that class of bug; this one parses well past the
 /// budget.
 /// </summary>
-public class ParseSessionRecipientTests : RavenTestDriver
+public class ParseSessionRecipientTests : CoverageRavenTest
 {
-    static ParseSessionRecipientTests()
-    {
-        // RavenDB 7 refuses to start unlicensed by default, even embedded.
-        // Tests don't need licensed features; don't require every dev/CI
-        // environment to carry a license.
-        ConfigureServer(new TestServerOptions
-        {
-            Licensing = new Raven.Embedded.ServerOptions.LicensingOptions
-            {
-                ThrowOnInvalidOrMissingLicense = false,
-            },
-        });
-    }
-
     private const int FileCount = 200;
     private const string BuildId = "Commits/1/abc/builds/1-1";
     private const string SessionId = "s1";

@@ -64006,6 +64006,96 @@ function collectContext() {
 
 /***/ }),
 
+/***/ 3302:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.staticCredential = staticCredential;
+exports.oidcCredential = oidcCredential;
+const core = __importStar(__nccwpck_require__(7484));
+/** An upload token (`covt_…`). Never expires, so there is nothing to refresh. */
+function staticCredential(token) {
+    return { get: async () => token, invalidate: () => { } };
+}
+/**
+ * A GitHub Actions OIDC id-token, re-minted as it approaches expiry. The
+ * runtime request token behind `getIDToken` is valid for the whole job, so
+ * re-minting mid-job is free; refreshing on expiry rather than per request
+ * keeps it to a handful of calls across a full wait.
+ */
+function oidcCredential(audience) {
+    const REFRESH_MARGIN_SECONDS = 60;
+    let token;
+    let expiresAt = 0;
+    return {
+        async get() {
+            const now = Date.now() / 1000;
+            if (token && now < expiresAt - REFRESH_MARGIN_SECONDS)
+                return token;
+            token = await core.getIDToken(audience);
+            expiresAt = expiryOf(token) ?? now + 300;
+            return token;
+        },
+        invalidate() {
+            token = undefined;
+        },
+    };
+}
+/**
+ * The `exp` claim, or undefined if the token isn't a readable JWT. Only the
+ * expiry is read — the token is never validated here; the server does that.
+ */
+function expiryOf(jwt) {
+    try {
+        const payload = jwt.split('.')[1];
+        if (!payload)
+            return undefined;
+        const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+        return typeof claims.exp === 'number' ? claims.exp : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
+
+
+/***/ }),
+
 /***/ 9148:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -64145,7 +64235,9 @@ const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
 const zlib = __importStar(__nccwpck_require__(3106));
 const context_1 = __nccwpck_require__(788);
+const credential_1 = __nccwpck_require__(3302);
 const files_1 = __nccwpck_require__(9148);
+const status_1 = __nccwpck_require__(5565);
 const MAX_RETRIES = 3;
 // getBooleanInput throws on empty input; action.yml defaults cover GitHub
 // runs, but be robust for local/other runners: absent means false.
@@ -64156,7 +64248,7 @@ async function run() {
     const failCiIfError = getBool('fail-ci-if-error');
     try {
         const url = core.getInput('url', { required: true }).replace(/\/+$/, '');
-        const token = await resolveCredential(url);
+        const credential = resolveCredential(url);
         const ctx = (0, context_1.collectContext)();
         const files = await (0, files_1.findCoverageFiles)(core.getInput('files') || undefined, core.getInput('directory') || undefined, ctx.rootDir, getBool('disable-search'));
         if (files.length === 0) {
@@ -64192,19 +64284,22 @@ async function run() {
             const gzipped = zlib.gzipSync(fs.readFileSync(file));
             form.append('files', new Blob([new Uint8Array(gzipped)]), path.basename(file) + '.gz');
         }
-        const response = await postWithRetry(`${url}/api/uploads`, token, form);
+        const response = await postWithRetry(`${url}/api/uploads`, credential, form);
         const body = (await response.json());
         core.info(`Upload accepted: build ${body.buildId}, session ${body.sessionId}`);
         core.setOutput('build-id', body.buildId);
         core.setOutput('session-id', body.sessionId);
         if (getBool('finish')) {
-            const finish = await postWithRetry(`${url}/api/uploads/finish`, token, JSON.stringify({
+            const finish = await postWithRetry(`${url}/api/uploads/finish`, credential, JSON.stringify({
                 repository: ctx.repository,
                 commitSha: ctx.commitSha,
                 runId: ctx.runId,
                 runAttempt: ctx.runAttempt,
             }), 'application/json');
             core.info(`Finish requested (${finish.status}) — the build finalizes once parsing completes.`);
+        }
+        if (getBool('wait-for-finalize')) {
+            await waitAndReport(url, credential, ctx);
         }
     }
     catch (error) {
@@ -64221,8 +64316,11 @@ async function run() {
  * Prefers OIDC when asked (use-oidc) or when no token is configured and the
  * runtime offers it. The id-token's audience must equal the server's base URL —
  * that's what the server validates.
+ *
+ * Returns a credential rather than a token because an OIDC id-token lives five
+ * minutes and `wait-for-finalize` can run for thirty; see credential.ts.
  */
-async function resolveCredential(url) {
+function resolveCredential(url) {
     const token = core.getInput('token');
     const oidcAvailable = !!process.env['ACTIONS_ID_TOKEN_REQUEST_URL'];
     if (getBool('use-oidc') || (!token && oidcAvailable)) {
@@ -64230,12 +64328,82 @@ async function resolveCredential(url) {
             throw new Error('use-oidc requires `permissions: id-token: write` (and OIDC is never available to pull requests from forks).');
         }
         core.info('Authenticating with GitHub Actions OIDC.');
-        return core.getIDToken(url);
+        return (0, credential_1.oidcCredential)(url);
     }
     if (!token) {
         throw new Error('No `token` given and OIDC is unavailable. Pass an upload token, or grant `permissions: id-token: write` for tokenless uploads.');
     }
-    return token;
+    return (0, credential_1.staticCredential)(token);
+}
+/**
+ * Waits for the build to finalize and publishes the result as step outputs, so
+ * a workflow can gate on `steps.<id>.outputs.line-rate` without writing any
+ * polling of its own.
+ *
+ * A timeout or a `CompleteWithErrors` is reported through the existing
+ * `fail-ci-if-error` input rather than a second knob: both mean "you may not
+ * have the number you think you have", which is the same judgement that input
+ * already encodes. Outputs are still set from whatever the server did say.
+ */
+async function waitAndReport(url, credential, ctx) {
+    const timeoutSeconds = numberInput('wait-timeout', 1800);
+    const pollIntervalSeconds = numberInput('wait-poll-interval', 5);
+    core.info(`Waiting up to ${timeoutSeconds}s for the build to finalize...`);
+    // A timeout propagates to run()'s single catch, so fail-ci-if-error decides
+    // what it means in one place rather than two.
+    const status = await (0, status_1.waitForFinalize)(credential, {
+        url,
+        repository: ctx.repository,
+        commitSha: ctx.commitSha,
+        runId: ctx.runId,
+        runAttempt: ctx.runAttempt,
+        timeoutSeconds,
+        pollIntervalSeconds,
+    });
+    setResultOutputs(status);
+    const summary = status.coverage
+        ? `${status.coverage.linesCovered}/${status.coverage.linesCoverable} lines (${(0, status_1.rate)(status.coverage.linesCovered, status.coverage.linesCoverable)}%)`
+        : 'no coverage data';
+    core.info(`Build ${status.state}: ${summary}`);
+    if (status.commitUrl)
+        core.info(status.commitUrl);
+    if (status.state === 'CompleteWithErrors') {
+        const failures = (status.sessions ?? [])
+            .filter((s) => s.parseStatus !== 'Parsed')
+            .map((s) => `${s.jobName || s.sessionId}: ${s.error ?? s.parseStatus}`);
+        throw new Error(`The build finalized with errors, so the coverage number under-counts. ${failures.join('; ')}`.trim());
+    }
+}
+function setResultOutputs(status) {
+    core.setOutput('state', status.state);
+    core.setOutput('build-status', status.status);
+    core.setOutput('finalize-reason', status.finalizeReason ?? '');
+    core.setOutput('commit-url', status.commitUrl ?? '');
+    const coverage = status.coverage;
+    core.setOutput('lines-covered', coverage?.linesCovered ?? '');
+    core.setOutput('lines-coverable', coverage?.linesCoverable ?? '');
+    core.setOutput('line-rate', (0, status_1.rate)(coverage?.linesCovered, coverage?.linesCoverable));
+    core.setOutput('branches-covered', coverage?.branchesCovered ?? '');
+    core.setOutput('branches-total', coverage?.branchesTotal ?? '');
+    core.setOutput('branch-rate', (0, status_1.rate)(coverage?.branchesCovered, coverage?.branchesTotal));
+    core.setOutput('files-count', coverage?.filesCount ?? '');
+    // Empty on a first upload, where a ratchet has nothing to compare against and
+    // must pass by definition.
+    const baseline = status.baseline;
+    core.setOutput('baseline-sha', baseline?.sha ?? '');
+    core.setOutput('baseline-lines-covered', baseline?.coverage?.linesCovered ?? '');
+    core.setOutput('baseline-lines-coverable', baseline?.coverage?.linesCoverable ?? '');
+    core.setOutput('baseline-line-rate', (0, status_1.rate)(baseline?.coverage?.linesCovered, baseline?.coverage?.linesCoverable));
+}
+function numberInput(name, fallback) {
+    const raw = core.getInput(name).trim();
+    if (!raw)
+        return fallback;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value <= 0) {
+        throw new Error(`\`${name}\` must be a positive number of seconds, got "${raw}".`);
+    }
+    return value;
 }
 async function gitLsFiles(cwd) {
     try {
@@ -64247,11 +64415,11 @@ async function gitLsFiles(cwd) {
         return null;
     }
 }
-async function postWithRetry(url, token, body, contentType) {
+async function postWithRetry(url, credential, body, contentType) {
     let lastError;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-            const headers = { Authorization: `Bearer ${token}` };
+            const headers = { Authorization: `Bearer ${await credential.get()}` };
             if (contentType)
                 headers['Content-Type'] = contentType;
             const response = await fetch(url, { method: 'POST', headers, body });
@@ -64285,6 +64453,140 @@ async function safeText(response) {
     }
 }
 run();
+
+
+/***/ }),
+
+/***/ 5565:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.WaitTimeout = void 0;
+exports.waitForFinalize = waitForFinalize;
+exports.rate = rate;
+const core = __importStar(__nccwpck_require__(7484));
+class WaitTimeout extends Error {
+}
+exports.WaitTimeout = WaitTimeout;
+const MAX_INTERVAL_SECONDS = 60;
+/** Poll briskly while a build is likely to finish soon, then ease off. */
+const BACKOFF_AFTER_SECONDS = 60;
+const RELAXED_INTERVAL_SECONDS = 15;
+/**
+ * Polls `/api/uploads/status` until the build reaches a terminal state, and
+ * returns it. Throws {@link WaitTimeout} if the deadline passes first.
+ *
+ * Exits on **any** state other than `InFlight`, not on `Complete` specifically —
+ * a build that finishes with a failed session is finished, and waiting for it to
+ * become clean would burn the whole timeout. Judging whether
+ * `CompleteWithErrors` is acceptable belongs to the caller.
+ */
+async function waitForFinalize(credential, options) {
+    const deadline = Date.now() + options.timeoutSeconds * 1000;
+    const query = new URLSearchParams({
+        repository: options.repository,
+        commitSha: options.commitSha,
+        runId: String(options.runId),
+        runAttempt: String(options.runAttempt),
+    });
+    const endpoint = `${options.url}/api/uploads/status?${query}`;
+    let interval = options.pollIntervalSeconds;
+    let refreshed = false;
+    const startedAt = Date.now();
+    for (;;) {
+        const response = await fetch(endpoint, {
+            headers: { Authorization: `Bearer ${await credential.get()}` },
+        });
+        if (response.ok) {
+            const status = (await response.json());
+            if (status.state !== 'InFlight')
+                return status;
+            refreshed = false;
+            interval =
+                Date.now() - startedAt > BACKOFF_AFTER_SECONDS * 1000
+                    ? Math.max(interval, RELAXED_INTERVAL_SECONDS)
+                    : options.pollIntervalSeconds;
+        }
+        else if (response.status === 429) {
+            // Rate limited is "wait longer", never "give up": only the deadline ends
+            // a wait. Several jobs of one workflow waiting at once share a bucket.
+            interval = retryAfter(response) ?? Math.min(interval * 2, MAX_INTERVAL_SECONDS);
+            core.info(`Coverage server is rate limiting; waiting ${interval}s.`);
+        }
+        else if (response.status === 401 && !refreshed) {
+            // An OIDC token expired mid-wait. Re-mint once before believing it.
+            core.debug('Status poll returned 401 — refreshing the credential and retrying.');
+            credential.invalidate();
+            refreshed = true;
+            continue;
+        }
+        else {
+            throw new Error(`${endpoint} responded ${response.status}: ${await safeText(response)}`);
+        }
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
+            throw new WaitTimeout(`Timed out after ${options.timeoutSeconds}s waiting for the build to finalize. ` +
+                `It may still finish — the server finalizes every build within 30 minutes.`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, Math.min(interval * 1000, remaining)));
+    }
+}
+/** Percentage to one decimal. `0/0` is not 100% — it is no data. */
+function rate(covered, coverable) {
+    if (!coverable || coverable <= 0 || covered === undefined)
+        return '';
+    return (Math.round((covered / coverable) * 1000) / 10).toFixed(1);
+}
+function retryAfter(response) {
+    const header = response.headers.get('retry-after');
+    if (!header)
+        return undefined;
+    const seconds = parseInt(header, 10);
+    return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, MAX_INTERVAL_SECONDS) : undefined;
+}
+async function safeText(response) {
+    try {
+        return (await response.text()).slice(0, 500);
+    }
+    catch {
+        return '';
+    }
+}
 
 
 /***/ }),

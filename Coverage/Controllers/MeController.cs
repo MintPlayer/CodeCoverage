@@ -42,11 +42,11 @@ public partial class MeController : ControllerBase
         if (owners.Length == 0)
             return Ok(new AccountsResponse(appUrl, [], reauthRequired));
 
-        var known = await session.Query<Account>()
+        var known = await session.Query<Account, Indexes.Accounts_Overview>()
             .Where(a => a.Login.In(owners))
             .ToListAsync(cancellationToken);
 
-        var repos = await session.Query<Repository>()
+        var repos = await session.Query<Repository, Indexes.Repositories_Overview>()
             .Where(r => r.OwnerLogin.In(owners))
             .Take(4096)
             .ToListAsync(cancellationToken);

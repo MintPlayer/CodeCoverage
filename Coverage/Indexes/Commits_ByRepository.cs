@@ -18,6 +18,7 @@ public class Commits_ByRepository : AbstractIndexCreationTask<Commit>
         public string? Branch { get; set; }
         public DateTimeOffset? AuthoredAt { get; set; }
         public bool HasCoverage { get; set; }
+        public int? PullRequestNumber { get; set; }
     }
 
     public Commits_ByRepository()
@@ -29,6 +30,7 @@ public class Commits_ByRepository : AbstractIndexCreationTask<Commit>
                              Branch = commit.Branch,
                              AuthoredAt = commit.AuthoredAt ?? commit.FirstSeenAtUtc,
                              HasCoverage = commit.Coverage != null,
+                             PullRequestNumber = commit.PullRequestNumber,
                          };
     }
 }

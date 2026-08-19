@@ -22,6 +22,7 @@ namespace Coverage.Recipients;
 public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
 {
     [Inject] private readonly IAsyncDocumentSession session;
+    [Inject] private readonly IMessageBus messageBus;
     [Inject] private readonly ILogger<GitHubEventsRecipient> logger;
 
     public async Task HandleAsync(GitHubWebhookMessage message, CancellationToken cancellationToken = default)
@@ -159,6 +160,19 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
     private async Task OnPullRequest(PullRequestEvent evt, CancellationToken ct)
     {
         if (evt.Repository is null) return;
+
+        // Retention D4: merged PRs surrender their build data. Closed-unmerged
+        // PRs keep theirs — they may reopen, and nothing about them is final.
+        if (evt.Action == "closed" && evt.PullRequest.Merged == true)
+        {
+            await messageBus.BroadcastAsync(new Ingestion.DeletePullRequestBuildsMessage
+            {
+                RepositoryGitHubId = evt.Repository.Id,
+                PullRequestNumber = (int)evt.Number,
+            }, ct);
+            return;
+        }
+
         if (evt.Action is not ("opened" or "synchronize" or "reopened")) return;
 
         var pr = evt.PullRequest;

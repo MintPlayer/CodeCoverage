@@ -1,4 +1,5 @@
 using Coverage.Entities;
+using Coverage.Services;
 using MintPlayer.SourceGenerators.Attributes;
 using MintPlayer.Spark.Messaging.Abstractions;
 using Raven.Client.Documents.Session;
@@ -8,6 +9,7 @@ namespace Coverage.Ingestion;
 public partial class FinalizeBuildRecipient : IRecipient<FinalizeBuildMessage>
 {
     [Inject] private readonly IAsyncDocumentSession session;
+    [Inject] private readonly IGitHubDiffService diffService;
     [Inject] private readonly ILogger<FinalizeBuildRecipient> logger;
 
     public async Task HandleAsync(FinalizeBuildMessage message, CancellationToken cancellationToken = default)
@@ -19,7 +21,7 @@ public partial class FinalizeBuildRecipient : IRecipient<FinalizeBuildMessage>
             return;
         }
 
-        await BuildFinalizer.Finalize(session, build, "Explicit", cancellationToken);
+        await BuildFinalizer.Finalize(session, diffService, build, "Explicit", cancellationToken);
         await session.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Finalized build {BuildId} (Explicit)", message.BuildId);
     }

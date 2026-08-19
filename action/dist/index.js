@@ -64399,6 +64399,21 @@ function setResultOutputs(status) {
     core.setOutput('baseline-lines-covered', baseline?.coverage?.linesCovered ?? '');
     core.setOutput('baseline-lines-coverable', baseline?.coverage?.linesCoverable ?? '');
     core.setOutput('baseline-line-rate', (0, status_1.rate)(baseline?.coverage?.linesCovered, baseline?.coverage?.linesCoverable));
+    // Partial-upload surfaces. All empty on whole uploads.
+    const scope = status.baselineScope;
+    core.setOutput('base-resolution', scope?.baseResolution ?? '');
+    core.setOutput('resolved-base-sha', scope?.resolvedBaseSha ?? '');
+    const projection = status.projection;
+    core.setOutput('projection-line-rate', (0, status_1.rate)(projection?.coverage?.linesCovered, projection?.coverage?.linesCoverable));
+    core.setOutput('projection-complete', projection ? String(projection.complete) : '');
+    core.setOutput('projection-incomplete-reasons', projection?.incompleteReasons?.join(',') ?? '');
+    // Patch coverage. Empty when no diff base was available; a gate that wants
+    // to require it should treat empty as "abstain", not as zero.
+    const patch = status.patch;
+    core.setOutput('patch-lines-covered', patch?.linesCovered ?? '');
+    core.setOutput('patch-lines-coverable', patch?.linesCoverable ?? '');
+    core.setOutput('patch-rate', (0, status_1.rate)(patch?.linesCovered, patch?.linesCoverable));
+    core.setOutput('patch-diff-truncated', patch ? String(patch.diffTruncated) : '');
 }
 function numberInput(name, fallback) {
     const raw = core.getInput(name).trim();

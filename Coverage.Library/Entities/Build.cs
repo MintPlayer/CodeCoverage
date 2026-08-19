@@ -73,6 +73,9 @@ public class Build
 
     public CoverageSummary? Coverage { get; set; }
 
+    /// <summary>Added-lines coverage vs the diff base; null when no diff was obtainable.</summary>
+    public PatchCoverage? Patch { get; set; }
+
     public static string DocumentId(long repoGitHubId, string sha, long runId, int runAttempt)
         => $"{Entities.Commit.DocumentId(repoGitHubId, sha)}/builds/{runId}-{runAttempt}";
 

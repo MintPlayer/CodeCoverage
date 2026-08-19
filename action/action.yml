@@ -85,6 +85,24 @@ outputs:
     description: 'Branch coverage as a percentage to one decimal.'
   files-count:
     description: 'Files with coverage in the finalized build.'
+  base-resolution:
+    description: 'How the comparison base resolved for a partial build: exact | mergeBase | walked | none. Empty on whole uploads.'
+  resolved-base-sha:
+    description: 'The base commit the comparison actually used (may differ from base-sha — check base-resolution).'
+  projection-line-rate:
+    description: 'Patched whole-workspace line rate for a partial build (base tree with measured files overwritten). Empty when no base resolved.'
+  projection-complete:
+    description: 'true when the projection had every input it needed; false means best-effort (see projection-incomplete-reasons). Empty on whole uploads.'
+  projection-incomplete-reasons:
+    description: 'Comma-separated: baseWalked, noFileList, unmatchedPaths, parseErrors.'
+  patch-lines-covered:
+    description: 'Covered added lines (patch coverage vs the diff base).'
+  patch-lines-coverable:
+    description: 'Coverable added lines. Empty when no diff was obtainable — treat empty as abstain, never as zero.'
+  patch-rate:
+    description: 'Patch coverage as a percentage to one decimal. Empty when there are no coverable added lines.'
+  patch-diff-truncated:
+    description: 'true when GitHub capped the comparison at 300 files, so patch coverage under-reports.'
   commit-url:
     description: 'Link to this commit on the Coverage server.'
   baseline-sha:

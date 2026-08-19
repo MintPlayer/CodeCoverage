@@ -1,22 +1,24 @@
 {
   "version": 1,
-  "modelHash": "62a163f1bbcc97dcfdda3eb0423bf52bd8560f24032d6b1144dff43659aaf4f9",
+  "modelHash": "20c605c9ee913e9146f99667f5986f8056e76a48fa53a33d724367eafd270260",
   "contextRoots": "6f0d13d14e885eebf8f4a811725f64c1003818a44b4182fd9473fb926ff26372",
-  "modelFiles": "152ac5c1229848151e2118795db2099ae03935f4239e8b2248182bd17fe022cb",
+  "modelFiles": "371e61014affa83700c7bab94478d21c35f4fc214f7695b2ddeb5192c57d5134",
   "files": {
     "Account.json": "2c4725b43e04fc9fd918987dd11de6bf09e74e1b8d4eefb86a987a0670d4d572",
-    "Build.json": "e55f339b30161b13d6ba49dc2270ba040ecd80d7760528cdb92ddc883006fa8c",
+    "Build.json": "1061a9c0f67490136be22257c9b6bea71c122bc9948d5882a52800cb52c399d8",
     "BuildSession.json": "2858a34211de6f2fa57c251b7baa326f6a2d2f4ce490bcfa98da39cd8db24c77",
     "Commit.json": "e0e7587b1c70191fce0ba8120f87ecb88e1f19d7f3cb5acfc30d1bf9d5950f42",
     "CoverageSummary.json": "0d315053c98561ff65647695f2e910625cc935bbd8abe07a1418efbf0ef13e42",
+    "PatchCoverage.json": "6b5c74fedf1932ee8e6c9fc11c8bbdb561e7652104b27ae876dee2bdf370ca20",
     "Repository.json": "e708ae3f7c3293ad45e72042514c0538775f14922ea3ae8dc162374f3dc7b902"
   },
   "entities": {
     "Account": "38799569ed1379a994062f2ca32faeddb79ddcea0471e847ba3e90cefb16b4c8",
-    "Build": "b18eab2d5b18ba7c2f7801785880e2012e4c8304f2184097ae403573029f1327",
+    "Build": "5836ee1b22064fac714beef09d9560d523e8db148b1cdc4ae60caa0353c78968",
     "BuildSession": "0b571624ca4366b32f7d2b8e8ca185f5db8fa16069bb387e29386738e6963865",
     "Commit": "8fed8c7be8a81a2a4d852b6eadc50766d7c31e68e6a5c95e0f647690c98a6cdf",
     "CoverageSummary": "2e008941addd13d18f86da900f54dff2355c7a7fdadb2f716c8cb9db681985ab",
+    "PatchCoverage": "cf7fa9a0d17fb751aaf542587f819eafc415734371982bfe63d4945ef64fcf9b",
     "Repository": "402a7014948580219d50b22121e70513aff9cd5213179b25c46d800a4fd5ad0a"
   }
 }

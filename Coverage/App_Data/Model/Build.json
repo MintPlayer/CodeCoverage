@@ -182,6 +182,22 @@
         "rules": []
       },
       {
+        "id": "8a7f538b-2c64-445e-8612-fd801a981db9",
+        "name": "Patch",
+        "label": {
+          "en": "Patch"
+        },
+        "dataType": "AsDetail",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 16,
+        "asDetailType": "Coverage.Entities.PatchCoverage",
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
         "id": "9f2e7d10-4b8c-4e35-a1d6-7c3b9e04f512",
         "name": "Run",
         "label": {

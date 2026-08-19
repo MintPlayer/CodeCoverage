@@ -1,4 +1,5 @@
 using Coverage.Entities;
+using Coverage.Services;
 using MintPlayer.SourceGenerators.Attributes;
 using MintPlayer.Spark.Cron;
 using Raven.Client.Documents;
@@ -16,6 +17,7 @@ namespace Coverage.Ingestion;
 public partial class FinalizeBuildsCronJob : ISparkCronJob
 {
     [Inject] private readonly IAsyncDocumentSession session;
+    [Inject] private readonly IGitHubDiffService diffService;
     [Inject] private readonly ILogger<FinalizeBuildsCronJob> logger;
 
     public static string CronSchedule => "* * * * *";
@@ -59,7 +61,7 @@ public partial class FinalizeBuildsCronJob : ISparkCronJob
                     pending.Error = "Never parsed before the build timed out";
                 }
             }
-            await BuildFinalizer.Finalize(session, build, reason, cancellationToken);
+            await BuildFinalizer.Finalize(session, diffService, build, reason, cancellationToken);
             logger.LogInformation("Finalized build {BuildId} ({Reason})", build.Id, reason);
         }
 

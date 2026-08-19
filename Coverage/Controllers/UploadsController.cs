@@ -230,7 +230,8 @@ public partial class UploadsController : ControllerBase
             baseUrl is null ? null : $"{baseUrl}/r/{repo.FullName}/c/{commitSha}",
             build.Partial,
             baselineScope,
-            projection));
+            projection,
+            build.Patch));
     }
 
     /// <summary>
@@ -355,7 +356,8 @@ public partial class UploadsController : ControllerBase
         string? CommitUrl,
         bool Partial = false,
         UploadStatusBaselineScope? BaselineScope = null,
-        UploadStatusProjection? Projection = null);
+        UploadStatusProjection? Projection = null,
+        PatchCoverage? Patch = null);
 
     public sealed record UploadStatusBaseline(string Sha, string? Branch, CoverageSummary? Coverage);
 

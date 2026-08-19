@@ -2,16 +2,19 @@
   <bs-card-header>Files</bs-card-header>
 
   @if (flagEntries().length > 0) {
-    <div class="d-flex flex-wrap gap-2 align-items-center px-3 pt-3">
-      <span class="small text-muted">Flags:</span>
+    <div class="d-flex flex-wrap gap-2 align-items-center px-3 pt-3" role="group" aria-label="Filter by flag">
+      <span class="small text-muted" aria-hidden="true">Flags:</span>
       <button type="button" class="btn btn-sm"
               [class.btn-primary]="!selectedFlag()"
               [class.btn-outline-secondary]="!!selectedFlag()"
+              [attr.aria-pressed]="!selectedFlag()"
               (click)="selectFlag(null)">All</button>
       @for (entry of flagEntries(); track entry.flag) {
         <button type="button" class="btn btn-sm"
                 [class.btn-primary]="selectedFlag() === entry.flag"
                 [class.btn-outline-secondary]="selectedFlag() !== entry.flag"
+                [attr.aria-pressed]="selectedFlag() === entry.flag"
+                attr.aria-label="{{ entry.flag }} coverage {{ entry.rate }}"
                 (click)="selectFlag(entry.flag)">
           {{ entry.flag }} <span class="opacity-75">{{ entry.rate }}</span>
         </button>

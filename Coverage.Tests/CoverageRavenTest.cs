@@ -1,3 +1,6 @@
+using Coverage.Indexes;
+using Raven.Client.Documents;
+using Raven.Client.Documents.Indexes;
 using Raven.TestDriver;
 
 namespace Coverage.Tests;
@@ -57,5 +60,21 @@ public abstract class CoverageRavenTest : RavenTestDriver
                     EulaAccepted = true,
                 },
         });
+    }
+
+    /// <summary>
+    /// Creates every index in the Coverage assembly on each test store, which is
+    /// what <c>UseSpark()</c> does at startup.
+    ///
+    /// Queries name their index explicitly now that most run through a generated
+    /// one, so a store without them does not silently fall back to an auto-index —
+    /// it throws IndexDoesNotExistException. Doing it here rather than per test
+    /// class means a new test cannot miss it, and a newly added index reaches every
+    /// existing test without touching any of them.
+    /// </summary>
+    protected override void SetupDatabase(IDocumentStore documentStore)
+    {
+        base.SetupDatabase(documentStore);
+        IndexCreation.CreateIndexes(typeof(Commits_ByRepository).Assembly, documentStore);
     }
 }

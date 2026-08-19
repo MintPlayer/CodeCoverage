@@ -29,7 +29,7 @@ public partial class FinalizeBuildsCronJob : ISparkCronJob
         var debounceCutoff = now - DebounceAfterLastUpload;
         var timeoutCutoff = now - TimeoutAfterCreation;
 
-        var openBuilds = await session.Query<Build>()
+        var openBuilds = await session.Query<Build, Indexes.Builds_Overview>()
             .Where(b => b.Status == "Open")
             .Where(b => b.LastUploadAtUtc < debounceCutoff || b.CreatedAtUtc < timeoutCutoff)
             .Take(128)

@@ -3,6 +3,8 @@
     "id": "22880468-80f5-4fd2-9472-4f87842ce4ff",
     "name": "Repository",
     "clrType": "Coverage.Entities.Repository",
+    "queryType": "Coverage.Indexes.VRepository",
+    "indexName": "Repositories_Overview",
     "breadcrumb": "{FullName}",
     "tabs": [],
     "groups": [],
@@ -21,7 +23,7 @@
         "query": "GetAccounts",
         "referenceType": "Coverage.Entities.Account",
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {
@@ -36,7 +38,7 @@
         "isReadOnly": false,
         "order": 10,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {
@@ -51,6 +53,7 @@
         "isReadOnly": false,
         "order": 11,
         "isArray": false,
+        "inQueryType": false,
         "showedOn": "PersistentObject",
         "rules": []
       },
@@ -66,7 +69,7 @@
         "isReadOnly": false,
         "order": 9,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {
@@ -81,7 +84,7 @@
         "isReadOnly": false,
         "order": 5,
         "isArray": false,
-        "showedOn": "Query",
+        "showedOn": "Query, PersistentObject",
         "rules": [],
         "renderer": "coverage-sparkline"
       },
@@ -97,7 +100,7 @@
         "isReadOnly": false,
         "order": 2,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {
@@ -112,7 +115,7 @@
         "isReadOnly": false,
         "order": 8,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {
@@ -144,7 +147,7 @@
         "isReadOnly": false,
         "order": 12,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {
@@ -191,7 +194,7 @@
         "isReadOnly": false,
         "order": 7,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       }
     ],

@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MintPlayer.Spark.Messaging.Abstractions;
 using Raven.Client.Documents;
+using Raven.Client.Documents.Indexes;
 using Raven.Client.Documents.Session;
 using Coverage.Tests;
 using Raven.TestDriver;
@@ -25,17 +26,6 @@ namespace Coverage.Tests.Controllers;
 /// </summary>
 public class UploadsControllerStatusTests : CoverageRavenTest
 {
-    /// <summary>
-    /// The baseline lookup queries Commits/ByRepository, which the app creates at
-    /// startup — so every store here must have it too, or the endpoint 500s.
-    /// </summary>
-    private IDocumentStore GetStoreWithIndexes()
-    {
-        var store = GetDocumentStore();
-        new Commits_ByRepository().Execute(store);
-        return store;
-    }
-
     private const long RepoId = 4242;
     private const string RepoName = "acme/widgets";
     private const string Sha = "1111111111111111111111111111111111111111";
@@ -204,11 +194,12 @@ public class UploadsControllerStatusTests : CoverageRavenTest
     [Fact]
     public async Task Reports_InFlight_then_Complete_across_a_builds_life()
     {
-        using var store = GetStoreWithIndexes();
+        using var store = GetDocumentStore();
         using var session = store.OpenAsyncSession();
         await SeedRepository(session);
         await SeedBuild(session, Sha, runId: 7, "Open", null, null, "Pending");
         await session.SaveChangesAsync();
+        WaitForIndexing(store);
 
         var controller = CreateController(session, AccountToken("acme"));
 
@@ -223,6 +214,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         build.Sessions[0].ParseStatus = "Parsed";
         build.Coverage = new CoverageSummary { LinesCovered = 80, LinesCoverable = 100 };
         await session.SaveChangesAsync();
+        WaitForIndexing(store);
 
         var complete = Body(await controller.Status(RepoName, Sha, runId: 7));
         complete.State.Should().Be("Complete");
@@ -235,12 +227,13 @@ public class UploadsControllerStatusTests : CoverageRavenTest
     [Fact]
     public async Task A_failed_session_surfaces_as_CompleteWithErrors_with_its_error()
     {
-        using var store = GetStoreWithIndexes();
+        using var store = GetDocumentStore();
         using var session = store.OpenAsyncSession();
         await SeedRepository(session);
         await SeedBuild(session, Sha, 7, "Finalized", "Debounce",
             new CoverageSummary { LinesCovered = 40, LinesCoverable = 100 }, "Parsed", "Failed");
         await session.SaveChangesAsync();
+        WaitForIndexing(store);
 
         var response = Body(await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, 7));
 
@@ -253,12 +246,13 @@ public class UploadsControllerStatusTests : CoverageRavenTest
     [Fact]
     public async Task A_timed_out_build_is_CompleteWithErrors()
     {
-        using var store = GetStoreWithIndexes();
+        using var store = GetDocumentStore();
         using var session = store.OpenAsyncSession();
         await SeedRepository(session);
         await SeedBuild(session, Sha, 7, "Finalized", "Timeout",
             new CoverageSummary { LinesCovered = 10, LinesCoverable = 100 }, "Failed");
         await session.SaveChangesAsync();
+        WaitForIndexing(store);
 
         var response = Body(await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, 7));
 
@@ -277,7 +271,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
     [Fact]
     public async Task Baseline_is_the_previous_default_branch_commit_never_the_polled_one()
     {
-        using var store = GetStoreWithIndexes();
+        using var store = GetDocumentStore();
         using var session = store.OpenAsyncSession();
         await SeedRepository(session);
 
@@ -286,6 +280,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         await SeedBuild(session, Sha, 7, "Finalized", "Explicit",
             new CoverageSummary { LinesCovered = 90, LinesCoverable = 100 }, "Parsed");
         await session.SaveChangesAsync();
+        WaitForIndexing(store);
 
         // Both commits carry finalized coverage, as they would after finalize.
         var older = await session.LoadAsync<Commit>(Commit.DocumentId(RepoId, BaselineSha));
@@ -307,7 +302,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
     [Fact]
     public async Task Baseline_is_null_on_a_first_upload_so_a_ratchet_passes()
     {
-        using var store = GetStoreWithIndexes();
+        using var store = GetDocumentStore();
         using var session = store.OpenAsyncSession();
         await SeedRepository(session);
         await SeedBuild(session, Sha, 7, "Finalized", "Explicit",
@@ -325,11 +320,12 @@ public class UploadsControllerStatusTests : CoverageRavenTest
     [Fact]
     public async Task An_unknown_repository_and_an_unauthorized_one_are_indistinguishable()
     {
-        using var store = GetStoreWithIndexes();
+        using var store = GetDocumentStore();
         using var session = store.OpenAsyncSession();
         await SeedRepository(session);
         await SeedBuild(session, Sha, 7, "Finalized", "Explicit", null, "Parsed");
         await session.SaveChangesAsync();
+        WaitForIndexing(store);
 
         // A token for a different account: the repository exists, but saying so
         // would leak the existence of a private repository.
@@ -351,10 +347,11 @@ public class UploadsControllerStatusTests : CoverageRavenTest
     [Fact]
     public async Task An_unknown_run_on_an_authorized_repository_says_so()
     {
-        using var store = GetStoreWithIndexes();
+        using var store = GetDocumentStore();
         using var session = store.OpenAsyncSession();
         await SeedRepository(session);
         await session.SaveChangesAsync();
+        WaitForIndexing(store);
 
         var result = await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, runId: 999);
 
@@ -371,7 +368,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
     [Fact]
     public async Task An_oidc_poll_for_an_unknown_repository_stores_nothing()
     {
-        using var store = GetStoreWithIndexes();
+        using var store = GetDocumentStore();
         using var session = store.OpenAsyncSession();
 
         var result = await CreateController(session, OidcToken("acme/brand-new", 999_000))
@@ -386,7 +383,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
     [Fact]
     public async Task Rejects_a_repository_that_is_not_owner_slash_name()
     {
-        using var store = GetStoreWithIndexes();
+        using var store = GetDocumentStore();
         using var session = store.OpenAsyncSession();
 
         var result = await CreateController(session, AccountToken("acme")).Status("widgets", Sha, 7);

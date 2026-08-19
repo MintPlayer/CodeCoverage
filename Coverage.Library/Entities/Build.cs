@@ -8,6 +8,7 @@ namespace Coverage.Entities;
 /// Document id is Commits/{repoGitHubId}/{sha}/builds/{runId}-{runAttempt}.
 /// </summary>
 [Breadcrumb("{CiRunId}")]
+[GenerateIndex]
 public class Build
 {
     public string? Id { get; set; }
@@ -23,11 +24,21 @@ public class Build
     public int CiRunAttempt { get; set; }
 
     /// <summary>
-    /// Computed "runId.attempt" display value for the generic grids (master-parity
-    /// "Run" column). Deterministic from the two stored fields; get-only, so the
-    /// Spark mapper serves it as an attribute without any Actions-class code.
+    /// "runId.attempt" display value for the generic grids (master-parity "Run"
+    /// column). Deterministic from <see cref="CiRunId"/> and <see cref="CiRunAttempt"/>,
+    /// both of which are fixed at creation.
+    ///
+    /// Stored rather than computed, which it was until the Builds index became
+    /// generated: a generated index maps <c>build.Run</c> straight through, and that
+    /// runs server-side against the JSON document — where a get-only CLR property
+    /// does not exist. It would have indexed as null on every build, and the grid
+    /// projects through the index, so the column would have quietly gone blank.
+    /// Assign it through <see cref="ComposeRun"/> so the format lives in one place.
     /// </summary>
-    public string Run => $"{CiRunId}.{CiRunAttempt}";
+    public string Run { get; set; } = string.Empty;
+
+    /// <summary>The one definition of the "Run" format; also used by the backfill migration.</summary>
+    public static string ComposeRun(long ciRunId, int ciRunAttempt) => $"{ciRunId}.{ciRunAttempt}";
 
     public string? WorkflowName { get; set; }
 

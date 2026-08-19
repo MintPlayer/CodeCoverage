@@ -8,6 +8,7 @@ namespace Coverage.Entities;
 /// webhook upserts are idempotent.
 /// </summary>
 [Breadcrumb("{Login}")]
+[GenerateIndex]
 public class Account
 {
     public string? Id { get; set; }

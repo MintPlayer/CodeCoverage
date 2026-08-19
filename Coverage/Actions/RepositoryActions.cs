@@ -50,6 +50,7 @@ public partial class RepositoryActions : DefaultPersistentObjectActions<Reposito
     public IRavenQueryable<Repository> Account_Repositories(CustomQueryArgs args)
     {
         args.EnsureParent("Account");
-        return session.Query<Repository>().Where(r => r.Account == args.Parent!.Id);
+        return session.Query<Repository, Indexes.Repositories_Overview>()
+            .Where(r => r.Account == args.Parent!.Id);
     }
 }

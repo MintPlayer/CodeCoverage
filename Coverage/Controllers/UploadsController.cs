@@ -78,6 +78,7 @@ public partial class UploadsController : ControllerBase
                 Commit = commitId,
                 CiRunId = form.RunId,
                 CiRunAttempt = form.RunAttempt,
+                Run = Build.ComposeRun(form.RunId, form.RunAttempt),
                 WorkflowName = form.Workflow,
                 EventName = form.EventName,
                 CreatedAtUtc = DateTime.UtcNow,
@@ -304,7 +305,7 @@ public partial class UploadsController : ControllerBase
             return await ResolveOidcRepository(provision, cancellationToken);
         }
 
-        var repository = await session.Query<Repository>()
+        var repository = await session.Query<Repository, Indexes.Repositories_Overview>()
             .Where(r => r.FullName == fullName)
             .FirstOrDefaultAsync(cancellationToken);
         if (repository is null)

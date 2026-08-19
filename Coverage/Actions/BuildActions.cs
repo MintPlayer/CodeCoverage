@@ -48,6 +48,7 @@ public partial class BuildActions : DefaultPersistentObjectActions<Build>
     public IRavenQueryable<Build> Commit_Builds(CustomQueryArgs args)
     {
         args.EnsureParent("Commit");
-        return session.Query<Build>().Where(b => b.Commit == args.Parent!.Id);
+        return session.Query<Build, Indexes.Builds_Overview>()
+            .Where(b => b.Commit == args.Parent!.Id);
     }
 }

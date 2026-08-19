@@ -210,7 +210,7 @@ public partial class GitHubAccessService : IGitHubAccessService
             if (username is not null
                 && !active.Any(i => string.Equals(i.Login, username, StringComparison.OrdinalIgnoreCase)))
             {
-                var own = await session.Query<Account>()
+                var own = await session.Query<Account, Indexes.Accounts_Overview>()
                     .Where(a => a.Login == username)
                     .FirstOrDefaultAsync(cancellationToken);
                 if (own?.InstallationId is not null)

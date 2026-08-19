@@ -4,7 +4,7 @@ using Raven.Client.Documents.Linq;
 
 namespace Coverage;
 
-public class CoverageSparkContext : SparkContext
+public partial class CoverageSparkContext : SparkContext
 {
     public IRavenQueryable<Account> Accounts => Session.Query<Account>();
     public IRavenQueryable<Repository> Repositories => Session.Query<Repository>();

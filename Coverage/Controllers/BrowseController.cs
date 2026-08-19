@@ -44,7 +44,7 @@ public partial class BrowseController : ControllerBase
     {
         var includePrivate = await gitHubAccess.IsOwnerAllowedAsync(login, cancellationToken);
 
-        var repos = await session.Query<Repository>()
+        var repos = await session.Query<Repository, Indexes.Repositories_Overview>()
             .Where(r => r.OwnerLogin == login)
             .Take(1024)
             .ToListAsync(cancellationToken);
@@ -133,7 +133,7 @@ public partial class BrowseController : ControllerBase
     {
         var includePrivate = await gitHubAccess.IsOwnerAllowedAsync(login, cancellationToken);
 
-        var repos = await session.Query<Repository>()
+        var repos = await session.Query<Repository, Indexes.Repositories_Overview>()
             .Where(r => r.OwnerLogin == login)
             .Take(1024)
             .ToListAsync(cancellationToken);
@@ -189,7 +189,7 @@ public partial class BrowseController : ControllerBase
     [HttpGet("accounts/{login}")]
     public async Task<ActionResult<AccountRef>> GetAccount(string login, CancellationToken cancellationToken)
     {
-        var account = await session.Query<Account>()
+        var account = await session.Query<Account, Indexes.Accounts_Overview>()
             .Where(a => a.Login == login)
             .FirstOrDefaultAsync(cancellationToken);
         if (account is null) return NotFound();
@@ -415,7 +415,7 @@ public partial class BrowseController : ControllerBase
 
     private async Task<Repository?> ResolveVisibleRepository(string owner, string name, CancellationToken cancellationToken)
     {
-        var repository = await session.Query<Repository>()
+        var repository = await session.Query<Repository, Indexes.Repositories_Overview>()
             .Where(r => r.FullName == $"{owner}/{name}")
             .FirstOrDefaultAsync(cancellationToken);
         if (repository is null) return null;

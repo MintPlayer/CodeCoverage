@@ -47,7 +47,7 @@ public partial class TokensController : ControllerBase
         {
             if (string.IsNullOrWhiteSpace(request.RepositoryFullName))
                 return BadRequest(new { error = "repositoryFullName is required for a repository-scoped token." });
-            repository = await session.Query<Repository>()
+            repository = await session.Query<Repository, Indexes.Repositories_Overview>()
                 .Where(r => r.FullName == request.RepositoryFullName)
                 .FirstOrDefaultAsync(cancellationToken);
             if (repository is null || !string.Equals(repository.OwnerLogin, request.AccountLogin, StringComparison.OrdinalIgnoreCase))

@@ -25,6 +25,13 @@ inputs:
   flags:
     description: 'Comma-separated flags labelling this upload (e.g. unit,linux).'
     required: false
+  partial:
+    description: 'Declare that this upload measures only a subset of the workspace (e.g. `nx affected` on a pull request). The server then compares like-for-like against the declared base instead of reading the totals as whole-workspace.'
+    required: false
+    default: 'false'
+  base-sha:
+    description: 'The base commit the affected-computation ran against (the sha passed to `nx affected --base`). Strongly recommended with `partial: true`; without it the server falls back to the newest covered default-branch commit and says so.'
+    required: false
   name:
     description: 'Session name; defaults to the job name.'
     required: false

@@ -56,6 +56,9 @@ async function run(): Promise<void> {
     form.set('eventName', ctx.eventName);
     const flags = core.getInput('flags');
     if (flags) form.set('flags', flags);
+    if (getBool('partial')) form.set('partial', 'true');
+    const baseSha = core.getInput('base-sha');
+    if (baseSha) form.set('baseSha', baseSha);
     form.set('rootDir', ctx.rootDir);
     if (fileList) form.set('fileList', fileList);
 

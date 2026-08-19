@@ -44,6 +44,22 @@ public class Build
 
     public string? EventName { get; set; }
 
+    /// <summary>
+    /// Declared by the uploader: this run measured only a subset of the
+    /// workspace (e.g. <c>nx affected</c> on a pull request). Comparisons must
+    /// scope or project rather than read the totals as whole-workspace, and a
+    /// partial build never becomes a repository's headline number.
+    /// </summary>
+    public bool Partial { get; set; }
+
+    /// <summary>
+    /// The base sha the uploader's affected-computation actually ran against
+    /// (what was passed to <c>nx affected --base</c>). Declared, not inferred —
+    /// deliberately a dedicated field rather than <see cref="Entities.Commit.ParentSha"/>,
+    /// which has two writers and a history of meaning drift and stays a hint.
+    /// </summary>
+    public string? DeclaredBaseSha { get; set; }
+
     public DateTime CreatedAtUtc { get; set; }
 
     public DateTime? LastUploadAtUtc { get; set; }

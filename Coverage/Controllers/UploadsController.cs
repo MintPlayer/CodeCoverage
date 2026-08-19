@@ -94,6 +94,13 @@ public partial class UploadsController : ControllerBase
             build.FinalizeReason = null;
         }
 
+        // One partial job makes the whole build partial: the totals under-count
+        // the workspace regardless of what the other jobs measured. The declared
+        // base is fixed by the first job that names one (all jobs of a run pass
+        // the same inputs; ??= just makes a disagreeing straggler harmless).
+        build.Partial |= form.Partial;
+        build.DeclaredBaseSha ??= form.BaseSha;
+
         var sessionId = Guid.NewGuid().ToString("N")[..12];
         var buildSession = new BuildSession
         {
@@ -283,6 +290,8 @@ public partial class UploadsController : ControllerBase
         public string? Flags { get; set; }
         public string? RootDir { get; set; }
         public string? FileList { get; set; }
+        public bool Partial { get; set; }
+        public string? BaseSha { get; set; }
         public IFormFileCollection Files { get; set; } = new FormFileCollection();
     }
 

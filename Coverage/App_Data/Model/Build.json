@@ -90,6 +90,21 @@
         "renderer": "date-time"
       },
       {
+        "id": "c5a98666-1fb2-4a2e-8e64-1000a1e363e7",
+        "name": "DeclaredBaseSha",
+        "label": {
+          "en": "Declared Base Sha"
+        },
+        "dataType": "string",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 9,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
         "id": "d3af4b5b-41b8-4f54-ae60-2431a2c505d4",
         "name": "EventName",
         "label": {
@@ -150,6 +165,21 @@
         "showedOn": "Query, PersistentObject",
         "rules": [],
         "renderer": "date-time"
+      },
+      {
+        "id": "7d5c2b4f-7c9a-4c87-a480-eaf933a6f821",
+        "name": "Partial",
+        "label": {
+          "en": "Partial"
+        },
+        "dataType": "boolean",
+        "isRequired": true,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 8,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
       },
       {
         "id": "9f2e7d10-4b8c-4e35-a1d6-7c3b9e04f512",

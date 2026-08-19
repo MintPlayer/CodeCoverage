@@ -33,7 +33,7 @@ public class GitHubAppReadinessServiceTests
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(config).Build());
         services.AddSingleton<IWebHostEnvironment>(new StubEnvironment());
-        services.AddSingleton(NullLogger<GitHubAppReadinessService>.Instance);
+        services.AddSingleton<Microsoft.Extensions.Logging.ILogger<GitHubAppReadinessService>>(NullLogger<GitHubAppReadinessService>.Instance);
         services.AddSingleton<IGitHubAppReadinessService, GitHubAppReadinessService>();
         return services.BuildServiceProvider().GetRequiredService<IGitHubAppReadinessService>();
     }

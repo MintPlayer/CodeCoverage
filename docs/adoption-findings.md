@@ -1,7 +1,19 @@
 # Adoption findings — flag filter, unmatched cap, readiness, FeedbackState, grid columns
 
-**Status: 🚧 IN PROGRESS 2026-08-19 · branch `adoption-findings` · one squash-merged PR for all of
+**Status: ✅ BUILT 2026-08-19 (M1–M7) · branch `adoption-findings` · one squash-merged PR for all of
 [#13](https://github.com/MintPlayer/CodeCoverage/issues/13), by the issue's own request.**
+
+As-built notes, all conscious:
+
+- **SP6 went decisive against the optimistic reading**: synchronize re-derives `showedOn` on
+  *every* run for `[FromIndex]` entities (measured — hand-edits reverted by a re-run). M6 ships
+  the curated JSON + `ModelColumnGuardTests` as the loud guard; upstream filed as
+  [Spark#274](https://github.com/MintPlayer/MintPlayer.Spark/issues/274).
+- **M6 needed no `order` renumbering** — `45354c0` never changed `order`, so restoring `showedOn`
+  alone reproduces the curated grids.
+- **SP5's residual browser check** (chip click issues only `tree?flag=pr`, stays selected,
+  `aria-pressed` flips) is left for review against a running host; the static half is confirmed
+  and `tsc --noEmit` + the suite (141/141) are green.
 
 Issue #13 collects five findings from MintPlayer/mintplayer-ng-bootstrap adopting this service
 (their PR #405). This plan is grounded in a four-agent investigation run 2026-08-19 against the

@@ -50,6 +50,23 @@ projects, plus `partial: true` and `base-sha: B`. The server then owns three num
 The response labels every number with its scope (`mode`, base shas, files in scope) — D5
 of #11: a number whose denominator is implicit is how this goes wrong.
 
+### Projection completeness (owner directive, 2026-08-19)
+
+Several inputs can degrade the reconstructed tree, and the server can only do its best:
+the base may have resolved by walk-back instead of exactly (`baseResolution: walked`),
+there may be no `fileList` so deleted files can't be pruned, the upload may contain
+unverified/unmatched paths (PathNormalizer had no file list to check against), a session
+may have failed to parse (`CompleteWithErrors`), or no base resolved at all. None of
+these is an error — but a projection built on any of them must not present itself as a
+confident whole-workspace number.
+
+So the projection carries an explicit verdict: `projection.complete` (bool) plus
+`projection.incompleteReasons[]` (machine-readable: `baseWalked`, `noBase`, `noFileList`,
+`unmatchedPaths`, `parseErrors`). The UI renders a **danger `bs-badge` ("coverage
+incomplete")** on the commit/build page whenever a partial build's projection is
+incomplete, and the action exposes `projection-complete` as an output so a gate can
+choose to abstain rather than trust a degraded reconstruction.
+
 ### Base resolution (D2 + D3)
 
 ```
@@ -116,10 +133,14 @@ arrives in M4 and slots in as the `mergeBase` step). Unit-tested against embedde
 
 **M3 — Scoped baseline + patched projection in `GET /api/uploads/status` · M.**
 Extends the #11 N2 design: for a partial build, `baseline` (scoped totals) plus new
-`projection` (patched whole-workspace totals) plus `baselineScope { mode, requestedBaseSha,
-resolvedBaseSha, baseResolution, filesInScope, prunedFiles }`. Whole uploads unchanged
-(D9). Tests: the #11 N2 list, plus deleted-file pruning on both sides, plus projection =
-base total when the partial upload measured nothing new.
+`projection` (patched whole-workspace totals, `complete` flag, `incompleteReasons[]`)
+plus `baselineScope { mode, requestedBaseSha, resolvedBaseSha, baseResolution,
+filesInScope, prunedFiles }`. Whole uploads unchanged (D9). Angular: a danger `bs-badge`
+("coverage incomplete") on the commit/build page whenever a partial build's projection
+is incomplete; action outputs gain `projection-complete`. Tests: the #11 N2 list, plus
+deleted-file pruning on both sides, plus projection = base total when the partial upload
+measured nothing new, plus each incompleteness reason surfacing exactly when its input
+degrades.
 
 **M4 — Diff + merge-base service · M.**
 `IGitHubDiffService`: three-dot compare via Spark's `IGitHubInstallationService` Octokit

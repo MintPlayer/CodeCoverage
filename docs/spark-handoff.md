@@ -145,6 +145,31 @@ policies for its own endpoints, all under one early `app.UseRateLimiter()`. It i
 favour of configuration the moment (1) and (2) land. Context:
 `docs/upload-result-contract.md` §6.1 / N5.
 
+## NEW (2026-08-19): bug — `[GenerateIndex]` maps complex-typed properties, which Corax faults on every document
+
+**FILED — [Spark#273](https://github.com/MintPlayer/MintPlayer.Spark/issues/273)**, open. Hit while
+adopting `[GenerateIndex]` here (`preview.53`): the generator maps every model property verbatim
+with default indexing, and Corax throws `NotSupportedInCoraxException` on any non-null complex value
+— so `Builds_Overview` (`Sessions`, `Coverage`) and `Repositories_Overview` (`LatestCoverage`)
+faulted on every document, ending with zero index entries and empty grids. No compile-time signal;
+the demos never trip it because the only `[GenerateIndex]` demo entity (`Fleet.Car`) has no complex
+field on disk.
+
+The issue carries the full PRD: auto-classify complex properties in `Describe()` and emit
+`Index(name, FieldIndexing.No)` while keeping them mapped and stored (dropping them instead would
+blank AsDetail columns — `EntityMapper` reads the full object off the projection and silently skips
+absent properties), a new `SPARK_INDEX_010` Info diagnostic, and a follow-up that derives a sortable
+scalar companion from the complex type's `[Breadcrumb]` template riding the existing
+`{Name}Sort`/`[IgnoreProperty]`/`ResolveSortProperty` convention — under a **generated name distinct
+from the entity property**, which is structural: `ModelSynchronizer` throws on a same-name type
+mismatch between projection and entity. Eight spikes enumerated, including duplicate-`Index()`
+semantics (decides how our workaround is retired) and `System.Drawing.Color`'s persistence shape
+(decides whether Fleet is latently broken).
+
+**Local workaround until it ships**: `Coverage/Indexes/GeneratedIndexes.ComplexFields.cs` — the
+`OnInitialize()` partials calling `Index(..., FieldIndexing.No)` per complex field. **Delete it when
+the fixed generator lands**, or the same field is configured twice.
+
 ## NEW (2026-08-18): bug — `IndexRegistry` silently rebinds a collection to whichever index registers last
 
 **FILED — [Spark#272](https://github.com/MintPlayer/MintPlayer.Spark/issues/272)**, open. Found while

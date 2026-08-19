@@ -1,7 +1,40 @@
 # Adopting `[GenerateIndex]` — RavenDB indexes generated from the entities
 
-**Status**: investigated 2026-08-18, not started. Upstream is merged and published; nothing in this
-repo has changed yet.
+**Status**: ✅ ADOPTED 2026-08-19 for `Build`, `Repository` and `Account` (steps 1–4 below, plus
+the generic-surface cutover, which turned out to come for free — see "As built"). `Commit` stays
+hand-written as §2 argues. Two upstream defects found on the way:
+[#272](https://github.com/MintPlayer/MintPlayer.Spark/issues/272) (registry rebinding) and
+[#273](https://github.com/MintPlayer/MintPlayer.Spark/issues/273) (Corax faults on generated complex
+fields — workaround in `Coverage/Indexes/GeneratedIndexes.ComplexFields.cs`, delete it when the fix
+ships).
+
+## As built (2026-08-19)
+
+- `preview.53`; `[GenerateIndex]` on `Build`, `Repository`, `Account`; `CoverageSparkContext` made
+  `partial`. The generic grids now run through `Builds_Overview`/`Repositories_Overview`/
+  `Accounts_Overview` automatically — registering a `[FromIndex]` projection reroutes the entity's
+  generic query, so §3's "expensive half" was not optional and not separate: it happened the moment
+  the attribute landed. What §3 predicted became three concrete fixes:
+  - **`Build.Run` is now a stored field** (`Build.ComposeRun`, one writer at build creation) with a
+    backfill migration `M_202608190900_BackfillBuildRun` — a get-only property would have indexed as
+    null and blanked the grid column for all history.
+  - **`Repository.BadgeToken` got `[IgnoreForIndex]`**: synchronize marks every projected field
+    queryable (`showedOn` is re-derived from CLR presence on each run — hand-edits verified not to
+    survive), and that would have put a live badge token in the anonymous `/spark` grid. Membership
+    is the only durable lever.
+  - **Complex fields** (`Sessions`, `Coverage`, `LatestCoverage`) fault Corax under default indexing
+    — `GeneratedIndexes.ComplexFields.cs` sets `FieldIndexing.No` through the `OnInitialize()` seam;
+    they stay stored, so the AsDetail renderers keep working. Filed as #273.
+- Every hand-written query on the three collections now names the index via
+  `Query<Entity, TIndex>()` (documents back, signatures unchanged) — the finalize cron, all
+  `FullName`/`OwnerLogin`/`Login` lookups, the badge path, both custom queries.
+- The row filter still composes: `RepositoryActions.GetRowFilterAsync` stays typed on `Repository`
+  and the generic query's element type stays the entity on the pushdown path.
+- Tests: the shared `CoverageRavenTest` base creates the assembly's indexes per store (what
+  `UseSpark()` does), because index-named queries throw `IndexDoesNotExistException` on a bare store
+  instead of falling back to an auto-index. 79/79 green; `--spark-verify-model` exit 0.
+
+The sections below are the investigation as written before adoption, kept for the reasoning.
 
 **Why now.** Spark [#269](https://github.com/MintPlayer/MintPlayer.Spark/pull/269) (closing
 [#210](https://github.com/MintPlayer/MintPlayer.Spark/issues/210)) adds a source generator that emits

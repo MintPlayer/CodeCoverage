@@ -263,13 +263,12 @@ adopting it is M9.28; only the commit list has a static index (tree/hierarchy re
 materialized `BuildTreeSummary` since M9.20); typed webhook recipients were deliberately
 skipped (M8 step 2.3 note).
 
-**Everything without a static index runs on a RavenDB auto-index**, silently and by default — that
-is one static index against four collections on the anonymous generic-query surface, the hottest
-lookup in the app (`Repository` by `FullName`, opening all nine browse endpoints) and a cron firing
-every sixty seconds. Spark `preview.53` can generate indexes from a `[GenerateIndex]` attribute on the
-entity; see [adopt-generated-indexes.md](adopt-generated-indexes.md) for what it covers, what it
-cannot (`Commit` — the coalesced sort field is not expressible, and one index per entity is a
-compile error), and the sequencing.
+**Static indexes (2026-08-19): `Build`, `Repository` and `Account` are `[GenerateIndex]`-generated**
+(`preview.53`); their grids and every hand-written lookup run through `*_Overview` indexes instead of
+auto-indexes. `Commit` stays hand-written (`Commits_ByRepository` — the coalesced sort field is not
+expressible, and one index per entity is enforced). See
+[adopt-generated-indexes.md](adopt-generated-indexes.md) for the as-built record and the two upstream
+defects it surfaced (Spark#272, Spark#273 — the latter has a local workaround to delete when fixed).
 
 ## Sequencing notes
 

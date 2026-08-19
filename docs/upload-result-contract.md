@@ -811,7 +811,7 @@ visibility predicate exists once and a test pins the two surfaces together.
 
 ---
 
-### N6 — Stop querying through auto-indexes 🟦 · cost S then M · **planned, not started**
+### N6 — Stop querying through auto-indexes 🟦 · cost S then M (✅ BUILT 2026-08-19 — wider than scoped)
 
 Falls out of §0.8. Full investigation and sequencing in
 [adopt-generated-indexes.md](adopt-generated-indexes.md); the summary is that Spark
@@ -826,7 +826,17 @@ added run on auto-indexes. `/api/uploads/status` resolves the repository by `Ful
 terminal at all (`FinalizeBuildsCronJob.cs:32`) filters three fields every sixty seconds forever.
 Neither is wrong today; both are unmeasured.
 
-**Scope here** is steps 1–4 of that document, which are all cheap and independently provable:
+**As built.** All four steps below landed, and step 5 — the generic-surface cutover, scoped out as
+expensive — turned out not to be optional: registering a `[FromIndex]` projection reroutes the
+entity's generic query automatically, so it happened the moment the attributes landed. That forced
+three additions the plan had predicted as hazards: `Build.Run` became a stored field with a backfill
+migration, `Repository.BadgeToken` got `[IgnoreForIndex]` (synchronize would have put it in the
+anonymous grid), and the complex fields needed `FieldIndexing.No` because Corax faults on them —
+filed as [Spark#273](https://github.com/MintPlayer/MintPlayer.Spark/issues/273), workaround in
+`GeneratedIndexes.ComplexFields.cs`. Details in the "As built" section of
+[adopt-generated-indexes.md](adopt-generated-indexes.md). 79/79 green; `--spark-verify-model` exit 0.
+
+**Scope as planned** was steps 1–4 of that document:
 
 1. `preview.52` → `preview.53`, nothing generated yet — the step that turns upstream-reading into
    compiled fact.

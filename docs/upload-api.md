@@ -116,7 +116,8 @@ Authorization: Bearer covt_…
     { "sessionId": "…", "jobName": "test (ubuntu)", "flags": ["unit"],
       "parseStatus": "Parsed", "error": null, "filesCount": 804 }
   ],
-  "commitUrl": "https://coverage.example.com/…"
+  "commitUrl": "https://coverage.example.com/…",
+  "feedbackState": "Posted"         // informational
 }
 ```
 
@@ -172,6 +173,18 @@ Do not branch on them. That is what `state` is for.
 | `status` | `Open`, `Finalized` |
 | `finalizeReason` | `Explicit`, `Debounce`, `Timeout` (null while open) |
 | `sessions[].parseStatus` | `Pending`, `Parsed`, `Failed` |
+| `feedbackState` | `Pending`, `Posted`, `Retry`, `Failed`, `Unavailable` (null before the first publish attempt) |
+
+`feedbackState` says what happened to the check-run publish (`coverage/project` /
+`coverage/patch`), so a workflow can tell "check-runs posted" from "this repo can't get
+check-runs" without shell access to the server. Two caveats, both inherent:
+
+- The publish is broadcast **after** finalize, so a poller can legitimately observe
+  `state: Complete` while `feedbackState` is still `null` or `Pending`. Do not gate on it.
+- `Posted`, `Failed` and `Unavailable` are terminal — the retry sweep only revisits `Retry`,
+  and it gives up after 5 attempts. `Failed` therefore means *a new build is required* (e.g.
+  after fixing the App's private key). `Unavailable` means the repository has no GitHub App
+  installation (OIDC-only repos are a supported population) — deliberate silence, not an error.
 
 ### `baseline` — so a ratchet needs one call
 

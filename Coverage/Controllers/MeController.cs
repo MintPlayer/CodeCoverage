@@ -35,7 +35,7 @@ public partial class MeController : ControllerBase
         var appUrl = $"https://github.com/apps/{appSlug}";
 
         var visibility = await gitHubAccess.GetVisibilityAsync(cancellationToken);
-        var owners = visibility.Owners;
+        var owners = visibility.OwnerGitHubIds;
         // Reauth travels as a flag on a 200 — the SPA's auth interceptor
         // hijacks any non-/spark/auth 401 into a full /login navigation.
         var reauthRequired = visibility.TokenState == GitHubTokenState.ReauthRequired;
@@ -43,16 +43,16 @@ public partial class MeController : ControllerBase
             return Ok(new AccountsResponse(appUrl, [], reauthRequired));
 
         var known = await session.Query<Account, Indexes.Accounts_Overview>()
-            .Where(a => a.Login.In(owners))
+            .Where(a => a.GitHubId.In(owners))
             .ToListAsync(cancellationToken);
 
         var repos = await session.Query<Repository, Indexes.Repositories_Overview>()
-            .Where(r => r.OwnerLogin.In(owners))
+            .Where(r => r.OwnerGitHubId.In(owners))
             .Take(4096)
             .ToListAsync(cancellationToken);
-        var reposByOwner = repos.ToLookup(r => r.OwnerLogin, StringComparer.OrdinalIgnoreCase);
+        var reposByOwner = repos.ToLookup(r => r.OwnerGitHubId);
 
-        var byLogin = known.ToDictionary(a => a.Login, StringComparer.OrdinalIgnoreCase);
+        var byGitHubId = known.ToDictionary(a => a.GitHubId);
 
         var result = owners
             .Select(owner =>
@@ -61,9 +61,12 @@ public partial class MeController : ControllerBase
                 var covered = ownerRepos.Sum(r => r.LatestCoverage?.LinesCovered ?? 0);
                 var coverable = ownerRepos.Sum(r => r.LatestCoverage?.LinesCoverable ?? 0);
                 var aggregate = coverable > 0 ? Math.Round(covered * 100.0 / coverable, 1) : (double?)null;
-                return byLogin.TryGetValue(owner, out var account)
+                // An owner GitHub gave us but we have no Account document for
+                // yet still needs a row; its login is unknown until the next
+                // backfill, so fall back to the first repo that names it.
+                return byGitHubId.TryGetValue(owner, out var account)
                     ? new AccountInfo(account.Login, account.Type, account.AvatarUrl, account.InstallationId is not null, ownerRepos.Count, aggregate)
-                    : new AccountInfo(owner, "User", null, false, ownerRepos.Count, aggregate);
+                    : new AccountInfo(ownerRepos.FirstOrDefault()?.OwnerLogin ?? owner.ToString(), "User", null, false, ownerRepos.Count, aggregate);
             })
             .OrderBy(a => a.Login, StringComparer.OrdinalIgnoreCase)
             .ToArray();

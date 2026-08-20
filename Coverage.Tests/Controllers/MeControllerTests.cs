@@ -18,6 +18,20 @@ namespace Coverage.Tests.Controllers;
 /// </summary>
 public class MeControllerTests : CoverageRavenTest
 {
+    private const long OwnGitHubId = 1234567;
+
+    /// <summary>
+    /// Visibility is a set of GitHub ids, so the degraded row can only carry a
+    /// login if the Account document is there to supply it.
+    /// </summary>
+    private static async Task SeedOwnAccount(IAsyncDocumentSession session)
+    {
+        await session.StoreAsync(
+            new Coverage.Entities.Account { GitHubId = OwnGitHubId, Login = "pieterjan", Type = "User" },
+            Coverage.Entities.Account.DocumentId(OwnGitHubId));
+        await session.SaveChangesAsync();
+    }
+
     private static MeController CreateController(IAsyncDocumentSession session, GitHubVisibility visibility)
     {
         var services = new ServiceCollection();
@@ -37,7 +51,9 @@ public class MeControllerTests : CoverageRavenTest
     {
         using var store = GetDocumentStore();
         using var session = store.OpenAsyncSession();
-        var controller = CreateController(session, new(["pieterjan"], GitHubTokenState.ReauthRequired));
+        await SeedOwnAccount(session);
+        WaitForIndexing(store);
+        var controller = CreateController(session, new([OwnGitHubId], GitHubTokenState.ReauthRequired));
 
         var response = Body(await controller.GetAccounts(CancellationToken.None));
 
@@ -50,7 +66,7 @@ public class MeControllerTests : CoverageRavenTest
     {
         using var store = GetDocumentStore();
         using var session = store.OpenAsyncSession();
-        var controller = CreateController(session, new(["pieterjan"], GitHubTokenState.Ok));
+        var controller = CreateController(session, new([OwnGitHubId], GitHubTokenState.Ok));
 
         var response = Body(await controller.GetAccounts(CancellationToken.None));
 
@@ -62,7 +78,7 @@ public class MeControllerTests : CoverageRavenTest
     {
         using var store = GetDocumentStore();
         using var session = store.OpenAsyncSession();
-        var controller = CreateController(session, new(["pieterjan"], GitHubTokenState.Unavailable));
+        var controller = CreateController(session, new([OwnGitHubId], GitHubTokenState.Unavailable));
 
         var response = Body(await controller.GetAccounts(CancellationToken.None));
 

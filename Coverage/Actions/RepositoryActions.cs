@@ -29,13 +29,13 @@ public partial class RepositoryActions : DefaultPersistentObjectActions<Reposito
         // the per-row `can` block intersects type-level rights, so no
         // write-action special-casing is needed here.
         // Empty for anonymous viewers → the filter reduces to "public only".
-        var owners = await visibility.GetAllowedOwnersAsync();
-        return RepositoryVisibility.Filter(owners);
+        var ownerIds = await visibility.GetAllowedOwnerIdsAsync();
+        return RepositoryVisibility.Filter(ownerIds);
     }
 
     /// <summary>BadgeToken grants badge access on private repos — managers only.</summary>
     public override async Task<IReadOnlyCollection<string>?> GetProtectedAttributesAsync(string action, Repository entity)
-        => await visibility.CanManageOwnerAsync(entity.OwnerLogin)
+        => await visibility.CanManageOwnerAsync(entity.OwnerGitHubId)
             ? null
             : [nameof(Repository.BadgeToken)];
 

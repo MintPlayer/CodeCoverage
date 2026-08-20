@@ -9,8 +9,12 @@ namespace Coverage.Services;
 /// </summary>
 public interface ISparkVisibility
 {
-    /// <summary>Owners the current viewer may see; empty for anonymous viewers.</summary>
-    Task<string[]> GetAllowedOwnersAsync();
+    /// <summary>
+    /// Numeric GitHub ids of the accounts the current viewer may see; empty for
+    /// anonymous viewers. Ids rather than logins because a login is mutable —
+    /// see <see cref="RepositoryVisibility"/>.
+    /// </summary>
+    Task<long[]> GetAllowedOwnerIdsAsync();
 
     /// <summary>
     /// Document ids of repositories the current viewer may see (public ones plus
@@ -20,5 +24,5 @@ public interface ISparkVisibility
     Task<string[]> GetVisibleRepositoryIdsAsync();
 
     /// <summary>Whether the viewer manages this owner (gates BadgeToken/InstallationId visibility).</summary>
-    Task<bool> CanManageOwnerAsync(string ownerLogin);
+    Task<bool> CanManageOwnerAsync(long ownerGitHubId);
 }

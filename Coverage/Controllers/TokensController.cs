@@ -31,17 +31,27 @@ public partial class TokensController : ControllerBase
     public sealed record TokenInfo(string Id, string AccountLogin, string? Description, string Scope, string? RepositoryFullName,
         DateTime CreatedAtUtc, DateTime? RevokedAtUtc);
 
+    private async Task<Account?> ResolveAccount(string login, CancellationToken cancellationToken)
+        => await session.Query<Account, Indexes.Accounts_Overview>()
+            .Where(a => a.Login == login)
+            .FirstOrDefaultAsync(cancellationToken);
+
     [HttpPost]
     public async Task<ActionResult<CreatedToken>> Create([FromBody] CreateTokenRequest request, CancellationToken cancellationToken)
     {
-        if (!await gitHubAccess.IsOwnerAllowedAsync(request.AccountLogin, cancellationToken))
+        // The wire contract names the owner by login (that is what the UI has);
+        // entitlement and storage both key on the account's immutable GitHub id.
+        var account = await ResolveAccount(request.AccountLogin, cancellationToken);
+        if (account is null)
+            return NotFound(new { error = $"Account '{request.AccountLogin}' is unknown here." });
+        if (!await gitHubAccess.IsOwnerAllowedAsync(account.GitHubId, cancellationToken))
             return Forbid();
 
         var user = await userManager.GetUserAsync(User);
         if (user is null) return Unauthorized();
 
-        // A repo-scoped token still records AccountLogin so it shows up in the
-        // account's token list; the upload handler authorizes on Scope alone.
+        // A repo-scoped token still records the owning account so it shows up in
+        // that account's token list; the upload handler authorizes on Scope alone.
         Repository? repository = null;
         if (request.Scope == "Repository")
         {
@@ -50,7 +60,7 @@ public partial class TokensController : ControllerBase
             repository = await session.Query<Repository, Indexes.Repositories_Overview>()
                 .Where(r => r.FullName == request.RepositoryFullName)
                 .FirstOrDefaultAsync(cancellationToken);
-            if (repository is null || !string.Equals(repository.OwnerLogin, request.AccountLogin, StringComparison.OrdinalIgnoreCase))
+            if (repository is null || repository.OwnerGitHubId != account.GitHubId)
                 return NotFound(new { error = $"Repository '{request.RepositoryFullName}' is unknown here or not owned by {request.AccountLogin}." });
         }
         else if (request.Scope is not (null or "Account"))
@@ -62,7 +72,7 @@ public partial class TokensController : ControllerBase
         var token = new ApiToken
         {
             Scope = repository is null ? "Account" : "Repository",
-            AccountLogin = request.AccountLogin,
+            AccountGitHubId = account.GitHubId,
             RepositoryGitHubId = repository?.GitHubId,
             Description = request.Description,
             CreatedByUserId = user.Id!,
@@ -72,17 +82,19 @@ public partial class TokensController : ControllerBase
         await session.SaveChangesAsync(cancellationToken);
 
         // The plaintext value exists only in this response.
-        return Ok(new CreatedToken(tokenValue, request.AccountLogin, request.Description, token.Scope, repository?.FullName));
+        return Ok(new CreatedToken(tokenValue, account.Login, request.Description, token.Scope, repository?.FullName));
     }
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<TokenInfo>>> List([FromQuery] string account, CancellationToken cancellationToken)
     {
-        if (!await gitHubAccess.IsOwnerAllowedAsync(account, cancellationToken))
+        var resolved = await ResolveAccount(account, cancellationToken);
+        if (resolved is null) return Ok(Enumerable.Empty<TokenInfo>());
+        if (!await gitHubAccess.IsOwnerAllowedAsync(resolved.GitHubId, cancellationToken))
             return Forbid();
 
         var tokens = await session.Query<ApiToken>()
-            .Where(t => t.AccountLogin == account)
+            .Where(t => t.AccountGitHubId == resolved.GitHubId)
             .ToListAsync(cancellationToken);
 
         var repositories = await session.LoadAsync<Repository>(
@@ -93,7 +105,7 @@ public partial class TokensController : ControllerBase
 
         return Ok(tokens
             .OrderByDescending(t => t.CreatedAtUtc)
-            .Select(t => new TokenInfo(t.Id!, t.AccountLogin!, t.Description, t.Scope,
+            .Select(t => new TokenInfo(t.Id!, resolved.Login, t.Description, t.Scope,
                 t.RepositoryGitHubId is null ? null
                     : repositories.GetValueOrDefault(Repository.DocumentId(t.RepositoryGitHubId.Value))?.FullName,
                 t.CreatedAtUtc, t.RevokedAtUtc)));
@@ -105,7 +117,7 @@ public partial class TokensController : ControllerBase
         var token = await session.LoadAsync<ApiToken>(ApiToken.DocumentId(hash), cancellationToken);
         if (token is null) return NotFound();
 
-        if (token.AccountLogin is null || !await gitHubAccess.IsOwnerAllowedAsync(token.AccountLogin, cancellationToken))
+        if (token.AccountGitHubId is null || !await gitHubAccess.IsOwnerAllowedAsync(token.AccountGitHubId.Value, cancellationToken))
             return Forbid();
 
         token.RevokedAtUtc = DateTime.UtcNow;

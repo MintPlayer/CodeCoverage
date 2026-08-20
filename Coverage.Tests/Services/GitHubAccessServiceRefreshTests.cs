@@ -37,6 +37,12 @@ public class GitHubAccessServiceRefreshTests : CoverageRavenTest
         }
         """;
 
+    /// <summary>The signed-in user's own GitHub numeric id, as the external login carries it.</summary>
+    private const long OwnGitHubId = 1234567;
+
+    /// <summary>MintPlayer's account id in <see cref="InstallationsJson"/>.</summary>
+    private const long MintPlayerGitHubId = 48772716;
+
     private static SparkUser NewUser() => new()
     {
         Id = $"SparkUsers/{Guid.NewGuid():N}",
@@ -55,7 +61,8 @@ public class GitHubAccessServiceRefreshTests : CoverageRavenTest
 
         var services = new ServiceCollection();
         services.AddSingleton<IHttpContextAccessor>(new FakeHttpContextAccessor(GitHubAuthTestFakes.PrincipalFor(user)));
-        services.AddSingleton(GitHubAuthTestFakes.UserManagerOver(new InMemoryUserStore().Add(user)));
+        services.AddSingleton(GitHubAuthTestFakes.UserManagerOver(
+            new InMemoryUserStore().Add(user).WithGitHubLogin(user, OwnGitHubId)));
         services.AddSingleton<IGitHubUserTokenService>(tokens);
         services.AddSingleton<IHttpClientFactory>(new SingleClientHttpFactory(handler));
         services.AddSingleton<IMemoryCache>(cache);
@@ -80,7 +87,7 @@ public class GitHubAccessServiceRefreshTests : CoverageRavenTest
         var visibility = await harness.Access.GetVisibilityAsync();
 
         visibility.TokenState.Should().Be(GitHubTokenState.Ok);
-        visibility.Owners.Should().BeEquivalentTo("MintPlayer", "pieterjan");
+        visibility.OwnerGitHubIds.Should().BeEquivalentTo([MintPlayerGitHubId, OwnGitHubId]);
         harness.Tokens.ForcedCalls.Should().Be(1);
         harness.Handler.Requests.Should().HaveCount(2, "the stale token 401s once, the refreshed token succeeds");
     }
@@ -100,7 +107,7 @@ public class GitHubAccessServiceRefreshTests : CoverageRavenTest
         var first = await harness.Access.GetVisibilityAsync();
         var second = await harness.Access.GetVisibilityAsync();
 
-        first.Owners.Should().BeEquivalentTo("pieterjan");
+        first.OwnerGitHubIds.Should().BeEquivalentTo([OwnGitHubId]);
         first.TokenState.Should().Be(GitHubTokenState.ReauthRequired);
         // Degraded results are never cached: the second call re-consults the
         // token service instead of replaying a cached owner list.
@@ -120,7 +127,7 @@ public class GitHubAccessServiceRefreshTests : CoverageRavenTest
 
         var visibility = await harness.Access.GetVisibilityAsync();
 
-        visibility.Owners.Should().BeEquivalentTo("pieterjan");
+        visibility.OwnerGitHubIds.Should().BeEquivalentTo([OwnGitHubId]);
         visibility.TokenState.Should().Be(GitHubTokenState.ReauthRequired);
         harness.Tokens.ForcedCalls.Should().Be(1, "exactly one forced refresh — no retry loops");
         harness.Handler.Requests.Should().HaveCount(2);
@@ -138,7 +145,7 @@ public class GitHubAccessServiceRefreshTests : CoverageRavenTest
 
         var visibility = await harness.Access.GetVisibilityAsync();
 
-        visibility.Owners.Should().BeEquivalentTo("pieterjan");
+        visibility.OwnerGitHubIds.Should().BeEquivalentTo([OwnGitHubId]);
         visibility.TokenState.Should().Be(GitHubTokenState.ReauthRequired);
         harness.Handler.Requests.Should().BeEmpty();
     }
@@ -155,7 +162,7 @@ public class GitHubAccessServiceRefreshTests : CoverageRavenTest
 
         var visibility = await harness.Access.GetVisibilityAsync();
 
-        visibility.Owners.Should().BeEquivalentTo("pieterjan");
+        visibility.OwnerGitHubIds.Should().BeEquivalentTo([OwnGitHubId]);
         visibility.TokenState.Should().Be(GitHubTokenState.Unavailable);
         // 502 is not 401: no forced refresh, no burned refresh token.
         harness.Tokens.ForcedCalls.Should().Be(0);

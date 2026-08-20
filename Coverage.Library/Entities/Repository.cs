@@ -21,7 +21,22 @@ public class Repository
     /// <summary>owner/name</summary>
     public string FullName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Display and URL segment only — never an authorization key. A GitHub
+    /// login is mutable (org rename, or a freed login taken over by someone
+    /// else), so gating on it both detaches repos from their viewers silently
+    /// and lets a stale local account authorize as the new owner. Use
+    /// <see cref="OwnerGitHubId"/> for every entitlement decision.
+    /// </summary>
     public string OwnerLogin { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The owning account's immutable GitHub numeric id — the authorization
+    /// key for this repository. Denormalized from <see cref="Account"/> (which
+    /// is nullable and a document-id string) so the row filter can express
+    /// itself as an indexable <c>In()</c> over longs.
+    /// </summary>
+    public long OwnerGitHubId { get; set; }
 
     public bool IsPrivate { get; set; }
 

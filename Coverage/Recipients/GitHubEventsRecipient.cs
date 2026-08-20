@@ -4,6 +4,9 @@ using MintPlayer.SourceGenerators.Attributes;
 using MintPlayer.Spark.Messaging.Abstractions;
 using MintPlayer.Spark.Webhooks.GitHub.Messages;
 using Octokit.Webhooks.Events;
+using Octokit.Webhooks.Events.InstallationTarget;
+using Raven.Client.Documents.Operations;
+using Raven.Client.Documents.Queries;
 using Raven.Client.Documents.Session;
 
 namespace Coverage.Recipients;
@@ -34,6 +37,9 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
                 break;
             case "installation_repositories":
                 await OnInstallationRepositories(Deserialize<InstallationRepositoriesEvent>(message), cancellationToken);
+                break;
+            case "installation_target":
+                await OnInstallationTarget(Deserialize<InstallationTargetRenamedEvent>(message), cancellationToken);
                 break;
             case "repository":
                 await OnRepository(Deserialize<RepositoryEvent>(message), cancellationToken);
@@ -104,6 +110,46 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
                     session.Delete(existing);
             }
         }
+    }
+
+    /// <summary>
+    /// A user or organization was renamed. Logins are display keys — every gate
+    /// runs on GitHub ids — but they are still embedded in Repository.FullName
+    /// and OwnerLogin, which is what the browse URLs resolve against. Without
+    /// this the account keeps its old name forever and every /r/{owner}/{repo}
+    /// link built from the new name 404s.
+    /// </summary>
+    private async Task OnInstallationTarget(InstallationTargetRenamedEvent evt, CancellationToken ct)
+    {
+        if (evt.Action != "renamed" || evt.Account is null) return;
+
+        var account = await GetOrCreateAccount(evt.Account.Id, ct);
+        var previous = account.Login;
+        account.Login = evt.Account.Login;
+        account.AvatarUrl = evt.Account.AvatarUrl;
+
+        // Patch-by-query rather than load-and-mutate: an org can hold more
+        // repositories than a session may load, and a silently truncated rename
+        // is worse than a slow one.
+        var operation = await session.Advanced.DocumentStore.Operations.SendAsync(
+            new PatchByQueryOperation(new IndexQuery
+            {
+                Query = """
+                    from Repositories as r
+                    where r.OwnerGitHubId = $ownerId
+                    update { r.OwnerLogin = $login; r.FullName = $login + '/' + r.Name; }
+                    """,
+                QueryParameters = new Raven.Client.Parameters
+                {
+                    { "ownerId", evt.Account.Id },
+                    { "login", evt.Account.Login },
+                },
+            }),
+            token: ct);
+        await operation.WaitForCompletionAsync(TimeSpan.FromMinutes(2));
+
+        logger.LogInformation("Renamed account {From} -> {To} (GitHub id {GitHubId}) and repatched its repositories",
+            previous, evt.Account.Login, evt.Account.Id);
     }
 
     private async Task OnRepository(RepositoryEvent evt, CancellationToken ct)
@@ -248,6 +294,7 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
         repository.Name = name;
         repository.FullName = fullName;
         repository.OwnerLogin = fullName.Split('/')[0];
+        repository.OwnerGitHubId = account.GitHubId;
         repository.IsPrivate = isPrivate;
     }
 

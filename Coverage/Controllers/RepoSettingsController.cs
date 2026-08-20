@@ -75,6 +75,6 @@ public partial class RepoSettingsController : ControllerBase
 
         // NotFound for the unauthorized too, upstream of this: an existence
         // oracle is the thing the badge-token endpoint already refuses to be.
-        return await gitHubAccess.IsOwnerAllowedAsync(repository.OwnerLogin, cancellationToken) ? repository : null;
+        return await gitHubAccess.IsOwnerAllowedAsync(repository.OwnerGitHubId, cancellationToken) ? repository : null;
     }
 }

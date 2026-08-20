@@ -14,7 +14,7 @@ public partial class AccountActions : DefaultPersistentObjectActions<Account>
     [Inject] private readonly ISparkVisibility visibility;
 
     public override async Task<IReadOnlyCollection<string>?> GetProtectedAttributesAsync(string action, Account entity)
-        => await visibility.CanManageOwnerAsync(entity.Login)
+        => await visibility.CanManageOwnerAsync(entity.GitHubId)
             ? null
             : [nameof(Account.InstallationId)];
 }

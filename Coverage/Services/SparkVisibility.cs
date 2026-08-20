@@ -13,21 +13,21 @@ public partial class SparkVisibility : ISparkVisibility
     [Inject] private readonly IAsyncDocumentSession session;
 
     // Task-memoized so concurrent awaiters within the request share one computation.
-    private Task<string[]>? owners;
+    private Task<long[]>? ownerIds;
     private Task<string[]>? visibleRepositoryIds;
 
-    public Task<string[]> GetAllowedOwnersAsync()
-        => owners ??= gitHubAccess.GetAllowedOwnersAsync();
+    public Task<long[]> GetAllowedOwnerIdsAsync()
+        => ownerIds ??= gitHubAccess.GetAllowedOwnerIdsAsync();
 
     public Task<string[]> GetVisibleRepositoryIdsAsync()
         => visibleRepositoryIds ??= QueryVisibleRepositoryIdsAsync();
 
-    public async Task<bool> CanManageOwnerAsync(string ownerLogin)
-        => (await GetAllowedOwnersAsync()).Contains(ownerLogin, StringComparer.OrdinalIgnoreCase);
+    public async Task<bool> CanManageOwnerAsync(long ownerGitHubId)
+        => (await GetAllowedOwnerIdsAsync()).Contains(ownerGitHubId);
 
     private async Task<string[]> QueryVisibleRepositoryIdsAsync()
     {
-        var allowed = await GetAllowedOwnersAsync();
+        var allowed = await GetAllowedOwnerIdsAsync();
         var ids = await session.Query<Repository, Indexes.Repositories_Overview>()
             .Where(RepositoryVisibility.Filter(allowed))
             .Select(r => r.Id)

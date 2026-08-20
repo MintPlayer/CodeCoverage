@@ -50,10 +50,11 @@ internal static class GitHubAuthTestFakes
         ], authenticationType: "Test"));
 }
 
-internal sealed class InMemoryUserStore : IUserStore<SparkUser>, IUserAuthenticationTokenStore<SparkUser>
+internal sealed class InMemoryUserStore : IUserStore<SparkUser>, IUserAuthenticationTokenStore<SparkUser>, IUserLoginStore<SparkUser>
 {
     private readonly ConcurrentDictionary<string, SparkUser> users = new();
     private readonly ConcurrentDictionary<(string UserId, string Provider, string Name), string?> tokens = new();
+    private readonly ConcurrentDictionary<string, List<UserLoginInfo>> logins = new();
 
     public InMemoryUserStore Add(SparkUser user)
     {
@@ -69,6 +70,37 @@ internal sealed class InMemoryUserStore : IUserStore<SparkUser>, IUserAuthentica
 
     public string? StoredToken(SparkUser user, string name) =>
         tokens.TryGetValue((user.Id!, "GitHub", name), out var value) ? value : null;
+
+    /// <summary>
+    /// Binds the user to a GitHub identity the way the external-login flow does:
+    /// ProviderKey is the numeric GitHub id, which is what authorization keys on.
+    /// </summary>
+    public InMemoryUserStore WithGitHubLogin(SparkUser user, long gitHubId)
+    {
+        logins.GetOrAdd(user.Id!, _ => []).Add(new UserLoginInfo("GitHub", gitHubId.ToString(), "GitHub"));
+        return this;
+    }
+
+    Task IUserLoginStore<SparkUser>.AddLoginAsync(SparkUser user, UserLoginInfo login, CancellationToken ct)
+    {
+        logins.GetOrAdd(user.Id!, _ => []).Add(login);
+        return Task.CompletedTask;
+    }
+
+    Task IUserLoginStore<SparkUser>.RemoveLoginAsync(SparkUser user, string loginProvider, string providerKey, CancellationToken ct)
+    {
+        if (logins.TryGetValue(user.Id!, out var list))
+            list.RemoveAll(l => l.LoginProvider == loginProvider && l.ProviderKey == providerKey);
+        return Task.CompletedTask;
+    }
+
+    Task<IList<UserLoginInfo>> IUserLoginStore<SparkUser>.GetLoginsAsync(SparkUser user, CancellationToken ct)
+        => Task.FromResult<IList<UserLoginInfo>>(logins.TryGetValue(user.Id!, out var list) ? [.. list] : []);
+
+    Task<SparkUser?> IUserLoginStore<SparkUser>.FindByLoginAsync(string loginProvider, string providerKey, CancellationToken ct)
+        => Task.FromResult(users.Values.FirstOrDefault(u =>
+            logins.TryGetValue(u.Id!, out var list)
+            && list.Any(l => l.LoginProvider == loginProvider && l.ProviderKey == providerKey)));
 
     Task<string> IUserStore<SparkUser>.GetUserIdAsync(SparkUser user, CancellationToken ct) => Task.FromResult(user.Id!);
     Task<string?> IUserStore<SparkUser>.GetUserNameAsync(SparkUser user, CancellationToken ct) => Task.FromResult(user.UserName);
@@ -170,8 +202,8 @@ internal sealed class ScriptedTokenService(Func<bool, GitHubUserToken> script) :
 internal sealed class ScriptedAccessService(GitHubVisibility visibility) : IGitHubAccessService
 {
     public Task<GitHubVisibility> GetVisibilityAsync(CancellationToken ct = default) => Task.FromResult(visibility);
-    public async Task<string[]> GetAllowedOwnersAsync(CancellationToken ct = default) => (await GetVisibilityAsync(ct)).Owners;
-    public async Task<bool> IsOwnerAllowedAsync(string ownerLogin, CancellationToken ct = default)
-        => (await GetVisibilityAsync(ct)).Owners.Contains(ownerLogin, StringComparer.OrdinalIgnoreCase);
+    public async Task<long[]> GetAllowedOwnerIdsAsync(CancellationToken ct = default) => (await GetVisibilityAsync(ct)).OwnerGitHubIds;
+    public async Task<bool> IsOwnerAllowedAsync(long ownerGitHubId, CancellationToken ct = default)
+        => (await GetVisibilityAsync(ct)).OwnerGitHubIds.Contains(ownerGitHubId);
     public Task InvalidateAsync(CancellationToken ct = default) => Task.CompletedTask;
 }

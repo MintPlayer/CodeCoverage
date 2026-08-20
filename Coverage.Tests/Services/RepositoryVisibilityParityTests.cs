@@ -23,22 +23,28 @@ namespace Coverage.Tests.Services;
 /// </summary>
 public class RepositoryVisibilityParityTests : CoverageRavenTest
 {
-    private static Repository Repo(long id, string owner, string name, bool isPrivate) => new()
+    private const long Acme = 100;
+    private const long Globex = 200;
+    private const long Initech = 300;
+    private const long Nobody = 999;
+
+    private static Repository Repo(long id, long ownerId, string owner, string name, bool isPrivate) => new()
     {
         GitHubId = id,
         Name = name,
         FullName = $"{owner}/{name}",
         OwnerLogin = owner,
+        OwnerGitHubId = ownerId,
         IsPrivate = isPrivate,
     };
 
     private static readonly Repository[] Corpus =
     [
-        Repo(1, "acme", "public-one", isPrivate: false),
-        Repo(2, "acme", "secret", isPrivate: true),
-        Repo(3, "globex", "public-two", isPrivate: false),
-        Repo(4, "globex", "hidden", isPrivate: true),
-        Repo(5, "initech", "confidential", isPrivate: true),
+        Repo(1, Acme, "acme", "public-one", isPrivate: false),
+        Repo(2, Acme, "acme", "secret", isPrivate: true),
+        Repo(3, Globex, "globex", "public-two", isPrivate: false),
+        Repo(4, Globex, "globex", "hidden", isPrivate: true),
+        Repo(5, Initech, "initech", "confidential", isPrivate: true),
     ];
 
     private async Task<IDocumentStore> SeedCorpus()
@@ -54,15 +60,15 @@ public class RepositoryVisibilityParityTests : CoverageRavenTest
 
     [Theory]
     // Anonymous: the filter must reduce to "public only".
-    [InlineData(new string[0], new[] { "acme/public-one", "globex/public-two" })]
+    [InlineData(new long[0], new[] { "acme/public-one", "globex/public-two" })]
     // One granted owner adds exactly that owner's private repositories.
-    [InlineData(new[] { "acme" }, new[] { "acme/public-one", "acme/secret", "globex/public-two" })]
-    [InlineData(new[] { "acme", "initech" },
+    [InlineData(new[] { Acme }, new[] { "acme/public-one", "acme/secret", "globex/public-two" })]
+    [InlineData(new[] { Acme, Initech },
         new[] { "acme/public-one", "acme/secret", "globex/public-two", "initech/confidential" })]
     // An owner we know nothing about grants nothing.
-    [InlineData(new[] { "nobody" }, new[] { "acme/public-one", "globex/public-two" })]
+    [InlineData(new[] { Nobody }, new[] { "acme/public-one", "globex/public-two" })]
     public async Task Both_surfaces_resolve_the_same_repositories_for_the_same_principal(
-        string[] allowedOwners, string[] expected)
+        long[] allowedOwners, string[] expected)
     {
         using var store = await SeedCorpus();
         using var session = store.OpenAsyncSession();
@@ -80,22 +86,49 @@ public class RepositoryVisibilityParityTests : CoverageRavenTest
     }
 
     /// <summary>
-    /// GitHub logins are case-insensitive, and the two surfaces reach the
-    /// comparison by different routes — a Raven query term and a .NET string
-    /// compare — so this is the most likely place for them to quietly diverge.
+    /// The reason the rule keys on the owner's numeric id rather than their
+    /// login. A rename rewrites OwnerLogin and FullName on every repository of
+    /// that account; entitlement must not notice. Keyed on the login, the
+    /// viewer's allow-list would stop matching and every private repository of
+    /// the renamed org would silently vanish from their view — and a stale
+    /// local account holding the freed login would gain it instead.
+    ///
+    /// This case previously asserted case-insensitive login matching, which is
+    /// a question the id key no longer has to answer.
     /// </summary>
     [Fact]
-    public async Task Both_surfaces_match_an_owner_login_case_insensitively()
+    public async Task Renaming_an_owner_does_not_change_what_its_members_may_see()
     {
         using var store = await SeedCorpus();
-        using var session = store.OpenAsyncSession();
-        string[] allowed = ["ACME"];
+        long[] allowed = [Acme];
 
-        var throughRowFilter = await session.Query<Repository, Repositories_Overview>()
-            .Where(RepositoryVisibility.Filter(allowed))
-            .ToListAsync();
+        using (var session = store.OpenAsyncSession())
+        {
+            var before = await session.Query<Repository, Repositories_Overview>()
+                .Where(RepositoryVisibility.Filter(allowed))
+                .ToListAsync();
+            before.Select(r => r.FullName).Should().Contain("acme/secret");
 
-        throughRowFilter.Select(r => r.FullName).Should().Contain("acme/secret");
-        RepositoryVisibility.IsVisible(Corpus[1], allowed).Should().BeTrue();
+            // The rename: same account id, new login, rewritten full names.
+            foreach (var repository in await session.Query<Repository, Repositories_Overview>()
+                         .Where(r => r.OwnerGitHubId == Acme).ToListAsync())
+            {
+                repository.OwnerLogin = "acme-industries";
+                repository.FullName = $"acme-industries/{repository.Name}";
+            }
+            await session.SaveChangesAsync();
+        }
+        WaitForIndexing(store);
+
+        using (var session = store.OpenAsyncSession())
+        {
+            var after = await session.Query<Repository, Repositories_Overview>()
+                .Where(RepositoryVisibility.Filter(allowed))
+                .ToListAsync();
+
+            after.Select(r => r.FullName).Should().Contain("acme-industries/secret",
+                "the private repository stays visible to the same principal across a rename");
+            after.Should().HaveCount(3);
+        }
     }
 }

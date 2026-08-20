@@ -48,10 +48,12 @@ public partial class BrowseController : ControllerBase
     [HttpGet("accounts/{login}/repos")]
     public async Task<ActionResult<IEnumerable<RepoInfo>>> GetAccountRepos(string login, CancellationToken cancellationToken)
     {
-        var includePrivate = await gitHubAccess.IsOwnerAllowedAsync(login, cancellationToken);
+        var account = await ResolveAccount(login, cancellationToken);
+        if (account is null) return Ok(Enumerable.Empty<RepoInfo>());
+        var includePrivate = await gitHubAccess.IsOwnerAllowedAsync(account.GitHubId, cancellationToken);
 
         var repos = await session.Query<Repository, Indexes.Repositories_Overview>()
-            .Where(r => r.OwnerLogin == login)
+            .Where(r => r.OwnerGitHubId == account.GitHubId)
             .Take(1024)
             .ToListAsync(cancellationToken);
 
@@ -66,7 +68,7 @@ public partial class BrowseController : ControllerBase
     {
         var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
         if (repository is null) return NotFound();
-        var canManage = await gitHubAccess.IsOwnerAllowedAsync(repository.OwnerLogin, cancellationToken);
+        var canManage = await gitHubAccess.IsOwnerAllowedAsync(repository.OwnerGitHubId, cancellationToken);
         return Ok(ToRepoInfo(repository, canManage));
     }
 
@@ -137,10 +139,12 @@ public partial class BrowseController : ControllerBase
     [HttpGet("accounts/{login}/sparklines")]
     public async Task<ActionResult<Dictionary<string, double[]>>> GetSparklines(string login, CancellationToken cancellationToken)
     {
-        var includePrivate = await gitHubAccess.IsOwnerAllowedAsync(login, cancellationToken);
+        var account = await ResolveAccount(login, cancellationToken);
+        if (account is null) return Ok(new Dictionary<string, double[]>());
+        var includePrivate = await gitHubAccess.IsOwnerAllowedAsync(account.GitHubId, cancellationToken);
 
         var repos = await session.Query<Repository, Indexes.Repositories_Overview>()
-            .Where(r => r.OwnerLogin == login)
+            .Where(r => r.OwnerGitHubId == account.GitHubId)
             .Take(1024)
             .ToListAsync(cancellationToken);
         var visible = repos.Where(r => includePrivate || !r.IsPrivate).ToDictionary(r => r.Id!, r => r.FullName);
@@ -195,9 +199,7 @@ public partial class BrowseController : ControllerBase
     [HttpGet("accounts/{login}")]
     public async Task<ActionResult<AccountRef>> GetAccount(string login, CancellationToken cancellationToken)
     {
-        var account = await session.Query<Account, Indexes.Accounts_Overview>()
-            .Where(a => a.Login == login)
-            .FirstOrDefaultAsync(cancellationToken);
+        var account = await ResolveAccount(login, cancellationToken);
         if (account is null) return NotFound();
         return Ok(new AccountRef(account.Id!, account.Login));
     }
@@ -436,6 +438,15 @@ public partial class BrowseController : ControllerBase
         return files;
     }
 
+    /// <summary>
+    /// A login in the URL is a display key, so every entitlement decision has to
+    /// go through the account it names and use its immutable GitHub id.
+    /// </summary>
+    private async Task<Account?> ResolveAccount(string login, CancellationToken cancellationToken)
+        => await session.Query<Account, Indexes.Accounts_Overview>()
+            .Where(a => a.Login == login)
+            .FirstOrDefaultAsync(cancellationToken);
+
     private async Task<Repository?> ResolveVisibleRepository(string owner, string name, CancellationToken cancellationToken)
     {
         var repository = await session.Query<Repository, Indexes.Repositories_Overview>()
@@ -447,8 +458,8 @@ public partial class BrowseController : ControllerBase
         // agree forever, and a shared doc-comment was the only thing binding
         // them. The owner list is only fetched when it can matter.
         if (!repository.IsPrivate) return repository;
-        var owners = await gitHubAccess.GetAllowedOwnersAsync(cancellationToken);
-        return RepositoryVisibility.IsVisible(repository, owners) ? repository : null;
+        var ownerIds = await gitHubAccess.GetAllowedOwnerIdsAsync(cancellationToken);
+        return RepositoryVisibility.IsVisible(repository, ownerIds) ? repository : null;
     }
 
     // BaseUrl rides along so the SPA builds badge markdown against the public

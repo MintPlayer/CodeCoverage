@@ -28,6 +28,14 @@ namespace Coverage.Tests.Controllers;
 public class UploadsControllerStatusTests : CoverageRavenTest
 {
     private const long RepoId = 4242;
+
+    /// <summary>
+    /// The owning account's GitHub id. Account-scoped upload tokens carry the
+    /// owner's numeric id, not their login — a login is mutable, so a renamed
+    /// org would otherwise orphan every token minted for it.
+    /// </summary>
+    private const long OwnerId = 777;
+    private const long OtherOwnerId = 888;
     private const string RepoName = "acme/widgets";
     private const string Sha = "1111111111111111111111111111111111111111";
     private const string BaselineSha = "2222222222222222222222222222222222222222";
@@ -46,10 +54,10 @@ public class UploadsControllerStatusTests : CoverageRavenTest
     }
 
     /// <summary>An upload-token principal scoped to the whole account.</summary>
-    private static ClaimsPrincipal AccountToken(string owner) => new(new ClaimsIdentity(
+    private static ClaimsPrincipal AccountToken(long ownerGitHubId) => new(new ClaimsIdentity(
         [
             new Claim(ApiTokenAuthenticationHandler.ScopeClaim, "Account"),
-            new Claim(ApiTokenAuthenticationHandler.AccountClaim, owner),
+            new Claim(ApiTokenAuthenticationHandler.AccountClaim, ownerGitHubId.ToString()),
         ], ApiTokenAuthenticationHandler.SchemeName));
 
     /// <summary>A GitHub Actions OIDC principal for a public repository.</summary>
@@ -91,6 +99,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
             Name = "widgets",
             FullName = RepoName,
             OwnerLogin = "acme",
+            OwnerGitHubId = OwnerId,
             IsPrivate = true,
             DefaultBranch = defaultBranch,
         }, Repository.DocumentId(RepoId), default);
@@ -204,7 +213,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         await session.SaveChangesAsync();
         WaitForIndexing(store);
 
-        var controller = CreateController(session, AccountToken("acme"));
+        var controller = CreateController(session, AccountToken(OwnerId));
 
         var inFlight = Body(await controller.Status(RepoName, Sha, runId: 7));
         inFlight.State.Should().Be("InFlight");
@@ -238,7 +247,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         await session.SaveChangesAsync();
         WaitForIndexing(store);
 
-        var response = Body(await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, 7));
+        var response = Body(await CreateController(session, AccountToken(OwnerId)).Status(RepoName, Sha, 7));
 
         response.State.Should().Be("CompleteWithErrors");
         // The number is still returned — it is real, it just under-counts.
@@ -257,7 +266,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         await session.SaveChangesAsync();
         WaitForIndexing(store);
 
-        var response = Body(await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, 7));
+        var response = Body(await CreateController(session, AccountToken(OwnerId)).Status(RepoName, Sha, 7));
 
         response.State.Should().Be("CompleteWithErrors");
         response.FinalizeReason.Should().Be("Timeout");
@@ -295,7 +304,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         await session.SaveChangesAsync();
         WaitForIndexing(store);
 
-        var response = Body(await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, 7));
+        var response = Body(await CreateController(session, AccountToken(OwnerId)).Status(RepoName, Sha, 7));
 
         response.Baseline.Should().NotBeNull();
         response.Baseline!.Sha.Should().Be(BaselineSha);
@@ -313,7 +322,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         await session.SaveChangesAsync();
         WaitForIndexing(store);
 
-        var response = Body(await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, 7));
+        var response = Body(await CreateController(session, AccountToken(OwnerId)).Status(RepoName, Sha, 7));
 
         response.Baseline.Should().BeNull();
     }
@@ -332,8 +341,8 @@ public class UploadsControllerStatusTests : CoverageRavenTest
 
         // A token for a different account: the repository exists, but saying so
         // would leak the existence of a private repository.
-        var unauthorized = await CreateController(session, AccountToken("someone-else")).Status(RepoName, Sha, 7);
-        var unknown = await CreateController(session, AccountToken("acme")).Status("acme/nope", Sha, 7);
+        var unauthorized = await CreateController(session, AccountToken(OtherOwnerId)).Status(RepoName, Sha, 7);
+        var unknown = await CreateController(session, AccountToken(OwnerId)).Status("acme/nope", Sha, 7);
 
         foreach (var result in new[] { unauthorized, unknown })
         {
@@ -356,7 +365,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         await session.SaveChangesAsync();
         WaitForIndexing(store);
 
-        var result = await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, runId: 999);
+        var result = await CreateController(session, AccountToken(OwnerId)).Status(RepoName, Sha, runId: 999);
 
         var notFound = result.Result.Should().BeOfType<NotFoundObjectResult>().Subject;
         notFound.Value!.ToString().Should().Contain("No build for run 999");
@@ -389,7 +398,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         using var store = GetDocumentStore();
         using var session = store.OpenAsyncSession();
 
-        var result = await CreateController(session, AccountToken("acme")).Status("widgets", Sha, 7);
+        var result = await CreateController(session, AccountToken(OwnerId)).Status("widgets", Sha, 7);
 
         result.Result.Should().BeOfType<BadRequestObjectResult>();
     }
@@ -440,7 +449,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         WaitForIndexing(store);
 
         using var session = store.OpenAsyncSession();
-        var body = Body(await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, 7));
+        var body = Body(await CreateController(session, AccountToken(OwnerId)).Status(RepoName, Sha, 7));
 
         body.Partial.Should().BeFalse();
         body.BaselineScope.Should().BeNull();
@@ -464,7 +473,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         WaitForIndexing(store);
 
         using var session = store.OpenAsyncSession();
-        var body = Body(await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, 7));
+        var body = Body(await CreateController(session, AccountToken(OwnerId)).Status(RepoName, Sha, 7));
 
         body.Partial.Should().BeTrue();
 
@@ -499,7 +508,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         WaitForIndexing(store);
 
         using var session = store.OpenAsyncSession();
-        var body = Body(await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, 7));
+        var body = Body(await CreateController(session, AccountToken(OwnerId)).Status(RepoName, Sha, 7));
 
         body.Projection!.Complete.Should().BeFalse();
         body.Projection.IncompleteReasons.Should().Contain("noFileList");
@@ -518,7 +527,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         WaitForIndexing(store);
 
         using var session = store.OpenAsyncSession();
-        var body = Body(await CreateController(session, AccountToken("acme")).Status(RepoName, Sha, 7));
+        var body = Body(await CreateController(session, AccountToken(OwnerId)).Status(RepoName, Sha, 7));
 
         body.Baseline.Should().BeNull("abstain, never fail");
         body.Projection.Should().BeNull();
@@ -543,7 +552,7 @@ public class UploadsControllerStatusTests : CoverageRavenTest
         await session.SaveChangesAsync();
         WaitForIndexing(store);
 
-        var controller = CreateController(session, AccountToken("acme"));
+        var controller = CreateController(session, AccountToken(OwnerId));
 
         Body(await controller.Status(RepoName, Sha, runId: 7)).FeedbackState.Should().BeNull(
             "the publish is broadcast after finalize — a poller can see Complete before any attempt");

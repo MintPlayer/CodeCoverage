@@ -24,22 +24,29 @@ public static class RepositoryVisibility
     /// The rule as a RavenDB-translatable predicate, for filtering a query.
     /// <para>
     /// <c>In()</c> rather than <c>Contains</c> is load-bearing, not style:
-    /// Raven's LINQ provider fails twice on .NET 10 inside an <c>OrElse</c> — a
-    /// <c>string[]</c> receiver binds to the untranslatable
-    /// <c>MemoryExtensions.Contains</c>, and <c>List&lt;string&gt;.Contains</c>
+    /// Raven's LINQ provider fails on .NET 10 inside an <c>OrElse</c> — an
+    /// array receiver binds to the untranslatable
+    /// <c>MemoryExtensions.Contains</c>, and <c>List&lt;T&gt;.Contains</c>
     /// throws <c>TypedParameterExpression</c>. <c>In()</c> also has a real
     /// in-memory implementation, which Spark's compiled single-row checks rely
     /// on when they evaluate this same expression against one loaded document.
     /// </para>
+    /// <para>
+    /// The key is the owner's numeric GitHub id, never the login: a login is
+    /// mutable, so gating on it silently detaches repositories on an org rename
+    /// and lets a stale local account authorize as whoever took the freed name.
+    /// Comparing longs also removes the case-sensitivity question that the
+    /// query-side and in-memory evaluations of this same rule used to answer
+    /// differently.
+    /// </para>
     /// </summary>
-    public static Expression<Func<Repository, bool>> Filter(string[] allowedOwners)
-        => repository => !repository.IsPrivate || repository.OwnerLogin.In(allowedOwners);
+    public static Expression<Func<Repository, bool>> Filter(long[] allowedOwnerIds)
+        => repository => !repository.IsPrivate || repository.OwnerGitHubId.In(allowedOwnerIds);
 
     /// <summary>
     /// The same rule for one already-loaded repository, so an imperative caller
     /// cannot drift from the query one.
     /// </summary>
-    public static bool IsVisible(Repository repository, string[] allowedOwners)
-        => !repository.IsPrivate
-            || allowedOwners.Contains(repository.OwnerLogin, StringComparer.OrdinalIgnoreCase);
+    public static bool IsVisible(Repository repository, long[] allowedOwnerIds)
+        => !repository.IsPrivate || allowedOwnerIds.Contains(repository.OwnerGitHubId);
 }

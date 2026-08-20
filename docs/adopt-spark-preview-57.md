@@ -1,6 +1,6 @@
 # Adopt Spark 10.0.0-preview.57 — showedOn fix, complex-field indexing, breadcrumb rework, synchronizer preservation, query-declared index bindings
 
-**Status: ✅ BUILT 2026-08-20 (M1–M5) · branch `adopt-spark-preview-57` · upgrade preview.53 → preview.57 (four releases) · one squash-merged PR**
+**Status: ✅ SHIPPED 2026-08-20 (M1–M5) · [PR #15](https://github.com/MintPlayer/CodeCoverage/pull/15) squash-merged to master as `180879b` · upgrade preview.53 → preview.57 (four releases)**
 
 As-built notes, all conscious:
 

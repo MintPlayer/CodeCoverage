@@ -226,10 +226,13 @@ the host owns the dev server), update this document's status header, then PR.
    `OwnerLogin`/`IsPrivate`/`Account` are load-bearing in `RepositoryVisibility.Filter` and
    `Account_Repositories`. SP6 measured the wipe as **every-run**, not one-time — see §1; until
    this is fixed upstream, the downstream model JSON can only be defended by a test.
-2. **Per-query column selection/ordering** — `SparkQuery.Columns` server-side or a
+2. **Filed 2026-08-20 as [MintPlayer.Spark#284](https://github.com/MintPlayer/MintPlayer.Spark/issues/284)
+   — per-query column selection/ordering** — `SparkQuery.Columns` server-side or a
    `columns`/`hiddenColumns` input on `spark-sub-query`/`spark-query-list` — so a global
    repositories view can keep `Account` while account-scoped views drop it. Until then D6's
-   global trim stands.
+   global trim stands. The issue carries the Vidyano prior art (shared attribute pool + per-query
+   `Columns` with `Offset`/`IsHidden`/`Width`) and notes that #279 sharpened it: a query bound to a
+   non-default index gets that projection's rows but still the entity's column set.
 3. Optional: the generic grid's row link could span the row (or a designated column) instead of
    hard-coding "first visible column" — that coupling is what turned a column reorder into a
    navigation regression.

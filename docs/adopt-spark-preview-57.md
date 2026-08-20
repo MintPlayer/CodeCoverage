@@ -254,8 +254,25 @@ Recorded here so the sequencing is explicit; full design belongs in its own doc 
     projection, which is why this survived.
 
 - **#272's tiebreaker ask is superseded.** [#279](https://github.com/MintPlayer/MintPlayer.Spark/issues/279) → PR #280 → preview.56 deleted `IIndexRegistry` outright, so no `IsDefault` marker on `[GenerateIndex]` is needed to make coexistence safe. Shipped record: `docs/spark-issue-279-PRD.md`.
-- **Cosmetic, upstream:** release run `32350010621` failed its `Push ng-spark to NPM` step with
-  `npm error 404 … PUT @mintplayer%2fng-spark` even though the package published fine from a sibling run —
-  so the workflow has a duplicate/racing publish path that leaves a red run behind a good release. Worth a
-  look purely so a failed run doesn't mislead the next reader (it misled this plan once).
+- **Resolved, no action:** release run `32350010621`'s failed `Push ng-spark to NPM` step was an expired
+  npm token, not a racing publish path. The package published from a later run. Noted here only because
+  the red run misled this plan once — a failed publish job is not evidence the package is missing; check
+  the registry.
+- **Filed 2026-08-20, both open:**
+  [#284](https://github.com/MintPlayer/MintPlayer.Spark/issues/284) — grid columns are per-entity, so a
+  column cannot be shown on one query's grid and hidden on another (this repo's account-scoped vs global
+  repositories views; sharpened by #279, since a query bound to a non-default index still draws the
+  entity's column set over that projection's rows).
+  [#285](https://github.com/MintPlayer/MintPlayer.Spark/issues/285) — the row filter cannot push down into
+  a projection query, so a row-scoped type reads its whole collection per page. `Repository` is exactly
+  that shape here (visibility rule + `[GenerateIndex]` projection): fine at 160 documents, not at scale.
+  It is also the reason the untyped base-document reload behind #281/#283 has to exist at all.
+- **Open upstream and worth watching:**
+  [#283](https://github.com/MintPlayer/MintPlayer.Spark/issues/283) — `BreadcrumbResolver`'s untyped loads
+  gate on `IsAllowedAsync(typeof(JObject), …)`, which returns **true**, bypassing the row-level Read rule.
+  Where #281 failed closed, this fails **open**. Our exposure runs through `Commit.Repository` /
+  `Repository.Account` breadcrumbs (`Repository`'s template is `{FullName}`), and only for documents whose
+  `Raven-Clr-Type` does not resolve — the class of document repaired in the dev database on 2026-08-20.
+  **Interim mitigation: scan production for documents missing that metadata**; if there are none, there is
+  no exposure until the fix lands.
 - **Possible ask, pending SP2:** breadcrumb-persistence semantics — when the marker property's value is written, and the backfill story for pre-existing documents.

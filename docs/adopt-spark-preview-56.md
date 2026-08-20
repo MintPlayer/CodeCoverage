@@ -1,6 +1,6 @@
-# Adopt Spark 10.0.0-preview.56 — showedOn fix, complex-field indexing, breadcrumb rework, synchronizer preservation, query-declared index bindings
+# Adopt Spark 10.0.0-preview.57 — showedOn fix, complex-field indexing, breadcrumb rework, synchronizer preservation, query-declared index bindings
 
-**Status: ✅ BUILT 2026-08-20 (M1–M5) · branch `adopt-spark-preview-56` · upgrade preview.53 → preview.56 (three releases) · one squash-merged PR**
+**Status: ✅ BUILT 2026-08-20 (M1–M5) · branch `adopt-spark-preview-56` · upgrade preview.53 → preview.57 (four releases) · one squash-merged PR**
 
 As-built notes, all conscious:
 
@@ -27,26 +27,28 @@ As-built notes, all conscious:
   have been nulled on every run.
 - `ParentSha`'s hand-set `"isReadOnly": true` survived untouched — the SP1 watch-item is clear.
 - ng-spark bumped to `22.1.0` (D8): `package.json` + `package-lock.json`, zero source changes needed.
-- **M5 found a pre-existing Spark bug** (not a regression — reproduced on `master`/preview.53): the
-  generic `GetRepositories` query 500s because row-security correlates projected rows via
-  `session.LoadAsync<object>`, handing `JObject`s to a `Func<Repository, bool>` rule. Filed as
-  [Spark#281](https://github.com/MintPlayer/MintPlayer.Spark/issues/281); analysis in §6. Everything
-  else on the runtime surface checked out:
+- **M5 found a pre-existing Spark bug, since fixed** (not a regression — reproduced on
+  `master`/preview.53): the generic `GetRepositories` query 500'd because row security correlated
+  projected rows via `session.LoadAsync<object>`, handing a `JObject` to a `Func<Repository, bool>` rule.
+  Filed as [Spark#281](https://github.com/MintPlayer/MintPlayer.Spark/issues/281), fixed in
+  `preview.57`, and re-verified here: the same request now returns 50 rows. Trigger and field data in §6.
+  Everything else on the runtime surface checked out:
   the host boots with `RavenDB indexes created/updated from assembly: Coverage` and no errors,
   `GetAccounts`/`GetBuilds`/`GetCommits` all return rows, the wire model carries the three stamped
   `indexName` values and no `useProjection`, and the anonymous browse API answers 200.
 - Full suite green: **141/141**, `ModelColumnGuardTests` included — passing *after* a synchronize for the
   first time, which is the preview.54 fix doing exactly what it promised.
 
-Four Spark issues filed from this repo shipped in three consecutive releases. The hop is `.53 → .56`:
+Five Spark issues filed from this repo shipped in four consecutive releases. The hop is `.53 → .57`:
 
 | Release | Spark PR | Contents | Breaking for us? |
 |---|---|---|---|
 | **preview.54** | #277 (#274) | synchronize narrows-but-preserves hand-trimmed `showedOn` | no — pure fix |
 | **preview.55** | #278 (#272 #273 #275 #276) | index coexistence; complex-field indexing; breadcrumb rework; synchronizer preservation | **yes ×2** |
 | **preview.56** | #280 (#279) | query-declared index bindings; `IIndexRegistry` deleted | **yes ×1 (client-side only)** |
+| **preview.57** | #282 (#281) | row security loads a projection's base documents as the entity type | no — pure fix, runtime only |
 
-> Going straight to `.56` **skips** work: preview.55's `IIndexRegistry.GetRegistrationsForCollectionType` — the API we'd have had to reason about — is deleted again in `.56`. There is nothing to adopt from `.55`'s registry change at all.
+> Going straight to `.57` **skips** work: preview.55's `IIndexRegistry.GetRegistrationsForCollectionType` — the API we'd have had to reason about — is deleted again in `.56`. There is nothing to adopt from `.55`'s registry change at all.
 
 > **The `.56` half is not a flag day; the `.55` half is.** A query contributes a hash line only when it
 > carries an `indexName` (`ModelFileShape.cs:115-129`, explicit `continue` guard) and `useProjection` was
@@ -56,7 +58,7 @@ Four Spark issues filed from this repo shipped in three consecutive releases. Th
 > (measured — see As-built). Plan the deploy as bump-and-synchronize together; there is no window where
 > the new binaries run against the old committed model.
 
-**Package availability, verified 2026-08-20:** `10.0.0-preview.56` is live on NuGet ✅ and
+**Package availability, verified 2026-08-20:** `10.0.0-preview.57` is live on NuGet ✅ and
 `@mintplayer/ng-spark@22.1.0` is live on npm and tagged `latest` ✅. (One of the three release runs,
 `32350010621`, logged an `npm 404` on its publish step — a duplicate/racing attempt; the sibling run
 published successfully. Ignore that log line.)
@@ -125,7 +127,7 @@ The workaround produced healthy production indexes; if the generated definitions
 
 ### M1 — package bump + mandatory deletions 🔑
 
-- `Coverage\Coverage.csproj:20-26,28` (eight refs), `Coverage.Library\Coverage.Library.csproj:11`, `Coverage.Tests\Coverage.Tests.csproj:14`: `10.0.0-preview.53` → `10.0.0-preview.56`. `Coverage.Tests` holds no Spark runtime package, so there is no `MintPlayer.Spark.Testing` to bump.
+- `Coverage\Coverage.csproj:20-26,28` (eight refs), `Coverage.Library\Coverage.Library.csproj:11`, `Coverage.Tests\Coverage.Tests.csproj:14`: `10.0.0-preview.53` → `10.0.0-preview.57`. `Coverage.Tests` holds no Spark runtime package, so there is no `MintPlayer.Spark.Testing` to bump.
 - npm (D8): `cd Coverage/ClientApp && npm install @mintplayer/ng-spark@22.1.0`; commit `package.json` **and** `package-lock.json`. Sanity-check that `npm ci` resolves.
 - Delete `Coverage\Indexes\GeneratedIndexes.ComplexFields.cs`.
 - Remove the four `[Breadcrumb(...)]` attributes; check whether `Commit.cs`'s `using MintPlayer.Spark.Abstractions;` becomes unused (Commit has no `[GenerateIndex]`, unlike the other three).
@@ -190,8 +192,22 @@ Recorded here so the sequencing is explicit; full design belongs in its own doc 
 
 ## 6. Upstream (Spark)
 
-- **FILED as [MintPlayer.Spark#281](https://github.com/MintPlayer/MintPlayer.Spark/issues/281)** —
-  found during M5, pre-existing, not caused by this upgrade. `GET
+- **✅ FIXED — [#281](https://github.com/MintPlayer/MintPlayer.Spark/issues/281) →
+  [PR #282](https://github.com/MintPlayer/MintPlayer.Spark/pull/282) → `10.0.0-preview.57`, adopted here
+  the same day.** `RowSecurity` now loads the base documents as the declared entity type (one
+  `ReflectionCache`-cached generic close, still one batched request), and fixes the identical defect in
+  `RedactAsync` — which this repo was also exposed to, since `RepositoryActions.GetProtectedAttributesAsync`
+  redacts `BadgeToken`. Verified against the real failing request: `GetRepositories/execute` returns 50
+  rows where it previously 500'd, **including the poisoned document**.
+  **The upstream analysis corrected my report on one point that matters:** rule + projection is *not*
+  sufficient. `LoadAsync<object>` resolves the CLR type from the `Raven-Clr-Type` metadata and only falls
+  back to `JObject` when that metadata is absent or unresolvable. Measured in this repo's dev database:
+  **159 of 160 `Repositories` documents carry `"Raven-Clr-Type": "Coverage.Entities.Repository,
+  Coverage.Library"`; exactly one does not** — `Repositories/999001`, the hand-seeded `acme/demo` fixture
+  from 2026-08-12 (`adopt-spark-generic-ui.md:413`), written by a raw put rather than the .NET client, so
+  it carries only `@collection`. `ApiTokens/dd735caa…` is the same story. One such row is enough to fail
+  the whole page, which is why the grid broke completely rather than partially. Original report follows.
+  `GET
   /spark/queries/{GetRepositories}/execute` returns **HTTP 500**:
   `System.ArgumentException: Object of type 'Newtonsoft.Json.Linq.JObject' cannot be converted to type
   'Coverage.Entities.Repository'` from `RowSecurity.FilterAsync` → `ResolveEffectiveRuleAsync`.

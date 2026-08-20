@@ -235,7 +235,6 @@
         }
       ],
       "renderMode": "Pagination",
-      "useProjection": false,
       "entityType": "Repository",
       "isStreamingQuery": false
     },
@@ -250,7 +249,7 @@
         }
       ],
       "renderMode": "Pagination",
-      "useProjection": false,
+      "indexName": "Repositories_Overview",
       "entityType": "Repository",
       "isStreamingQuery": false
     }

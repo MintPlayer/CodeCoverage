@@ -5,8 +5,18 @@ the generic-surface cutover, which turned out to come for free — see "As built
 hand-written as §2 argues. Two upstream defects found on the way:
 [#272](https://github.com/MintPlayer/MintPlayer.Spark/issues/272) (registry rebinding) and
 [#273](https://github.com/MintPlayer/MintPlayer.Spark/issues/273) (Corax faults on generated complex
-fields — workaround in `Coverage/Indexes/GeneratedIndexes.ComplexFields.cs`, delete it when the fix
-ships).
+fields).
+
+**Update 2026-08-20 — both shipped, and the local workaround is gone.** #273 shipped in
+`10.0.0-preview.55`: the generator now classifies complex fields itself and emits
+`Index(field, FieldIndexing.No)`, so `Coverage/Indexes/GeneratedIndexes.ComplexFields.cs` was **deleted**
+(keeping it would throw at startup on a duplicate `Index()` call). #272 shipped in `.55` and was then
+superseded by [#279](https://github.com/MintPlayer/MintPlayer.Spark/issues/279) in `.56`, which deleted
+`IIndexRegistry` outright in favour of query-declared index bindings — **the one-index-per-entity ceiling
+that §2 argues against no longer exists.** §2's conclusion still stands on its own merits (the nine call
+sites need the coalesce; the production commit grid is a `Custom.*` source no index binding helps), so
+`Commit` coexistence is unblocked but deliberately not taken; the target remains one index via step 6.
+See [adopt-spark-preview-57.md](adopt-spark-preview-57.md) §5.
 
 ## As built (2026-08-19)
 

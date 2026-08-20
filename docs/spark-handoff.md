@@ -166,9 +166,13 @@ mismatch between projection and entity. Eight spikes enumerated, including dupli
 semantics (decides how our workaround is retired) and `System.Drawing.Color`'s persistence shape
 (decides whether Fleet is latently broken).
 
-**Local workaround until it ships**: `Coverage/Indexes/GeneratedIndexes.ComplexFields.cs` — the
-`OnInitialize()` partials calling `Index(..., FieldIndexing.No)` per complex field. **Delete it when
-the fixed generator lands**, or the same field is configured twice.
+**✅ SHIPPED in `10.0.0-preview.55`** (Spark PR #278) and adopted here 2026-08-20: the generator
+classifies complex fields by serialized shape and emits `Index(field, FieldIndexing.No)` itself, with
+`SPARK_INDEX_010` (Warning, not Info) naming each one — seven fire in this repo. The local workaround
+`Coverage/Indexes/GeneratedIndexes.ComplexFields.cs` has been **deleted**; the duplicate-`Index()` spike
+resolved as "throws", so keeping it was not an option. The class-level `[Breadcrumb("template")]`
+attribute was deleted in the same release (templates live in the model JSON now), which is why the four
+entity CLR-shape hashes moved on upgrade. See `docs/adopt-spark-preview-57.md`.
 
 ## NEW (2026-08-18): bug — `IndexRegistry` silently rebinds a collection to whichever index registers last
 
@@ -200,6 +204,17 @@ coexistence by making the collection binding an *explicit* default rather than a
 
 **Not blocking us.** Our plan routes around it entirely by persisting `Commit.Date` and
 `Commit.HasCoverage` so one generated index replaces the hand-written one.
+
+**✅ SHIPPED, then superseded.** `preview.55` (PR #278) made the registry retain every index with a
+deterministic ordinal-min default — which fixed the coin flip but left resolution *ambient*, and a
+query-declared `indexName` was still silently overridden. That gap was filed as
+[#279](https://github.com/MintPlayer/MintPlayer.Spark/issues/279) and shipped in `preview.56` (PR #280):
+`IIndexRegistry` is **deleted** in favour of a name-keyed `IIndexCatalog`, a query's `indexName` is
+authoritative, and a new typeless `[DefaultIndex]` on the index class elects the projection that shapes an
+entity's model file (`[GenerateIndex]` emits it; analyzer SPARK009 guards duplicates). Two rules worth
+keeping: the election only considers **projection-bearing** indexes, so a projection-less hand-written
+index like `Commits_ByRepository` is invisible to it (and `[DefaultIndex]` **on** such an index throws at
+startup); and the design record is `docs/spark-issue-279-PRD.md`.
 
 ## 1. Bug: typed webhook messages produce invalid queue names (likely High)
 

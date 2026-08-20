@@ -355,7 +355,6 @@
         }
       ],
       "renderMode": "Pagination",
-      "useProjection": false,
       "entityType": "Build",
       "isStreamingQuery": false
     },
@@ -370,7 +369,7 @@
         }
       ],
       "renderMode": "Pagination",
-      "useProjection": false,
+      "indexName": "Builds_Overview",
       "entityType": "Build",
       "isStreamingQuery": false
     }

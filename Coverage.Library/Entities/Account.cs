@@ -7,7 +7,6 @@ namespace Coverage.Entities;
 /// GitHub App installation webhooks; document id is Accounts/{GitHubId} so
 /// webhook upserts are idempotent.
 /// </summary>
-[Breadcrumb("{Login}")]
 [GenerateIndex]
 public class Account
 {

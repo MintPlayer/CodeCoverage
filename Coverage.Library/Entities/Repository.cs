@@ -6,7 +6,6 @@ namespace Coverage.Entities;
 /// A GitHub repository the app knows about (installed via the GitHub App).
 /// Document id is Repositories/{GitHubId} so webhook upserts are idempotent.
 /// </summary>
-[Breadcrumb("{FullName}")]
 [GenerateIndex]
 public class Repository
 {

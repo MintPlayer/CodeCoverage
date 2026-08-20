@@ -101,7 +101,7 @@
         }
       ],
       "renderMode": "Pagination",
-      "useProjection": false,
+      "indexName": "Accounts_Overview",
       "entityType": "Account",
       "isStreamingQuery": false
     }

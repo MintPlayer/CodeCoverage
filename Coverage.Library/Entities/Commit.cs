@@ -7,7 +7,6 @@ namespace Coverage.Entities;
 /// A commit we have seen (via push/pull_request webhooks or a coverage upload).
 /// Document id is Commits/{repoGitHubId}/{sha} so any source can upsert idempotently.
 /// </summary>
-[Breadcrumb("{Sha}")]
 public class Commit
 {
     public string? Id { get; set; }

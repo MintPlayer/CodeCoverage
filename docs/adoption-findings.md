@@ -214,7 +214,7 @@ the host owns the dev server), update this document's status header, then PR.
 
 1. **✅ SHIPPED in `10.0.0-preview.54` (Spark PR #277) — [MintPlayer.Spark#274](https://github.com/MintPlayer/MintPlayer.Spark/issues/274)** —
    synchronize now *narrows but never widens* a hand-trimmed `showedOn`, so the curated trims survive.
-   Adopted here on 2026-08-20 (`docs/adopt-spark-preview-56.md`); `ModelColumnGuardTests` is kept as a
+   Adopted here on 2026-08-20 (`docs/adopt-spark-preview-57.md`); `ModelColumnGuardTests` is kept as a
    regression pin rather than deleted. The three sibling asks that came out of the same audit also
    shipped: **#272 + #273 + #275 + #276 in `preview.55`** (index coexistence, complex-field indexing and
    the breadcrumb rework, synchronizer preservation of authored `query`/`source`), and

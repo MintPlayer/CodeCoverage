@@ -172,7 +172,7 @@ classifies complex fields by serialized shape and emits `Index(field, FieldIndex
 `Coverage/Indexes/GeneratedIndexes.ComplexFields.cs` has been **deleted**; the duplicate-`Index()` spike
 resolved as "throws", so keeping it was not an option. The class-level `[Breadcrumb("template")]`
 attribute was deleted in the same release (templates live in the model JSON now), which is why the four
-entity CLR-shape hashes moved on upgrade. See `docs/adopt-spark-preview-56.md`.
+entity CLR-shape hashes moved on upgrade. See `docs/adopt-spark-preview-57.md`.
 
 ## NEW (2026-08-18): bug — `IndexRegistry` silently rebinds a collection to whichever index registers last
 

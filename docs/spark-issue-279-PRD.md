@@ -11,7 +11,7 @@ direction, 2026-08-20).
 > record now lives upstream in `docs/issue_279_{PRD,plan}.md` + `docs/release-notes-preview-56.md` in
 > MintPlayer/MintPlayer.Spark. Findings/requirements below matched what shipped; the **as-built deltas and
 > spike outcomes are recorded in the next section**. Coverage's own upgrade plan is
-> `docs/adopt-spark-preview-56.md`. File:line references are to the Spark repo (preview.55 for Findings,
+> `docs/adopt-spark-preview-57.md`. File:line references are to the Spark repo (preview.55 for Findings,
 > preview.56 for As-built) unless marked otherwise.
 
 ## As-built (verified against the shipped code, `MintPlayer.Spark` @ `2244af3`)
@@ -252,12 +252,12 @@ grid/lookup/PO-list  →  Spark query (by name or Id)  →  query.indexName  →
   error — consumers add one marker (or the `[GenerateIndex]` default covers it).
 - MintPlayer/CodeCoverage: unblocks `[GenerateIndex]` on `Commit` alongside `Commits_ByRepository` with
   explicit per-query bindings — the #272 motivating case, finally without a tiebreaker. Supersedes the
-  upstream ask in `docs/adopt-spark-preview-56.md` §6.
+  upstream ask in `docs/adopt-spark-preview-57.md` §6.
   **As-built follow-up:** the unblock is confirmed (projection-less index → invisible to the election →
   no marker, `SPARK009` silent), but Coverage decided *against* coexistence on its own merits — the nine
   hand-written call sites still need the coalesce and null test, and the production commit grid is a
   `Custom.*` source that no index binding helps. The chosen route is one index, not two: see
-  `docs/adopt-spark-preview-56.md` D5 and §5.
+  `docs/adopt-spark-preview-57.md` D5 and §5.
 
 ## Out of scope / follow-ups
 

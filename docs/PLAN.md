@@ -275,7 +275,7 @@ synchronizer preservation (#272/#273/#275/#276, `.55`), and query-declared index
 `IIndexRegistry` deleted (#279, `.56`). The local complex-field workaround partial is gone (the generator
 emits it now) and the one-index-per-entity ceiling no longer exists. `Commit` coexistence is therefore
 unblocked but deliberately not taken — the chosen route remains one index, via persisting the two computed
-fields. See [adopt-spark-preview-56.md](adopt-spark-preview-56.md) (§5 for that next deliverable) and
+fields. See [adopt-spark-preview-57.md](adopt-spark-preview-57.md) (§5 for that next deliverable) and
 [spark-issue-279-PRD.md](spark-issue-279-PRD.md).
 
 ## Sequencing notes

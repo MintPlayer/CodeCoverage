@@ -16,7 +16,7 @@ superseded by [#279](https://github.com/MintPlayer/MintPlayer.Spark/issues/279) 
 that §2 argues against no longer exists.** §2's conclusion still stands on its own merits (the nine call
 sites need the coalesce; the production commit grid is a `Custom.*` source no index binding helps), so
 `Commit` coexistence is unblocked but deliberately not taken; the target remains one index via step 6.
-See [adopt-spark-preview-56.md](adopt-spark-preview-56.md) §5.
+See [adopt-spark-preview-57.md](adopt-spark-preview-57.md) §5.
 
 ## As built (2026-08-19)
 

@@ -29,8 +29,9 @@ As-built notes, all conscious:
 - ng-spark bumped to `22.1.0` (D8): `package.json` + `package-lock.json`, zero source changes needed.
 - **M5 found a pre-existing Spark bug** (not a regression — reproduced on `master`/preview.53): the
   generic `GetRepositories` query 500s because row-security correlates projected rows via
-  `session.LoadAsync<object>`, handing `JObject`s to a `Func<Repository, bool>` rule. Full analysis and
-  suggested fix in §6; **not filed upstream yet.** Everything else on the runtime surface checked out:
+  `session.LoadAsync<object>`, handing `JObject`s to a `Func<Repository, bool>` rule. Filed as
+  [Spark#281](https://github.com/MintPlayer/MintPlayer.Spark/issues/281); analysis in §6. Everything
+  else on the runtime surface checked out:
   the host boots with `RavenDB indexes created/updated from assembly: Coverage` and no errors,
   `GetAccounts`/`GetBuilds`/`GetCommits` all return rows, the wire model carries the three stamped
   `indexName` values and no `useProjection`, and the anonymous browse API answers 200.
@@ -189,7 +190,8 @@ Recorded here so the sequencing is explicit; full design belongs in its own doc 
 
 ## 6. Upstream (Spark)
 
-- **NEW BUG FOUND during M5, pre-existing — not caused by this upgrade.** `GET
+- **FILED as [MintPlayer.Spark#281](https://github.com/MintPlayer/MintPlayer.Spark/issues/281)** —
+  found during M5, pre-existing, not caused by this upgrade. `GET
   /spark/queries/{GetRepositories}/execute` returns **HTTP 500**:
   `System.ArgumentException: Object of type 'Newtonsoft.Json.Linq.JObject' cannot be converted to type
   'Coverage.Entities.Repository'` from `RowSecurity.FilterAsync` → `ResolveEffectiveRuleAsync`.

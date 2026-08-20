@@ -38,6 +38,15 @@ As-built notes, all conscious:
   `indexName` values and no `useProjection`, and the anonymous browse API answers 200.
 - Full suite green: **141/141**, `ModelColumnGuardTests` included — passing *after* a synchronize for the
   first time, which is the preview.54 fix doing exactly what it promised.
+- **SP4 executed, and it answers the deploy question: no index rebuild.** No side-by-side replacement
+  index exists after running both the old and new code against one database, and every static index is
+  `Normal` with zero errors and zero map errors at full entry count. The generated `FieldIndexing.No`
+  calls reproduce the workaround's definition exactly.
+- **The Angular client was verified through the host's own dev server** (never `ng build` — the host owns
+  it): `/` serves `<app-root>` + `main.js` and the log carries zero TypeScript/bundler errors, so
+  ng-spark `22.1.0` compiles against this app unchanged.
+- The `.57` runtime logs `Row filter for Repository cannot compose into projection VRepository; falling
+  back to post-materialization filtering with a batched reload` — the #281 path, now taken safely.
 
 Five Spark issues filed from this repo shipped in four consecutive releases. The hop is `.53 → .57`:
 
@@ -122,6 +131,15 @@ SP3 asked whether the generic path resolved via the collection-type default or t
 ### SP4 — index-definition parity → rebuild cost
 
 The workaround produced healthy production indexes; if the generated definitions match byte-for-byte, deployment is a no-op. **Method:** compare the generated index definitions (preview.53 + workaround vs preview.56) or inspect side-by-side in RavenDB Studio after a local run. **Decision rule:** identical → deploy freely; different → accept one side-by-side rebuild of `Builds_Overview`/`Repositories_Overview` (loses nothing — they were healthy — but time the deployment window).
+
+**✅ EXECUTED 2026-08-20 — identical, deploy freely.** The local database served both the preview.53
+(workaround) and the preview.56/.57 (generator-emitted) hosts in this session. Afterwards
+`/databases/Coverage/indexes/stats` reports **no side-by-side replacement index** and every static index
+`state=Normal, ErrorsCount=0, MapErrors=0` with full entry counts (`Repositories/Overview` 160,
+`Builds/Overview` 8, `Accounts/Overview` 2, `Commits/ByRepository` 23). So the generator's own
+`Index(field, FieldIndexing.No)` calls produce a definition equal to the workaround's — **no rebuild on
+deploy**, and the complex fields index cleanly (zero map errors is the direct refutation of the #273
+Corax fault on this data).
 
 ## 2. Milestones
 

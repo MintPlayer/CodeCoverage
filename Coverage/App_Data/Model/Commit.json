@@ -112,6 +112,7 @@
         "isVisible": true,
         "isReadOnly": false,
         "order": 12,
+        "query": "GetBuilds",
         "isArray": false,
         "showedOn": "PersistentObject",
         "rules": []
@@ -214,7 +215,6 @@
         }
       ],
       "renderMode": "Pagination",
-      "useProjection": false,
       "entityType": "Commit",
       "isStreamingQuery": false
     },
@@ -233,7 +233,6 @@
         }
       ],
       "renderMode": "Pagination",
-      "useProjection": false,
       "entityType": "Commit",
       "isStreamingQuery": false
     }

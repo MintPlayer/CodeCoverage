@@ -6,16 +6,19 @@ namespace Coverage.Tests.Model;
 
 /// <summary>
 /// #13 U5: the generic Spark grids show exactly the attributes whose
-/// <c>showedOn</c> contains <c>Query</c>, ordered by <c>order</c> — and
-/// <c>--spark-synchronize-model</c> re-derives <c>showedOn</c> from index
-/// projection membership on every run for <c>[FromIndex]</c> entities,
+/// <c>showedOn</c> contains <c>Query</c>, ordered by <c>order</c>.
+/// <para>
+/// Regression pin for MintPlayer.Spark#274, fixed upstream in
+/// <c>10.0.0-preview.54</c>: synchronize used to re-derive <c>showedOn</c> from
+/// index projection membership on every run for <c>[FromIndex]</c> entities,
 /// silently wiping the curated per-surface trims (that is exactly how
-/// <c>45354c0</c> regressed the account and commit pages; CI's
-/// <c>--spark-verify-model</c> deliberately does not hash <c>showedOn</c>).
-/// This test is the loud failure that wipe otherwise lacks: if synchronize
-/// reverts the model JSON, re-apply the curated <c>showedOn</c> values below
-/// (see docs/adoption-findings.md M6) — or, once Spark preserves hand-edits,
-/// delete this guard.
+/// <c>45354c0</c> regressed the account and commit pages). It now narrows but
+/// never widens a hand-trimmed value. CI's <c>--spark-verify-model</c> still
+/// does not hash <c>showedOn</c>, so this test remains the only loud failure if
+/// the upstream guarantee ever regresses; if it trips after a synchronize,
+/// re-apply the curated values below (see docs/adoption-findings.md M6) and
+/// report it upstream rather than editing this test.
+/// </para>
 /// </summary>
 public class ModelColumnGuardTests
 {

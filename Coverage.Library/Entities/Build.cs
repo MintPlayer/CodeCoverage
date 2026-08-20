@@ -7,7 +7,6 @@ namespace Coverage.Entities;
 /// run (runId + runAttempt) land on the same Build as sessions and are merged.
 /// Document id is Commits/{repoGitHubId}/{sha}/builds/{runId}-{runAttempt}.
 /// </summary>
-[Breadcrumb("{CiRunId}")]
 [GenerateIndex]
 public class Build
 {

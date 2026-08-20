@@ -263,12 +263,20 @@ adopting it is M9.28; only the commit list has a static index (tree/hierarchy re
 materialized `BuildTreeSummary` since M9.20); typed webhook recipients were deliberately
 skipped (M8 step 2.3 note).
 
-**Static indexes (2026-08-19): `Build`, `Repository` and `Account` are `[GenerateIndex]`-generated**
-(`preview.53`); their grids and every hand-written lookup run through `*_Overview` indexes instead of
-auto-indexes. `Commit` stays hand-written (`Commits_ByRepository` — the coalesced sort field is not
-expressible, and one index per entity is enforced). See
-[adopt-generated-indexes.md](adopt-generated-indexes.md) for the as-built record and the two upstream
-defects it surfaced (Spark#272, Spark#273 — the latter has a local workaround to delete when fixed).
+**Static indexes (2026-08-19): `Build`, `Repository` and `Account` are `[GenerateIndex]`-generated**;
+their grids and every hand-written lookup run through `*_Overview` indexes instead of auto-indexes.
+`Commit` stays hand-written (`Commits_ByRepository` — the coalesced sort field is not expressible). See
+[adopt-generated-indexes.md](adopt-generated-indexes.md) for the as-built record and the upstream defects
+it surfaced.
+
+**Spark `preview.56` (2026-08-20):** all four defects this repo filed have shipped and been adopted —
+`showedOn` preservation (#274, `.54`), index coexistence + complex-field indexing + breadcrumb rework +
+synchronizer preservation (#272/#273/#275/#276, `.55`), and query-declared index bindings with
+`IIndexRegistry` deleted (#279, `.56`). The local complex-field workaround partial is gone (the generator
+emits it now) and the one-index-per-entity ceiling no longer exists. `Commit` coexistence is therefore
+unblocked but deliberately not taken — the chosen route remains one index, via persisting the two computed
+fields. See [adopt-spark-preview-56.md](adopt-spark-preview-56.md) (§5 for that next deliverable) and
+[spark-issue-279-PRD.md](spark-issue-279-PRD.md).
 
 ## Sequencing notes
 

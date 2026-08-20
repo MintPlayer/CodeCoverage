@@ -27,6 +27,15 @@ As-built notes, all conscious:
   have been nulled on every run.
 - `ParentSha`'s hand-set `"isReadOnly": true` survived untouched — the SP1 watch-item is clear.
 - ng-spark bumped to `22.1.0` (D8): `package.json` + `package-lock.json`, zero source changes needed.
+- **M5 found a pre-existing Spark bug** (not a regression — reproduced on `master`/preview.53): the
+  generic `GetRepositories` query 500s because row-security correlates projected rows via
+  `session.LoadAsync<object>`, handing `JObject`s to a `Func<Repository, bool>` rule. Full analysis and
+  suggested fix in §6; **not filed upstream yet.** Everything else on the runtime surface checked out:
+  the host boots with `RavenDB indexes created/updated from assembly: Coverage` and no errors,
+  `GetAccounts`/`GetBuilds`/`GetCommits` all return rows, the wire model carries the three stamped
+  `indexName` values and no `useProjection`, and the anonymous browse API answers 200.
+- Full suite green: **141/141**, `ModelColumnGuardTests` included — passing *after* a synchronize for the
+  first time, which is the preview.54 fix doing exactly what it promised.
 
 Four Spark issues filed from this repo shipped in three consecutive releases. The hop is `.53 → .56`:
 
@@ -179,6 +188,34 @@ Recorded here so the sequencing is explicit; full design belongs in its own doc 
 - **Two traps found while assessing it:** (1) `CoverageDelta` is `[JsonIgnore]` and the generator has no `JsonIgnore` handling — it *is* mapped into `VCommit` and indexes as null; the tempting `[IgnoreForIndex]` fix would narrow its `showedOn` to `PersistentObject` and **delete the Δ column from the repository page's grid**, since `showedOn` is per-entity and shared by both queries. Leave it mapped-and-null. (2) Migrations run *after* index creation (`Program.cs:107-109`), so `Commits_Overview` starts mapping documents that still lack the new fields — self-healing once the patch bumps change vectors, but there is a transient window of wrong badge/list ordering. Run the patch pre-deploy or accept a timed window.
 
 ## 6. Upstream (Spark)
+
+- **NEW BUG FOUND during M5, pre-existing — not caused by this upgrade.** `GET
+  /spark/queries/{GetRepositories}/execute` returns **HTTP 500**:
+  `System.ArgumentException: Object of type 'Newtonsoft.Json.Linq.JObject' cannot be converted to type
+  'Coverage.Entities.Repository'` from `RowSecurity.FilterAsync` → `ResolveEffectiveRuleAsync`.
+  **Verified identical on `master`/preview.53**, so it is latent, not a regression — but it is real and
+  worth filing.
+  - **Mechanism** (`libs/spark/MintPlayer.Spark/Services/RowSecurity.cs:181-216`): when the query
+    projects (`resultType != entityType`), the filter correlates each projected row back to its document
+    with one batched `await session.LoadAsync<object>(ids)` at `:191`. RavenDB has no target type there,
+    so it materialises **`JObject`s**; the loop then invokes the compiled rule — a
+    `Func<Repository, bool>` — with that `JObject` at `:214`, and reflection refuses the argument.
+  - **Trigger is precise: an entity with BOTH a `GetRowFilterAsync` rule AND a `[FromIndex]`
+    projection, queried through its generic `Database.*` root.** In this repo only `Repository`
+    qualifies. `Commit` has a rule but no projection (works); `Build`/`Account` have projections but no
+    rule (work) — all three verified returning rows.
+  - **Why production never hit it:** the repository grids use `Custom.Account_Repositories`, which
+    returns `IRavenQueryable<Repository>` — the *base* entity — even though it queries through
+    `Repositories_Overview` (`RepositoryActions.cs:50-55`). That makes `projecting` false and skips the
+    faulty path entirely. Only the lightly-used generic root projects to `VRepository`.
+  - **Fail-closed, not a leak:** the request errors; no unfiltered rows are returned. (The neighbouring
+    "no `Id` on the projection" branch at `:165-173` is likewise deliberately empty-not-open.)
+  - **Suggested fix:** load as the entity type rather than `object` — a reflective
+    `session.LoadAsync<TEntity>(ids)` closed over `entityType` (the same reflective-generic-invoke
+    pattern `QueryExecutor.ApplyIndexWithType` already uses), so the documents deserialize into
+    `Repository` and the rule receives what it declares. A regression test needs an entity carrying a
+    row rule *and* a projection — the existing `RowFilterPushdownTests` fixtures cover rule-without-
+    projection, which is why this survived.
 
 - **#272's tiebreaker ask is superseded.** [#279](https://github.com/MintPlayer/MintPlayer.Spark/issues/279) → PR #280 → preview.56 deleted `IIndexRegistry` outright, so no `IsDefault` marker on `[GenerateIndex]` is needed to make coexistence safe. Shipped record: `docs/spark-issue-279-PRD.md`.
 - **Cosmetic, upstream:** release run `32350010621` failed its `Push ng-spark to NPM` step with

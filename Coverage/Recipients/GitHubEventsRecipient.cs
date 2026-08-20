@@ -76,10 +76,12 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
                 account.InstallationId = evt.Installation.Id;
                 await UpsertRepositories(
                     (evt.Repositories ?? []).Select(r => (r.Id, r.Name, r.FullName, r.Private)), account, ct);
+                BumpAccessEpoch(account, $"installation {evt.Action}");
                 break;
             case "deleted":
             case "suspend":
                 account.InstallationId = null;
+                BumpAccessEpoch(account, $"installation {evt.Action}");
                 break;
         }
 
@@ -97,6 +99,8 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
 
         await UpsertRepositories(
             (evt.RepositoriesAdded ?? []).Select(r => (r.Id, r.Name, r.FullName, r.Private)), account, ct);
+
+        BumpAccessEpoch(account, "installation repositories changed");
 
         var removedIds = (evt.RepositoriesRemoved ?? [])
             .Select(r => Repository.DocumentId(r.Id))
@@ -286,6 +290,18 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
             }
             ApplyRepositoryFields(repository, item.Name, item.FullName, item.IsPrivate, account);
         }
+    }
+
+    /// <summary>
+    /// Marks every persisted entitlement snapshot for this account stale, without
+    /// having to know which users are affected. One integer, no fan-out write, no
+    /// members lookup — which is what makes team-level invalidation affordable.
+    /// </summary>
+    private void BumpAccessEpoch(Account account, string reason)
+    {
+        account.AccessEpoch++;
+        logger.LogInformation("Account {Login} ({GitHubId}) access epoch -> {Epoch} ({Reason})",
+            account.Login, account.GitHubId, account.AccessEpoch, reason);
     }
 
     private static void ApplyRepositoryFields(Repository repository, string name, string fullName, bool isPrivate, Account account)

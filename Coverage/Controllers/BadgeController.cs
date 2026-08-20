@@ -1,5 +1,6 @@
 using Coverage.Badges;
 using Coverage.Entities;
+using Coverage.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -22,6 +23,7 @@ namespace Coverage.Controllers;
 public partial class BadgeController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;
+    [Inject] private readonly IRepositoryAccessService repositoryAccess;
 
     /// <summary>
     /// Default-branch coverage from the denormalized Repository.LatestCoverage;
@@ -34,6 +36,12 @@ public partial class BadgeController : ControllerBase
         var repository = await session.Query<Repository, Indexes.Repositories_Overview>()
             .Where(r => r.FullName == $"{owner}/{name}")
             .FirstOrDefaultAsync(cancellationToken);
+
+        // The badge is the highest-volume anonymous read of IsPrivate, so it is
+        // where a stale "public" flag leaks hardest — renew the lease here too.
+        // Shared across viewers and 6h long, so this is not a per-request call.
+        if (repository is not null)
+            await repositoryAccess.GetAsync(repository, cancellationToken);
 
         double? percent = null;
         if (repository is not null && MayView(repository, token))

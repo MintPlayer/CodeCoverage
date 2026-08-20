@@ -38,7 +38,24 @@ public class Repository
     /// </summary>
     public long OwnerGitHubId { get; set; }
 
+    /// <summary>
+    /// Mirror of GitHub's visibility, and the gate in front of every read path.
+    /// Treat it as a **lease, not an assertion** — see
+    /// <see cref="VisibilityCheckedAtUtc"/>. Written only by the webhook path and
+    /// by the visibility refresh; never trust it past its lease.
+    /// </summary>
     public bool IsPrivate { get; set; }
+
+    /// <summary>
+    /// When <see cref="IsPrivate"/> was last confirmed against GitHub.
+    ///
+    /// Without this the flag is a permanent claim, and that is exactly how a repo
+    /// could stay world-readable after being made private: OIDC-provisioned
+    /// repositories have no App installation, so the webhook that corrects the
+    /// flag never fires for them, and nothing else ever looked. Null means never
+    /// confirmed, which counts as expired.
+    /// </summary>
+    public DateTime? VisibilityCheckedAtUtc { get; set; }
 
     public string? DefaultBranch { get; set; }
 

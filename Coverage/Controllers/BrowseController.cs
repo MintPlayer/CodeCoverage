@@ -26,6 +26,7 @@ public partial class BrowseController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;
     [Inject] private readonly IGitHubAccessService gitHubAccess;
+    [Inject] private readonly IRepositoryAccessService repositoryAccess;
     [Inject] private readonly IGitHubContentService gitHubContent;
     [Inject] private readonly IConfiguration configuration;
 
@@ -392,9 +393,23 @@ public partial class BrowseController : ControllerBase
             FileCoverage.DocumentId(commit.LatestBuildId, path), cancellationToken);
         if (fileCoverage is null) return NotFound();
 
-        long? installationId = null;
-        if (repository.Account is not null)
+        // Source is the sharpest disclosure in the system and the one place the
+        // app lends out its installation privilege, so a private repository is
+        // re-verified live rather than served on a snapshot that may be an hour
+        // old. ResolveVisibleRepository already passed; this can only narrow.
+        if (repository.IsPrivate
+            && await repositoryAccess.GetVerifiedAsync(repository, cancellationToken) < RepositoryAccessLevel.Read)
         {
+            return NotFound();
+        }
+
+        long? installationId = null;
+        if (repository.IsPrivate && repository.Account is not null)
+        {
+            // Only for a private repository whose viewer we just verified. A
+            // public file comes from raw.githubusercontent.com, so the
+            // installation token is never spent — and never lent — on a caller
+            // we have not checked.
             var account = await session.LoadAsync<Account>(repository.Account, cancellationToken);
             installationId = account?.InstallationId;
         }
@@ -457,9 +472,10 @@ public partial class BrowseController : ControllerBase
         // Same rule as the /spark surface, from the same place — the two must
         // agree forever, and a shared doc-comment was the only thing binding
         // them. The owner list is only fetched when it can matter.
-        if (!repository.IsPrivate) return repository;
-        var ownerIds = await gitHubAccess.GetAllowedOwnerIdsAsync(cancellationToken);
-        return RepositoryVisibility.IsVisible(repository, ownerIds) ? repository : null;
+        // Per-repository, and it renews the public/private lease on the way — a
+        // cached IsPrivate is only safe if reading it also re-confirms it.
+        var level = await repositoryAccess.GetAsync(repository, cancellationToken);
+        return level >= RepositoryAccessLevel.Read ? repository : null;
     }
 
     // BaseUrl rides along so the SPA builds badge markdown against the public

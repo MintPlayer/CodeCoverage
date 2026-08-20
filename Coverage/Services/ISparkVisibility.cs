@@ -10,9 +10,16 @@ namespace Coverage.Services;
 public interface ISparkVisibility
 {
     /// <summary>
-    /// Numeric GitHub ids of the accounts the current viewer may see; empty for
-    /// anonymous viewers. Ids rather than logins because a login is mutable —
-    /// see <see cref="RepositoryVisibility"/>.
+    /// Numeric GitHub ids of the **repositories** the current viewer is entitled
+    /// to, from their persisted snapshot; empty for anonymous viewers. Feeds the
+    /// Repository row filter, which adds the public subset on top.
+    /// </summary>
+    Task<long[]> GetEntitledRepositoryGitHubIdsAsync();
+
+    /// <summary>
+    /// Numeric GitHub ids of accounts the viewer can reach. Only for deciding
+    /// what to *list* (and for the manage gate) — never for deciding whether one
+    /// specific repository may be served.
     /// </summary>
     Task<long[]> GetAllowedOwnerIdsAsync();
 

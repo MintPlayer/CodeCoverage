@@ -10,6 +10,21 @@
     "groups": [],
     "attributes": [
       {
+        "id": "fd2e5ab3-7666-47b3-899a-a8874988f779",
+        "name": "AccessEpoch",
+        "label": {
+          "en": "Access Epoch"
+        },
+        "dataType": "number",
+        "isRequired": true,
+        "isVisible": false,
+        "isReadOnly": false,
+        "order": 6,
+        "isArray": false,
+        "showedOn": "PersistentObject",
+        "rules": []
+      },
+      {
         "id": "f6c2f843-1be2-4af2-902f-1547077bff03",
         "name": "AvatarUrl",
         "label": {

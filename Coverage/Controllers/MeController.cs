@@ -16,6 +16,7 @@ public partial class MeController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;
     [Inject] private readonly IGitHubAccessService gitHubAccess;
+    [Inject] private readonly IUserAccessService userAccess;
     [Inject] private readonly IConfiguration configuration;
     [Inject] private readonly IWebHostEnvironment environment;
 
@@ -82,6 +83,10 @@ public partial class MeController : ControllerBase
     public async Task<ActionResult<AccountsResponse>> Resync(CancellationToken cancellationToken)
     {
         await gitHubAccess.InvalidateAsync(cancellationToken);
+        // The persisted snapshot is the authority for per-repository access, so a
+        // resync that only cleared the owner cache would leave the thing the user
+        // is actually complaining about untouched.
+        await userAccess.InvalidateAsync(cancellationToken);
         return await GetAccounts(cancellationToken);
     }
 

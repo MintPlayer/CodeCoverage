@@ -228,6 +228,21 @@
         "isArray": false,
         "showedOn": "PersistentObject",
         "rules": []
+      },
+      {
+        "id": "1b96f21b-80b2-4407-b7f3-f8a2f491a5ae",
+        "name": "VisibilityCheckedAtUtc",
+        "label": {
+          "en": "Visibility Checked At Utc"
+        },
+        "dataType": "datetime",
+        "isRequired": false,
+        "isVisible": false,
+        "isReadOnly": false,
+        "order": 8,
+        "isArray": false,
+        "showedOn": "PersistentObject",
+        "rules": []
       }
     ],
     "queries": [

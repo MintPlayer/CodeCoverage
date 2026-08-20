@@ -29,8 +29,8 @@ public partial class RepositoryActions : DefaultPersistentObjectActions<Reposito
         // the per-row `can` block intersects type-level rights, so no
         // write-action special-casing is needed here.
         // Empty for anonymous viewers → the filter reduces to "public only".
-        var ownerIds = await visibility.GetAllowedOwnerIdsAsync();
-        return RepositoryVisibility.Filter(ownerIds);
+        var entitled = await visibility.GetEntitledRepositoryGitHubIdsAsync();
+        return RepositoryVisibility.Filter(entitled);
     }
 
     /// <summary>BadgeToken grants badge access on private repos — managers only.</summary>

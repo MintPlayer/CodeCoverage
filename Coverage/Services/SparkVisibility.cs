@@ -10,14 +10,27 @@ namespace Coverage.Services;
 public partial class SparkVisibility : ISparkVisibility
 {
     [Inject] private readonly IGitHubAccessService gitHubAccess;
+    [Inject] private readonly IUserAccessService userAccess;
     [Inject] private readonly IAsyncDocumentSession session;
 
     // Task-memoized so concurrent awaiters within the request share one computation.
     private Task<long[]>? ownerIds;
+    private Task<long[]>? entitledRepositoryIds;
     private Task<string[]>? visibleRepositoryIds;
 
     public Task<long[]> GetAllowedOwnerIdsAsync()
         => ownerIds ??= gitHubAccess.GetAllowedOwnerIdsAsync();
+
+    public Task<long[]> GetEntitledRepositoryGitHubIdsAsync()
+        => entitledRepositoryIds ??= QueryEntitledRepositoryIdsAsync();
+
+    private async Task<long[]> QueryEntitledRepositoryIdsAsync()
+    {
+        var access = await userAccess.GetAsync();
+        return access is null
+            ? []
+            : [.. access.Repositories.Select(r => r.RepositoryGitHubId)];
+    }
 
     public Task<string[]> GetVisibleRepositoryIdsAsync()
         => visibleRepositoryIds ??= QueryVisibleRepositoryIdsAsync();
@@ -27,9 +40,9 @@ public partial class SparkVisibility : ISparkVisibility
 
     private async Task<string[]> QueryVisibleRepositoryIdsAsync()
     {
-        var allowed = await GetAllowedOwnerIdsAsync();
+        var entitled = await GetEntitledRepositoryGitHubIdsAsync();
         var ids = await session.Query<Repository, Indexes.Repositories_Overview>()
-            .Where(RepositoryVisibility.Filter(allowed))
+            .Where(RepositoryVisibility.Filter(entitled))
             .Select(r => r.Id)
             .ToListAsync();
         return [.. ids.OfType<string>()];

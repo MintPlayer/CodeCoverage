@@ -32,21 +32,23 @@ public static class RepositoryVisibility
     /// on when they evaluate this same expression against one loaded document.
     /// </para>
     /// <para>
-    /// The key is the owner's numeric GitHub id, never the login: a login is
-    /// mutable, so gating on it silently detaches repositories on an org rename
-    /// and lets a stale local account authorize as whoever took the freed name.
-    /// Comparing longs also removes the case-sensitivity question that the
-    /// query-side and in-memory evaluations of this same rule used to answer
-    /// differently.
+    /// The key is the **repository's** numeric GitHub id, taken from the viewer's
+    /// persisted entitlement snapshot. Owner-granularity was the original defect:
+    /// reaching an organization's installation granted every repository that
+    /// organization owns, so an outside collaborator on one public repository
+    /// could read every private sibling. GitHub answers per repository, and now so
+    /// does this. Ids rather than logins because a login is mutable — an org
+    /// rename would otherwise detach every repository from its viewers, and a
+    /// freed login taken over by another party would grant its old access.
     /// </para>
     /// </summary>
-    public static Expression<Func<Repository, bool>> Filter(long[] allowedOwnerIds)
-        => repository => !repository.IsPrivate || repository.OwnerGitHubId.In(allowedOwnerIds);
+    public static Expression<Func<Repository, bool>> Filter(long[] entitledRepositoryGitHubIds)
+        => repository => !repository.IsPrivate || repository.GitHubId.In(entitledRepositoryGitHubIds);
 
     /// <summary>
     /// The same rule for one already-loaded repository, so an imperative caller
     /// cannot drift from the query one.
     /// </summary>
-    public static bool IsVisible(Repository repository, long[] allowedOwnerIds)
-        => !repository.IsPrivate || allowedOwnerIds.Contains(repository.OwnerGitHubId);
+    public static bool IsVisible(Repository repository, long[] entitledRepositoryGitHubIds)
+        => !repository.IsPrivate || entitledRepositoryGitHubIds.Contains(repository.GitHubId);
 }

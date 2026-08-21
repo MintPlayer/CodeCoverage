@@ -6,15 +6,16 @@ import { BsAlertComponent } from '@mintplayer/ng-bootstrap/alert';
 import { BsCardComponent, BsCardHeaderComponent } from '@mintplayer/ng-bootstrap/card';
 import { BsGridComponent, BsGridRowDirective, BsGridColumnDirective } from '@mintplayer/ng-bootstrap/grid';
 import { BsListGroupComponent, BsListGroupItemComponent } from '@mintplayer/ng-bootstrap/list-group';
+import { BsBadgeComponent } from '@mintplayer/ng-bootstrap/badge';
+import { BsSpinnerComponent } from '@mintplayer/ng-bootstrap/spinner';
 import { TranslateKeyPipe } from '@mintplayer/ng-spark/pipes';
-import { SparkSubQueryComponent } from '@mintplayer/ng-spark/po-detail';
 import { SparkAuthService } from '@mintplayer/ng-spark-auth/core';
-import { AccountsService, AccountsResponse } from '../../services/accounts.service';
+import { AccountsService, AccountInfo, AccountsResponse } from '../../services/accounts.service';
 import { GitHubLoginService } from '../../services/github-login.service';
 
 @Component({
   selector: 'app-home',
-  imports: [CommonModule, RouterModule, BsAlertComponent, BsCardComponent, BsCardHeaderComponent, BsGridComponent, BsGridRowDirective, BsGridColumnDirective, BsListGroupComponent, BsListGroupItemComponent, SparkSubQueryComponent, TranslateKeyPipe],
+  imports: [CommonModule, RouterModule, BsAlertComponent, BsCardComponent, BsCardHeaderComponent, BsGridComponent, BsGridRowDirective, BsGridColumnDirective, BsListGroupComponent, BsListGroupItemComponent, BsBadgeComponent, BsSpinnerComponent, TranslateKeyPipe],
   templateUrl: './home.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -23,6 +24,7 @@ export default class HomeComponent {
   private readonly gitHubLogin = inject(GitHubLoginService);
   readonly authService = inject(SparkAuthService);
 
+  readonly accounts = signal<AccountInfo[] | null>(null);
   readonly gitHubAppUrl = signal(`https://github.com/apps/${isDevMode() ? 'coveragedevelopment' : 'coverageproduction'}`);
   readonly loading = signal(false);
   readonly reauthRequired = signal(false);
@@ -30,25 +32,19 @@ export default class HomeComponent {
   readonly reconnectError = signal<string | null>(null);
   readonly warningColor = Color.warning;
 
-  /**
-   * Bumped by {@link resync} to remount the grid. spark-sub-query fetches on
-   * mount and exposes no refresh input, so without this a resync would clear the
-   * server-side snapshot and leave the old rows on screen — the button would
-   * look like it had done nothing.
-   */
-  readonly gridEpoch = signal(0);
-
   constructor() {
     effect(() => {
       if (this.authService.user()?.isAuthenticated) {
         this.loadAccounts();
       } else {
+        this.accounts.set(null);
         this.reauthRequired.set(false);
       }
     });
   }
 
   private applyResponse(response: AccountsResponse): void {
+    this.accounts.set(response.accounts);
     this.gitHubAppUrl.set(response.gitHubAppUrl);
     this.reauthRequired.set(response.gitHubReauthRequired ?? false);
   }
@@ -58,8 +54,7 @@ export default class HomeComponent {
     try {
       this.applyResponse(await this.accountsService.getMyAccounts());
     } catch {
-      // The grid reports its own failures; this call only carries the App URL
-      // and the reauth flag, and a stale App URL is better than a blank page.
+      this.accounts.set([]);
     } finally {
       this.loading.set(false);
     }
@@ -69,7 +64,6 @@ export default class HomeComponent {
     this.loading.set(true);
     try {
       this.applyResponse(await this.accountsService.resync());
-      this.gridEpoch.update(e => e + 1);
     } catch {
       // keep the current list on failure
     } finally {

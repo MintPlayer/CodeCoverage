@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using MintPlayer.AspNetCore.SpaServices.Extensions;
 using MintPlayer.Spark;
 using MintPlayer.Spark.Abstractions.Authentication;
+using MintPlayer.Spark.Authorization.Configuration;
 using MintPlayer.Spark.Authorization.Extensions;
 using MintPlayer.Spark.Extensions;
 using MintPlayer.Spark.Authorization.Identity;
@@ -51,11 +52,25 @@ builder.Services.AddSpark(builder.Configuration, spark =>
     spark.AddAuthorization();
     spark.AddActions();
 
-    spark.AddAuthentication<SparkUser>(configureProviders: identity =>
+    // GitHub is the only identity this app has, so the entire local-credential
+    // surface is switched off: no register, no password login, no forgot/reset,
+    // no confirm/resend. Those endpoints were reachable and unused — register is
+    // an enumeration oracle, the recovery family is an unauthenticated mail-send
+    // trigger, and login distinguishes LockedOut from NotAllowed. This is the
+    // server half of the same decision app.routes.ts makes on the client.
+    //
+    // Disabled REFUSES TO BOOT without an external provider, by design: an
+    // authentication surface nobody can sign into is a misconfiguration, not a
+    // degraded mode. That is a deliberate change from the previous behaviour
+    // noted below — a missing ClientId used to boot with a dead sign-in button,
+    // and would now leave local credentials as the only way in, which is exactly
+    // what this turns off. Failing fast with Spark's named error beats that.
+    spark.AddAuthentication<SparkUser>(
+        configure: auth => auth.LocalCredentials = SparkLocalCredentials.Disabled,
+        configureProviders: identity =>
     {
         // Only register the provider when configured: the OAuth handler validates
-        // ClientId on first request and would 500 every request otherwise. Without
-        // credentials the app still boots — the sign-in button just won't work.
+        // ClientId on first request and would 500 every request otherwise.
         var gitHubClientId = builder.Configuration[$"GitHub:{envPrefix}:ClientId"];
         if (!string.IsNullOrEmpty(gitHubClientId))
         {

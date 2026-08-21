@@ -32,7 +32,7 @@
     "@mintplayer/ng-click-outside": "^22.0.0",
     "@mintplayer/ng-focus-on-load": "^22.0.0",
     "@mintplayer/ng-spark": "^22.2.0",
-    "@mintplayer/ng-spark-auth": "^22.2.1",
+    "@mintplayer/ng-spark-auth": "^22.3.0",
     "@mintplayer/pagination": "^2.3.0",
     "@mintplayer/web-components": "2.13.0",
     "bootstrap": "^5.3.8",

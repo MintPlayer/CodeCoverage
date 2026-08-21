@@ -3,6 +3,8 @@ using MintPlayer.Spark.Migrations;
 using Raven.Client.Documents;
 using Raven.Client.Documents.Operations;
 using Raven.Client.Documents.Queries;
+using Raven.Client.Documents.Linq;
+using Coverage.Entities;
 
 namespace Coverage.Migrations;
 
@@ -30,6 +32,16 @@ public partial class M_202608200900_OwnerGitHubId : ISparkMigration
 
     [Inject] private readonly IDocumentStore store;
 
+    /// <summary>Both collections are small; a cap keeps the migration bounded rather than open-ended.</summary>
+    private const int CountCap = 4096;
+
+    /// <summary>Just enough of the pre-migration shape to read the old field.</summary>
+    private sealed class ApiTokenRow
+    {
+        public string? Id { get; set; }
+        public string? AccountLogin { get; set; }
+    }
+
     public async Task UpAsync(CancellationToken cancellationToken)
     {
         // Accounts/{gitHubId} -> the trailing segment is the id. Guarded on the
@@ -51,32 +63,38 @@ public partial class M_202608200900_OwnerGitHubId : ISparkMigration
             token: cancellationToken);
         await repositories.WaitForCompletionAsync(TimeSpan.FromMinutes(5));
 
-        // load() by the document id the login resolves to is not available here
-        // (logins are not ids), so resolve through the Accounts collection. Token
-        // counts are small, so the correlated subquery cost is irrelevant.
-        var tokens = await store.Operations.SendAsync(
-            new PatchByQueryOperation(new IndexQuery
-            {
-                Query = """
-                    from ApiTokens as t
-                    where t.AccountLogin != null
-                    update {
-                        var owner = null;
-                        for (var a of query("from Accounts")) {
-                            if (a.Login && t.AccountLogin
-                                && a.Login.toLowerCase() === t.AccountLogin.toLowerCase()) {
-                                owner = a;
-                                break;
-                            }
-                        }
-                        if (owner) {
-                            t.AccountGitHubId = owner.GitHubId;
-                            delete t.AccountLogin;
-                        }
-                    }
-                    """,
-            }),
-            token: cancellationToken);
-        await tokens.WaitForCompletionAsync(TimeSpan.FromMinutes(5));
+        // In C#, not a JS patch: a RavenDB patch script can load() by id but cannot
+        // query, and a login is not an id. The first version of this called a
+        // query() helper that does not exist in the patch API, which threw
+        // "Cannot convert undefined or null to object" and aborted startup.
+        //
+        // Token and account counts are both small, so one session covers it.
+        using var session = store.OpenAsyncSession();
+        var accounts = await session.Query<Account>()
+            .Take(CountCap)
+            .ToListAsync(cancellationToken);
+        var idByLogin = accounts
+            .Where(a => !string.IsNullOrEmpty(a.Login))
+            .GroupBy(a => a.Login, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().GitHubId, StringComparer.OrdinalIgnoreCase);
+
+        var tokens = await session.Advanced
+            .AsyncRawQuery<ApiTokenRow>("from ApiTokens where AccountLogin != null")
+            .Take(CountCap)
+            .ToListAsync(cancellationToken);
+
+        foreach (var row in tokens)
+        {
+            if (row.Id is null || row.AccountLogin is null) continue;
+            if (!idByLogin.TryGetValue(row.AccountLogin, out var gitHubId)) continue;
+
+            // Patch the two fields directly so nothing else on the document is
+            // rewritten, and so a token whose owner we cannot resolve is left
+            // exactly as it was rather than silently losing its scope.
+            session.Advanced.Patch<ApiToken, long?>(row.Id, t => t.AccountGitHubId, gitHubId);
+        }
+
+        if (session.Advanced.HasChanges)
+            await session.SaveChangesAsync(cancellationToken);
     }
 }

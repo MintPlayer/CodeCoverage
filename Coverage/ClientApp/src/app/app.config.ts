@@ -21,7 +21,9 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes),
     provideHttpClient(...withSparkAuth()),
     provideAnimations(),
-    provideSparkAuth(),
+    // loginUrl must name a route that exists: the guard and the 401 interceptor
+    // both navigate here, and the default '/login' is a page we no longer mount.
+    provideSparkAuth({ loginUrl: '/sign-in' }),
     provideSparkAttributeRenderers([
       {
         name: 'coverage-bar',

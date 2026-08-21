@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
 import { sparkRoutes } from '@mintplayer/ng-spark/routes';
-import { sparkAuthRoutes } from '@mintplayer/ng-spark-auth/routes';
+import { githubProvider, sparkAuthRoutes, withExternalLogin } from '@mintplayer/ng-spark-auth/routes';
 import { ShellComponent } from './shell/shell.component';
 import { commitRedirectGuard, repositoryRedirectGuard } from './spark/vanity-redirects';
 
@@ -9,7 +9,13 @@ export const routes: Routes = [
     path: '',
     component: ShellComponent,
     children: [
-      ...sparkAuthRoutes(),
+      // GitHub is the only identity here, so only the external-login landing page
+      // is mounted. ng-spark-auth 22.3.0 made this opt-in by construction: with no
+      // feature the library emits no pages at all, and a page nobody opted into has
+      // no reachable import(), so the local-credential bundles are not shipped
+      // either. Deliberately omits withLocalLogin() and withRegistration() — the
+      // client half of dropping the local-password surface.
+      ...sparkAuthRoutes(withExternalLogin(githubProvider())),
       { path: '', redirectTo: 'home', pathMatch: 'full' },
       { path: 'home', loadComponent: () => import('./pages/home/home.component') },
       { path: 'a/:login', loadComponent: () => import('./pages/account/account.component') },

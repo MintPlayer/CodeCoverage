@@ -98,6 +98,18 @@ jobs:
       - name: Build
         run: dotnet build Coverage/Coverage.csproj --configuration Release
 
+      # The app connects to a database, it does not create one — in production the
+      # database is provisioned once, out of band. So the job has to do it, and
+      # waiting for Raven to answer is part of that: a service container is
+      # "started" before it is listening.
+      - name: Create the RavenDB database
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf --max-time 2 http://127.0.0.1:8080/build/version >/dev/null && break
+            sleep 2
+          done
+          curl -sf --max-time 10 -X PUT "http://127.0.0.1:8080/admin/databases?replicationFactor=1" -H 'Content-Type: application/json' -d '{"DatabaseName":"CoverageSmoke"}'
+
       # Staging, not Development: UseAngularCliServer is Development-only, so this
       # avoids spawning a dev server the job has no use for. The GitHub client id
       # is a placeholder and never leaves the runner — it exists because

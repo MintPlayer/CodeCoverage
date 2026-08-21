@@ -33,9 +33,13 @@ public partial class RepositoryActions : DefaultPersistentObjectActions<Reposito
         return RepositoryVisibility.Filter(entitled);
     }
 
-    /// <summary>BadgeToken grants badge access on private repos — managers only.</summary>
+    /// <summary>
+    /// BadgeToken grants badge access on private repos, so it is a credential and
+    /// goes to repository administrators only — not to everyone who can read the
+    /// repository, and not to everyone who can reach the owner's installation.
+    /// </summary>
     public override async Task<IReadOnlyCollection<string>?> GetProtectedAttributesAsync(string action, Repository entity)
-        => await visibility.CanManageOwnerAsync(entity.OwnerGitHubId)
+        => await visibility.CanManageRepositoryAsync(entity.GitHubId)
             ? null
             : [nameof(Repository.BadgeToken)];
 

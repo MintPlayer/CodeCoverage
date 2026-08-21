@@ -233,3 +233,38 @@ internal sealed class EmptyUserAccessService : IUserAccessService
     public Task<UserAccess?> GetAsync(CancellationToken ct = default) => Task.FromResult<UserAccess?>(null);
     public Task InvalidateAsync(CancellationToken ct = default) => Task.CompletedTask;
 }
+
+/// <summary>
+/// Entitlement without GitHub: the viewer is entitled to exactly the repository
+/// ids given, and administers exactly the ones given as admin. Mirrors the real
+/// shape — snapshot lookups, no calls — so list endpoints under test still make
+/// a real per-repository decision.
+/// </summary>
+internal sealed class ScriptedSparkVisibility(
+    long[]? entitledRepositoryIds = null,
+    long[]? administeredRepositoryIds = null,
+    long[]? allowedOwnerIds = null,
+    string[]? visibleRepositoryDocumentIds = null) : ISparkVisibility
+{
+    public Task<long[]> GetEntitledRepositoryGitHubIdsAsync()
+        => Task.FromResult(entitledRepositoryIds ?? []);
+
+    public Task<long[]> GetAllowedOwnerIdsAsync()
+        => Task.FromResult(allowedOwnerIds ?? []);
+
+    public Task<string[]> GetVisibleRepositoryIdsAsync()
+        => Task.FromResult(visibleRepositoryDocumentIds ?? []);
+
+    public Task<bool> CanManageRepositoryAsync(long repositoryGitHubId)
+        => Task.FromResult((administeredRepositoryIds ?? []).Contains(repositoryGitHubId));
+
+    public Task<bool> CanManageAccountAsync(long accountGitHubId)
+        => Task.FromResult((administeredRepositoryIds ?? []).Length > 0);
+}
+
+/// <summary>A viewer whose persisted entitlement snapshot is scripted outright.</summary>
+internal sealed class ScriptedUserAccessService(UserAccess? access) : IUserAccessService
+{
+    public Task<UserAccess?> GetAsync(CancellationToken ct = default) => Task.FromResult(access);
+    public Task InvalidateAsync(CancellationToken ct = default) => Task.CompletedTask;
+}

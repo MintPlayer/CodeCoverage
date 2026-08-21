@@ -225,9 +225,13 @@ Status legend: ✅ built 2026-08-12 (`feature/m10-m9-backlog`) · ⏳ deferred (
     `bs-table` + breadcrumb drill-down — pairs naturally with the `[(rootId)]`-synced sunburst.
 
 ### Added by the 2026-08-12 doc-vs-code re-audit
-29. ⏳ Admin-role gating: token/badge management currently requires only installation
-    *visibility* (any org member who can reach the installation can mint/revoke tokens);
-    gate on `GET /user/memberships/orgs/{org}` role=admin — PRD §6.3.
+29. ✅ **Superseded and shipped** as M3 of
+    [authorization-hardening.md](authorization-hardening.md): token/badge management no longer
+    gates on installation *visibility*. The `GET /user/memberships/orgs/{org}` role check proposed
+    here was dropped — the persisted per-repository `permissions` hash answers it without a new
+    OAuth scope, without a new App permission, and per-repo rather than per-org. The bar now
+    matches the reach of what is being managed (repo-scoped → Admin on that repo; account-scoped →
+    Admin across the account).
 30. ⏳ Reprocess-after-parser-fix endpoint/job replaying the retained raw attachments
     (PRD §5 keeps them for exactly this; no trigger exists yet).
 31. ✅ Cross-format branch-merge guard (`FileCoverage.BranchFormat`): branch detail merges

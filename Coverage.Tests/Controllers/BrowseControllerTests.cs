@@ -28,6 +28,7 @@ public class BrowseControllerTests : CoverageRavenTest
         services.AddSingleton<IGitHubAccessService>(new ScriptedAccessService(new([], GitHubTokenState.Ok)));
         services.AddSingleton<IGitHubContentService>(new NullContentService());
         services.AddSingleton<IRepositoryAccessService>(new ScriptedRepositoryAccessService());
+        services.AddSingleton<ISparkVisibility>(new ScriptedSparkVisibility());
         services.AddSingleton(GitHubAuthTestFakes.TestConfiguration());
         services.AddScoped<BrowseController>();
         return services.BuildServiceProvider().GetRequiredService<BrowseController>();

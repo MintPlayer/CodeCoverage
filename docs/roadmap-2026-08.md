@@ -499,10 +499,13 @@ creator (`UploadsController.cs:171-202`). A token minted by someone who has sinc
 write access indefinitely; uninstalling the App does not invalidate it. `PLAN.md` M0.2 promised
 expiry and it was not built.
 
-Alongside it, `PLAN.md` M9.29 / `PRD.md` §6.3: token and badge management currently gate on
-*installation visibility* (`TokensController.cs:37,81,108`, `RepoSettingsController.cs:33`), which is
-owner-granular — so any org member who can reach the installation, including read-only on one repo,
-can mint an account-scoped token covering the whole org and revoke everyone else's.
+~~Alongside it, `PLAN.md` M9.29 / `PRD.md` §6.3: token and badge management currently gate on
+*installation visibility*, which is owner-granular — so any org member who can reach the
+installation, including read-only on one repo, can mint an account-scoped token covering the whole
+org and revoke everyone else's.~~ **Fixed** as M3 of
+[authorization-hardening.md](authorization-hardening.md); the `memberships/orgs` role check it
+proposed was dropped in favour of the persisted per-repository `permissions` hash. The rest of this
+item — `ApiToken` expiry and a last-used stamp — still stands.
 
 ---
 

@@ -30,6 +30,16 @@ public interface ISparkVisibility
     /// </summary>
     Task<string[]> GetVisibleRepositoryIdsAsync();
 
-    /// <summary>Whether the viewer manages this owner (gates BadgeToken/InstallationId visibility).</summary>
-    Task<bool> CanManageOwnerAsync(long ownerGitHubId);
+    /// <summary>
+    /// Whether the viewer administers this repository — the gate on BadgeToken,
+    /// which is a credential however narrow. Snapshot-only: this runs once per
+    /// row in the redaction hook, so it must never trigger a GitHub call.
+    /// </summary>
+    Task<bool> CanManageRepositoryAsync(long repositoryGitHubId);
+
+    /// <summary>
+    /// Whether the viewer administers at least one repository of this account —
+    /// the gate on account-level operational detail (InstallationId).
+    /// </summary>
+    Task<bool> CanManageAccountAsync(long accountGitHubId);
 }

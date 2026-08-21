@@ -11,6 +11,7 @@ public partial class SparkVisibility : ISparkVisibility
 {
     [Inject] private readonly IGitHubAccessService gitHubAccess;
     [Inject] private readonly IUserAccessService userAccess;
+    [Inject] private readonly IAccountAccessService accountAccess;
     [Inject] private readonly IAsyncDocumentSession session;
 
     // Task-memoized so concurrent awaiters within the request share one computation.
@@ -35,8 +36,14 @@ public partial class SparkVisibility : ISparkVisibility
     public Task<string[]> GetVisibleRepositoryIdsAsync()
         => visibleRepositoryIds ??= QueryVisibleRepositoryIdsAsync();
 
-    public async Task<bool> CanManageOwnerAsync(long ownerGitHubId)
-        => (await GetAllowedOwnerIdsAsync()).Contains(ownerGitHubId);
+    public async Task<bool> CanManageRepositoryAsync(long repositoryGitHubId)
+    {
+        var access = await userAccess.GetAsync();
+        return access is not null && access.LevelFor(repositoryGitHubId) >= RepositoryAccessLevel.Admin;
+    }
+
+    public Task<bool> CanManageAccountAsync(long accountGitHubId)
+        => accountAccess.CanManageAnyRepositoryAsync(accountGitHubId);
 
     private async Task<string[]> QueryVisibleRepositoryIdsAsync()
     {

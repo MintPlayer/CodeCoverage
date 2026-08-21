@@ -25,8 +25,8 @@ namespace Coverage.Controllers;
 public partial class BrowseController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;
-    [Inject] private readonly IGitHubAccessService gitHubAccess;
     [Inject] private readonly IRepositoryAccessService repositoryAccess;
+    [Inject] private readonly ISparkVisibility entitlement;
     [Inject] private readonly IGitHubContentService gitHubContent;
     [Inject] private readonly IConfiguration configuration;
 
@@ -51,17 +51,20 @@ public partial class BrowseController : ControllerBase
     {
         var account = await ResolveAccount(login, cancellationToken);
         if (account is null) return Ok(Enumerable.Empty<RepoInfo>());
-        var includePrivate = await gitHubAccess.IsOwnerAllowedAsync(account.GitHubId, cancellationToken);
 
         var repos = await session.Query<Repository, Indexes.Repositories_Overview>()
             .Where(r => r.OwnerGitHubId == account.GitHubId)
             .Take(1024)
             .ToListAsync(cancellationToken);
 
+        // Per repository, from the viewer's snapshot — being a member of the
+        // owner is not a claim on all of its repositories. Snapshot lookups, so
+        // this is a list decision without a call per row.
+        var entitled = await entitlement.GetEntitledRepositoryGitHubIdsAsync();
         return Ok(repos
-            .Where(r => includePrivate || !r.IsPrivate)
+            .Where(r => RepositoryVisibility.IsVisible(r, entitled))
             .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(r => ToRepoInfo(r, includePrivate)));
+            .Select(r => ToRepoInfo(r, canManage: false)));
     }
 
     [HttpGet("repos/{owner}/{name}")]
@@ -69,7 +72,9 @@ public partial class BrowseController : ControllerBase
     {
         var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
         if (repository is null) return NotFound();
-        var canManage = await gitHubAccess.IsOwnerAllowedAsync(repository.OwnerGitHubId, cancellationToken);
+        // canManage decides whether BadgeToken leaves the server, so it is the
+        // administrative bar on this repository, not owner visibility.
+        var canManage = await repositoryAccess.GetAsync(repository, cancellationToken) >= RepositoryAccessLevel.Admin;
         return Ok(ToRepoInfo(repository, canManage));
     }
 
@@ -142,13 +147,15 @@ public partial class BrowseController : ControllerBase
     {
         var account = await ResolveAccount(login, cancellationToken);
         if (account is null) return Ok(new Dictionary<string, double[]>());
-        var includePrivate = await gitHubAccess.IsOwnerAllowedAsync(account.GitHubId, cancellationToken);
 
         var repos = await session.Query<Repository, Indexes.Repositories_Overview>()
             .Where(r => r.OwnerGitHubId == account.GitHubId)
             .Take(1024)
             .ToListAsync(cancellationToken);
-        var visible = repos.Where(r => includePrivate || !r.IsPrivate).ToDictionary(r => r.Id!, r => r.FullName);
+        var entitled = await entitlement.GetEntitledRepositoryGitHubIdsAsync();
+        var visible = repos
+            .Where(r => RepositoryVisibility.IsVisible(r, entitled))
+            .ToDictionary(r => r.Id!, r => r.FullName);
         if (visible.Count == 0) return Ok(new Dictionary<string, double[]>());
 
         var repoIds = visible.Keys.ToArray();
@@ -480,6 +487,11 @@ public partial class BrowseController : ControllerBase
 
     // BaseUrl rides along so the SPA builds badge markdown against the public
     // URL rather than location.origin (dead links when copied from localhost).
+    //
+    // canManage is false on list endpoints: it gates BadgeToken, and establishing
+    // administrative rights per row is not something a list should pay for. The
+    // single-repository endpoint answers it properly, which is where the badge UI
+    // asks anyway.
     private RepoInfo ToRepoInfo(Repository r, bool canManage)
         // Id first: the /r/{owner}/{name} route resolves it to forward into the
         // generic Spark detail page.

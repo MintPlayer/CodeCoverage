@@ -8,7 +8,7 @@
 | **M1** persisted per-repository entitlement + visibility leases | ✅ shipped |
 | **M2** close the anonymous surface | ✅ shipped |
 | **M3** split read from manage | ✅ shipped |
-| **M4** the accounts grid | 🔶 server side shipped; **client blocked on [Spark#308](https://github.com/MintPlayer/MintPlayer.Spark/pull/308)** |
+| **M4** the accounts grid | 🔶 server side shipped; interim card shipped; **client blocked on [Spark#308](https://github.com/MintPlayer/MintPlayer.Spark/pull/308) + [#309](https://github.com/MintPlayer/MintPlayer.Spark/issues/309)** |
 | **M5** surface hardening | 🔶 M5.1 (GitHub-only sign-in) shipped early; **the rest is rewritten by Spark preview.60 — see §5a** |
 | **M6** membership webhooks | ⬜ not started |
 | **M7** bound OIDC auto-provisioning | ⬜ not started |
@@ -18,9 +18,9 @@ thing in this repo that catches a startup-time failure. It earned its keep immed
 
 CI green on every commit. Suite 156/156.
 
-**Uncommitted, and a decision is pending:** `home.component.{html,ts}` are reverted to the working
-`bs-card` + list-group, because the grid rendered nothing (SP6, falsified). Either ship the two-class
-interim fix now, or wait for Spark#308 and swap to the grid — see M4.
+**Resolved 2026-08-21 (`8fa21af`):** the interim shipped. `home.component.{html,ts}` are back to the
+working `bs-card` + list-group, plus the two classes that fix the reported wrapping (`flex-wrap` on
+the row, `text-nowrap` on the badge). The grid returns when **two** upstream items publish — see M4.
 
 ### Things that went wrong, and what caught them
 
@@ -796,24 +796,53 @@ a running app: the query resolves by alias and an anonymous execute returns
 repositories the viewer may see, via `RepositoryVisibility.IsVisible`. The endpoint was fixed too,
 not just the UI that used it: it is still reachable directly.
 
-**Client side is blocked.** The grid renders nothing, because `spark-sub-query` requires a parent
-(SP6, falsified — see the spike table). Fixed upstream in
-[Spark#308](https://github.com/MintPlayer/MintPlayer.Spark/pull/308); needs a publish before Coverage
-can consume it.
+**Client side is blocked on two upstream items, not one.** This is the part that took two attempts
+to understand, so it is worth stating precisely.
 
-**Pending decision — pick one:**
+1. **[Spark#308](https://github.com/MintPlayer/MintPlayer.Spark/pull/308) — the parent requirement.**
+   `spark-sub-query` renders nothing without a parent (SP6, falsified — see the spike table). The PR is
+   **open, complete and unpublished**: the commit lives on `fix/parentless-sub-query`, is *not* an
+   ancestor of `master`, and `@mintplayer/ng-spark` **22.2.0 is already the newest release**. So this
+   cannot be picked up by bumping a version — it needs a merge and a publish.
+2. **[Spark#309](https://github.com/MintPlayer/MintPlayer.Spark/issues/309) — the hardcoded card.**
+   Even with #308 the component hardcodes its own `bs-card`, its `1rem 0` margin, and a header reading
+   `description || name`. **This is what deleted the card in the first place**, and with it the Resync
+   button, which had nowhere else to go. Only item (1) of that issue blocks us; the smallest fix is a
+   `showCard` input defaulting to today's behaviour.
 
-1. **Ship the interim now.** Keep the restored `bs-card` + list-group and fix the actual wrapping bug
-   with two classes: `flex-wrap` on `home.component.html`'s row (the sibling reauth alert 36 lines
-   above already has it) and `text-nowrap` on the badge. Fixes the reported complaint today, no
-   dependency on a publish.
-2. **Wait for Spark#308**, then swap to `<spark-sub-query queryId="my-accounts" />` and let the
-   component own the card — it renders its own `bs-card` + header from the query's `description`, so
-   the outer card comes out or you get a card inside a card.
+The issue also records three things that are not blocking but are worth having: no refresh input
+(which is the only reason the `gridEpoch` remount hack exists), a fetch `catch` that returns zero rows
+so **a failed query is indistinguishable from an empty one**, and a first-column auto-link to
+`/po/{alias}/{id}` that is a dead destination for a synthesised row.
 
-Either way the server work stands. Note for whoever does (2): `home.component.{html,ts}` are
-currently reverted in the working tree, and the grid markup — including the `gridEpoch` remount that
-makes Resync actually refresh — is in commit `62943e1` to restore from.
+**Interim shipped (`8fa21af`).** The card is back as it was, plus `flex-wrap` on the row and
+`text-nowrap` on the badge — the row was one unwrapping flex line holding a badge that will not
+shrink, inside `.card`'s `word-wrap: break-word`, so an over-constrained line broke mid-word. It now
+wraps at the badge instead.
+
+**Deliberately not done: vendoring a local copy of `spark-sub-query` into Coverage.** It would work
+today — `SparkService.executeQuery` and the execute endpoint both already accept a parentless call, so
+only the component's guard was ever wrong — but it means duplicating the renderer-registry lookup, the
+`showedOn` column derivation and the fetch/settings wiring, and then deleting it. Upstream is where
+that behaviour belongs.
+
+**The swap, once #308 and #309(1) publish** (this is the whole remaining change):
+
+```html
+<bs-card class="mt-3 d-block">
+  <bs-card-header>
+    <!-- ... the existing header, keeping the Resync button ... -->
+  </bs-card-header>
+  <div class="p-3">
+    <spark-sub-query queryId="my-accounts" [showCard]="false" />
+  </div>
+</bs-card>
+```
+
+Restore the rest — including the `gridEpoch` remount that makes Resync actually refresh — from commit
+`62943e1`, and drop the `gridEpoch` hack if #309(2) lands a refresh input. Everything else is already
+in place: the four curated columns pinned by `ModelColumnGuardTests`, the `account-login` and
+`app-installed` renderers registered in `app.config.ts`, and the `Authenticated` grant.
 
 #### Steps
 
@@ -833,8 +862,12 @@ makes Resync actually refresh — is in commit `62943e1` to restore from.
 4. **Aggregate over the *visible* repository set** — `RepositoryVisibility.IsVisible`, not the
    owner's whole set. This is finding A5 and it is the reason this milestone is a security item and
    not a cosmetic one.
-5. Replace the card body with `<spark-sub-query queryId="my-accounts" parentId="" parentType="" />`
-   (SP6). The component renders its own `bs-card` + header, so the existing card wrapper comes out.
+5. Replace the card **body** with `<spark-sub-query queryId="my-accounts" [showCard]="false" />`.
+   ⚠️ **Corrected 2026-08-21.** This step originally said the component renders its own `bs-card` and
+   header "so the existing card wrapper comes out" — which is what happened, and it was wrong. The
+   card's header carried the **Resync button**, and removing the card left it homeless. The card stays;
+   the component must be told not to draw one (Spark#309, item 1). `parentId`/`parentType` are no
+   longer passed at all once Spark#308 lands.
 6. Keep the grid to **three or four columns**. Column count, not CSS, is what makes this usable on a
    phone — see the honest note below.
 
@@ -1002,7 +1035,8 @@ branch has been a fairly productive source of upstream findings.
 | **U3** | `DefaultIndexAnalyzer.cs:136-138` states the base-type relationship backwards, claiming the two-arg form derives from the one-arg form. Measured against Raven 7.2.5 it is the reverse — and that comment is what would convince a maintainer U2 is already handled. | ⬜ **Not filed.** Cheap; worth doing with U2. |
 | **U4** | Per-query grid columns — Spark derives `showedOn` from projection-vs-entity membership, so a column cannot appear on one query of an entity and not another. | 🔶 [#284](https://github.com/MintPlayer/MintPlayer.Spark/issues/284) still open. This is what forces `MyAccountRow` to exist; when it ships, that type can collapse back into `Account`. |
 | **U5** | Async custom queries were second-class: `isAsync` stripped declared `sortColumns`, row-filter pushdown, search pushdown, index projection and `.Include()`. | ✅ Filed as [#294](https://github.com/MintPlayer/MintPlayer.Spark/issues/294), shipped in [#306](https://github.com/MintPlayer/MintPlayer.Spark/pull/306) / preview.59. Fixed better than proposed — capability is inferred from the runtime result, and they measured that my one-line version would have left both declared-weaker-than-actual cases failing. |
-| **U6** | `spark-sub-query` required a parent, so a standalone grid rendered nothing with no request, no error and no log. | 🔶 [#308](https://github.com/MintPlayer/MintPlayer.Spark/pull/308) open — **blocks M4's client half.** |
+| **U6** | `spark-sub-query` required a parent, so a standalone grid rendered nothing with no request, no error and no log. | 🔶 [#308](https://github.com/MintPlayer/MintPlayer.Spark/pull/308) open, complete, **unpublished** — not on `master`, and 22.2.0 is already the latest release, so no version bump reaches it. **Blocks M4's client half.** |
+| **U8** | `spark-sub-query` is not embeddable: it hardcodes its own `bs-card`, margin and header text, so a host page cannot own the chrome — which is what cost us the card and its Resync button. Also: no refresh input (forcing a remount hack), a fetch `catch` that makes a failed query look empty, and a first-column auto-link that is dead for a synthesised row. | 🔶 Filed as [#309](https://github.com/MintPlayer/MintPlayer.Spark/issues/309). Item (1) **also blocks M4's client half**; the other three have workarounds. |
 | **U7** | A regression test pinning that `--spark-synchronize-model` / `--spark-verify-model` still work under `LocalCredentials = Disabled` with no provider registered. | ⬜ **Not filed.** Verified by hand that they do (the guard lives in endpoint mapping, which the offline commands never reach), but nothing asserts it — so the guard could migrate into `AddAuthentication` and silently break every consumer's CI. |
 
 **Landed upstream without us asking**, and directly relevant: `#295` (the `sortColumns` parameter was

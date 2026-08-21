@@ -42,6 +42,15 @@ public partial class CommitActions : DefaultPersistentObjectActions<Commit>
         // Ordered through the index, whose AuthoredAt field is coalesced with
         // FirstSeenAtUtc — upload-only commits (no webhook timestamp) land in
         // chronological place instead of clustering at one end.
+        //
+        // The query also declares sortColumns: Date desc, which until Spark
+        // 10.0.0-preview.59 was silently ignored for an async custom query and now
+        // takes effect. Both survive because Commit.Date is the same coalescing
+        // (AuthoredAt ?? FirstSeenAtUtc), so the framework re-sorts the same order
+        // in memory — but that is a coincidence, not a design. This ordering is
+        // the one that matters: it runs server-side on an index term, before
+        // materialization, so it is what makes the query bounded rather than
+        // "fetch everything, then sort".
         var commits = await session.Query<Commits_ByRepository.Result, Commits_ByRepository>()
             .Customize(x => x.NoTracking())
             .Where(r => r.Repository == args.Parent!.Id)
@@ -51,10 +60,10 @@ public partial class CommitActions : DefaultPersistentObjectActions<Commit>
 
         StampCoverageDeltas(commits);
         // In-memory from here: the framework materializes every custom query in
-        // full before paging anyway, so this costs nothing extra — but it means
-        // the query's sortColumns may name computed properties (Date). If this
-        // ever returns a Raven queryable again, the sort must move back to an
-        // indexed field.
+        // full before paging anyway, so this costs nothing extra — and it is what
+        // lets the declared sortColumns name a computed property (Date), which a
+        // Raven queryable could not translate. If this ever returns a Raven
+        // queryable again, that sort must move to an indexed field.
         return commits.AsQueryable();
     }
 

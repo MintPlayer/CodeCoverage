@@ -28,58 +28,33 @@
             }
           </bs-alert>
         }
-        <bs-card class="mt-3 d-block">
-          <bs-card-header>
-            <div class="d-flex align-items-center">
-              <span class="me-auto">{{ 'app.yourAccounts' | t }}</span>
-              <button class="btn btn-sm btn-outline-secondary" (click)="resync()" [disabled]="loading()"
-                      title="Re-query GitHub for your organizations and installations">
-                <i class="bi bi-arrow-repeat"></i> Resync
-              </button>
-            </div>
-          </bs-card-header>
-          <div class="p-3">
-            @if (loading()) {
-              <div class="d-flex align-items-center gap-2">
-                <bs-spinner />
-                <span>{{ 'app.loadingAccounts' | t }}</span>
-              </div>
-            } @else if (accounts(); as list) {
-              @if (list.length === 0) {
-                <p class="text-muted mb-0">{{ 'app.noAccounts' | t }}</p>
-              } @else {
-                <bs-list-group>
-                  @for (account of list; track account.login) {
-                    <bs-list-group-item class="d-flex align-items-center gap-2">
-                      @if (account.avatarUrl) {
-                        <img [src]="account.avatarUrl" [alt]="account.login" width="24" height="24" class="rounded">
-                      } @else {
-                        <i class="bi" [class.bi-person]="account.type === 'User'" [class.bi-people]="account.type !== 'User'"></i>
-                      }
-                      <a [routerLink]="['/a', account.login]">{{ account.login }}</a>
-                      <span class="text-muted small me-auto">
-                        {{ account.repoCount }} {{ account.repoCount === 1 ? 'repo' : 'repos' }}
-                        @if (account.aggregateCoverage !== undefined && account.aggregateCoverage !== null) {
-                          · {{ account.aggregateCoverage }}%
-                        }
-                      </span>
-                      @if (account.installed) {
-                        <bs-badge class="text-bg-success">{{ 'app.appInstalled' | t }}</bs-badge>
-                      } @else {
-                        <bs-badge class="text-bg-secondary">{{ 'app.appNotInstalled' | t }}</bs-badge>
-                      }
-                    </bs-list-group-item>
-                  }
-                </bs-list-group>
-              }
-            }
-            <p class="text-muted small mt-3 mb-0">
-              {{ 'app.installAppHintBefore' | t }}
-              <a [href]="gitHubAppUrl()" target="_blank" rel="noopener">{{ 'app.installAppHintLink' | t }}</a>
-              {{ 'app.installAppHintAfter' | t }}
-            </p>
+        <div class="mt-3">
+          <div class="d-flex align-items-center mb-2">
+            <span class="me-auto fw-semibold">{{ 'app.yourAccounts' | t }}</span>
+            <button class="btn btn-sm btn-outline-secondary" (click)="resync()" [disabled]="loading()"
+                    title="Re-query GitHub for your organizations and installations">
+              <i class="bi bi-arrow-repeat"></i> Resync
+            </button>
           </div>
-        </bs-card>
+          <!--
+            The grid replaces a bs-list-group whose row was one unwrapping flex
+            line: the badge would not shrink, .card lets an over-constrained line
+            break mid-word, and there was no flex-wrap, so rows fractured on a
+            phone. A datatable cell is nowrap + ellipsis, so rows stay one line
+            and uniform height.
+
+            Parentless on purpose: the home page has no parent persistent object,
+            and Spark skips parent resolution when parentId/parentType are empty.
+          -->
+          @for (epoch of [gridEpoch()]; track epoch) {
+            <spark-sub-query queryId="my-accounts" parentId="" parentType="" />
+          }
+          <p class="text-muted small mt-3 mb-0">
+            {{ 'app.installAppHintBefore' | t }}
+            <a [href]="gitHubAppUrl()" target="_blank" rel="noopener">{{ 'app.installAppHintLink' | t }}</a>
+            {{ 'app.installAppHintAfter' | t }}
+          </p>
+        </div>
       }
     </div>
   </div>

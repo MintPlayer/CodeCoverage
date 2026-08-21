@@ -51,7 +51,18 @@ public partial class MeController : ControllerBase
             .Where(r => r.OwnerGitHubId.In(owners))
             .Take(4096)
             .ToListAsync(cancellationToken);
-        var reposByOwner = repos.ToLookup(r => r.OwnerGitHubId);
+        // Only the repositories this viewer is entitled to contribute to the count
+        // and the coverage. Aggregating an owner's whole set would disclose that
+        // private repositories exist which the viewer has no entitlement to, and
+        // would report a coverage figure computed partly from them. The rule comes
+        // from RepositoryVisibility, so there is one definition of it.
+        var access = await userAccess.GetAsync(cancellationToken);
+        var entitled = access is null
+            ? []
+            : access.Repositories.Select(r => r.RepositoryGitHubId).ToArray();
+        var reposByOwner = repos
+            .Where(r => RepositoryVisibility.IsVisible(r, entitled))
+            .ToLookup(r => r.OwnerGitHubId);
 
         var byGitHubId = known.ToDictionary(a => a.GitHubId);
 

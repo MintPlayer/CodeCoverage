@@ -64,7 +64,14 @@ public partial class UploadsController : ControllerBase
         var commit = await session.LoadAsync<Commit>(commitId, cancellationToken);
         if (commit is null)
         {
-            commit = new Commit { Sha = form.CommitSha, Repository = repository.Id, FirstSeenAtUtc = DateTimeOffset.UtcNow };
+            // Composed, not repository.Id: on the auto-provision path the
+            // repository was stored moments ago in this same session.
+            commit = new Commit
+            {
+                Sha = form.CommitSha,
+                Repository = Entities.Repository.DocumentId(repository.GitHubId),
+                FirstSeenAtUtc = DateTimeOffset.UtcNow,
+            };
             await session.StoreAsync(commit, commitId, cancellationToken);
         }
         commit.Branch ??= form.Branch;
@@ -445,7 +452,11 @@ public partial class UploadsController : ControllerBase
         repository = new Repository
         {
             GitHubId = gitHubRepoId,
-            Account = account.Id,
+            // The composed id, not account.Id: for a just-stored document the
+            // latter depends on RavenDB having assigned the identity property
+            // already, which holds for an explicit id but not for every id
+            // convention. The value is the same and this cannot be null.
+            Account = Account.DocumentId(ownerId),
             Name = fullName.Split('/')[1],
             FullName = fullName,
             OwnerLogin = ownerLogin,

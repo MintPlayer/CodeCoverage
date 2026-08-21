@@ -317,7 +317,10 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
 
     private static void ApplyRepositoryFields(Repository repository, string name, string fullName, bool isPrivate, Account account)
     {
-        repository.Account = account.Id;
+        // Composed, not account.Id: GetOrCreateAccount may have stored this
+        // account moments ago, and a reference that silently lands null detaches
+        // the repository from its owner for every gate that reads it.
+        repository.Account = Account.DocumentId(account.GitHubId);
         repository.Name = name;
         repository.FullName = fullName;
         repository.OwnerLogin = fullName.Split('/')[0];

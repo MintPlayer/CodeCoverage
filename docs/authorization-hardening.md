@@ -33,6 +33,16 @@
 - **`RAVENDB_LICENSE`** → exists as an org-wide secret, so this plan has **no external prerequisite**
   and `PLAN.md` M9.26's blocker is stale.
 
+**M4 revised 2026-08-21** after a three-agent investigation (Spark's index/query pipeline; the
+Vidyano+CronosCore reference apps at `C:\Repos\Fleet` and `C:\Repos\Insurance`; a design review of
+the proposed multi-map index). The owner's index-based design was **assessed and rejected on three
+independent grounds** — it cannot express the `!IsPrivate` half of the visibility rule, Spark's row
+security drops projected rows whose id names no document, and `LoadDocument<Account>` would collide
+with M2's five-minute publicity reconciliation. Two premises also turned out false: Spark pages **in
+memory on every path**, so no index buys paging, and `[IgnoreForIndex]` is not the column-leak fix.
+The actual sorting win is one keyword (`isAsync`). See §6 M4 for the evidence and §6a for the four
+upstream asks that fell out of it.
+
 **No spike now blocks implementation.** Everything remaining is a first-run observation (SP1's
 selected-repositories edge, SP3's owner check, SP13's `Repository` nullability) that the code should log
 rather than a question that must be answered before writing it.
@@ -462,6 +472,9 @@ be resolved by guessing.
 | **SP10** | ~~Which membership events can the App receive, under which permission?~~ | — | **RESOLVED 2026-08-20** by the owner inspecting and configuring the App: `Organization: Members: Read` + four subscriptions — **Member**, **Organization**, **Team**, **Team add**. Two invalidation shapes (targeted vs epoch) per D3. |
 | **SP12** | ~~Is `Membership` subscribable?~~ | — | **RESOLVED 2026-08-20** — owner subscribed it. Handle as a **targeted** invalidation (payload names the user). Team-mediated access is now covered from both sides; TTL set to 60 min. |
 | **SP13** | ~~Are `team` payloads resolvable to an `Account`?~~ | — | **RESOLVED 2026-08-20** by reflecting over `Octokit.Webhooks` 4.1.2 (the package already referenced) — see the payload table in D3. **Yes**: every relevant event carries `Organization` with an `Int64 Id`. Residual, cheap: confirm `Repository` is non-null on the `added_to_repository` / `removed_from_repository` actions specifically, which would allow a narrower invalidation than the account-wide epoch. |
+| **SP14** | Can `My_Accounts` be made **synchronous**? It needs the viewer's id and their `UserAccess` snapshot; the id is available from `HttpContext.User` claims without awaiting, but the snapshot load is async. Determine whether pre-warming it makes a synchronous body possible, and whether `ISparkVisibility`'s task-memoized members are already complete by the time a custom query runs. | This is the entire user-visible win of M4 (finding D): `isAsync` gates declared sorting, row-filter pushdown, search pushdown, index projection and `.Include()`. If it cannot be made synchronous, header-click sorting stays inert and the PR should say so rather than let it look like an oversight. | Read what `QueryExecutor` awaits before invoking the method (`:235-330`), then try it. |
+| **SP15** | Can a plain CLR row type (`MyAccountRow`) be exposed as an `IRavenQueryable<>` root on `CoverageSparkContext` and get **its own model file**, with no RavenDB collection behind it? Does `--spark-synchronize-model` generate one, does `modelHashes.json` accept it, and does the startup gate pass? | M4 step 3 — the only fix for the column leak (finding B) short of Spark#284. The pattern exists in the Vidyano reference apps (`Fleet/Service/FleetContext.cs:124-125` returns `null!` for a PO with no Raven backing), but Spark is unverified. | Add the root, synchronize, then boot in a **non-Development** environment — that is where the hash gate throws rather than warns. |
+| **SP16** | Confirm the grid's aggregate semantics with the owner: is "repositories" **"those I am explicitly entitled to"** or **"those I can see"** (which includes public repositories of a reachable owner where the viewer holds no explicit permission)? | Finding C1. The two differ, today's code answers the second, and an index could only ever answer the first. It changes the number on screen, so it is a product decision — and it is *why* the index was rejected, not a detail of how to build one. | Owner's call. Recommendation: keep "those I can see", matching every other surface. |
 | **SP11** | ~~Can per-installation granted permissions be read at runtime?~~ | — | **RESOLVED 2026-08-20 from the referenced assemblies.** `Octokit.Webhooks.Models.Installation.Permissions` is an `AppPermissions`, which exposes **`Members`** (alongside `Administration`, `Contents`, `Metadata`, …); `Octokit.InstallationPermissions` exposes `Members` too, for the REST path. So the flag is readable with no new dependency. ⚠️ **Implementation trap:** only the **`installation`** event carries the full `Installation` model. Every other event (`MemberEvent`, `TeamEvent`, `MembershipEvent`, …) carries **`InstallationLite`, which has just `Id` and `NodeId`** — no permissions. So read and persist `Members` on the `installation` / `new_permissions_accepted` events (already handled at `GitHubEventsRecipient.cs:66-72`) and store it on `Account`; do not expect to read it off the event you happen to be handling. |
 | **SP6** | Does a Spark **custom query** return rows when `parentId`/`parentType` are bound to empty strings from a page with no parent PO? | The accounts-grid design depends on a parentless `spark-sub-query`. Read as correct on both halves of the wire (`SparkService.executeQuery` only appends truthy params; `Spark@Endpoints/Queries/Execute.cs:96-108` skips parent resolution when either is empty) — but it has never been *run*. | Declare the query, bind `parentId=""`, load the page. |
 | **SP7** | Is `POST /spark/auth/register` actually reachable on the deployed instance (C1)? | Determines whether C1 is a live surface or only a mapped one. **[unverified]** — the code maps it; production behaviour untested. | `curl -X POST https://coverage.mintplayer.com/spark/auth/register …` against production. |
@@ -577,43 +590,146 @@ not show the controls.
 
 ### M4 — The accounts grid 🟦 · cost M
 
-Item (2). Verdict from the investigation: **do it as a CustomQuery** — Spark unambiguously supports a
-custom query over a computed, non-Raven row set (`Spark@QueryExecutor.cs:328-346`, pinned by
-`QueryExecutorAdvancedIntegrationTests.cs:331-345` which asserts `TotalRecords == 1` with RavenDB never
-seeded), and this repo already ships that exact shape in `CommitActions.cs:45-58`.
+Item (2) of the original ask. **Revised 2026-08-21 after a three-agent investigation** of Spark's
+index/query pipeline, the two Vidyano+CronosCore reference apps (`C:\Repos\Fleet`,
+`C:\Repos\Insurance`), and a design review of the owner's proposed multi-map index. The revision
+matters: the first version of this milestone was building on two false premises.
 
-1. `AccountActions.My_Accounts(CustomQueryArgs)` — `MeController.GetAccounts`' body transplants nearly
-   verbatim. Return a **synchronous** `IQueryable<Account>` (do the awaits in a helper) per **SP9**.
-2. `RepoCount` / `AggregateCoverage` as `[JsonIgnore]` transient properties + model attributes with
-   `showedOn: "Query"` — the pattern already proven by `Commit.CoverageDelta` (`Commit.cs:63-64` +
-   `Model/Commit.json:57-72`). Note **SP8**.
-3. **Give synthetic rows a distinct `Id`.** Owners with no `Account` document currently get a row with
-   no document id (`MeController.cs:66`), and `QueryExecutor.cs:364` does `DistinctBy(po => po.Id)` —
-   null ids **collapse the whole result to one row**. This is the single sharpest trap in M4.
-4. **Aggregate over the *visible* repo set, not the owner's** — fixes A5, which becomes a live leak once
-   M1/M3 land.
-5. Declare the query in `Model/Account.json` with `entityType` set (blank ⇒ silently empty result,
-   `QueryExecutor.cs:367-378`), re-run `--spark-synchronize-model` to rewrite `modelHashes.json`, or
-   non-Development startup throws.
-6. Replace the card body with `<spark-sub-query queryId="my-accounts" parentId="" parentType="" />`
-   per **SP6**. The component renders its own `bs-card` + header, so the existing card wrapper comes out.
-7. Curate `showedOn` to **Login / Installed / Coverage** so ~3 columns fit a phone.
+#### What the investigation overturned
 
-**Honest note on mobile.** The Spark datatable is *not* responsive: its entire shipped stylesheet
-contains one at-rule (`prefers-reduced-motion`), and `[isResponsive]` is a dead input whose own JSDoc
-calls it "legacy […] currently a CSS hook" with no matching property on the underlying web component.
-What it *does* fix is exactly the reported complaint — `white-space: nowrap` + `text-overflow: ellipsis`
-on every cell make the mid-word fracture impossible and rows uniform height, with overflow confined to
-the grid's own `overflow: auto` box. What you get instead is a shrunken desktop table behind a
-horizontal swipe, with sub-44px touch targets and 6px `col-resize` handles adjacent to the sort toggle.
-So the win is real but it is a *change* of failure mode, and step 7 — column curation — is the lever
-that actually buys mobile quality.
+**A. An index buys sorting, not paging.** Spark pages **in memory on every path** — `Database.*` and
+`Custom.*` alike: `QueryExecutor.cs:69-73` materializes the whole result, counts it, then
+`Skip().Take()`. `CustomQueryArgs` (25 lines) exposes only `Parent`/`ParentType`/`Query`, so a custom
+query cannot page even voluntarily. No index design changes this. State the goal as *sorting*.
 
-**Cheap interim, if M4 slips**: the root cause is that `home.component.html:53` sets `d-flex` with no
-`flex-wrap` (the sibling reauth alert 36 lines above *does* have it), while `.card { word-wrap: break-word }`
-lets the over-constrained line fracture mid-word and the badge's `white-space: nowrap` refuses to shrink.
-Adding `flex-wrap` there plus `text-nowrap` on the badge stops the fracture in two classes — no Spark
-work, but no sorting, paging, row security or renderer reuse either.
+**B. `[IgnoreForIndex]` is not the column-leak fix, and the leak is live.** Spark never reads
+Newtonsoft's `[JsonIgnore]` — model membership is `IsSparkModelProperty`
+(`Abstractions/Reflection/ReflectedTypeExtensions.cs:114-124`) — so `RepoCount`,
+`AggregateCoverage` and `IsAppInstalled` really are mapped into `VAccount`, and curating them to
+`showedOn: "Query"` puts three meaningless columns on the **anonymous** `GetAccounts` grid. Marking
+them `[IgnoreForIndex]` would narrow `showedOn` to `PersistentObject`, removing them from *every*
+grid including this one. With today's Spark you cannot have a column on one Account grid and not the
+other — that is SP8 / [Spark#284](https://github.com/MintPlayer/MintPlayer.Spark/issues/284).
+
+**C. The proposed multi-map/reduce index does not work.** Three independent blockers:
+
+1. **It cannot express the visibility rule.** `RepositoryVisibility.Filter` is
+   `!IsPrivate || GitHubId.In(entitled)`. `UserAccess.Repositories` carries only the second
+   disjunct — `GitHubEntitlementSource` fills it from `/user/installations/{id}/repositories`, i.e.
+   repositories with *explicit* permission. A **public** repository of a reachable owner on which the
+   viewer has no explicit permission is counted today and would be **silently dropped** by an index
+   fanning out that list. Closing the gap needs "every repository where `OwnerGitHubId == X &&
+   !IsPrivate`", which is a *query*: map-reduce is a `GROUP BY`, not a `JOIN`, and `LoadDocument`
+   takes an id, so there is nothing to join from. Failure mode: a wrong number on screen, no error.
+2. **Spark drops the rows.** `AccountActions` overrides **both** row hooks, so a `[FromIndex]`
+   projection on `Account` takes the projecting branch of `RowSecurity.FilterAsync:196-206`, where a
+   row whose `Id` names no document is `continue`d — and `RedactAsync:318-326` blanks every attribute
+   of such a row instead. That is exactly the synthetic rows for owners with no `Account` document
+   that `AccountActions.Row` exists to produce.
+3. **`LoadDocument<Account>` would be a re-index storm of our own making.** RavenDB re-indexes every
+   source document that referenced a changed document, re-running its whole map. `Account` is among
+   the most-written documents here: `AccessEpoch` bumps on installation/team webhooks (D3) and
+   `AccountPublicityService.ReconcileAllAsync` rewrites `PublicRepoCount` **every five minutes** from
+   `RefreshVisibilityLeasesCronJob`. Never put `Account` in this index.
+
+**D. The user-visible win is one keyword.** `QueryExecutor.cs:425-426` computes
+`isRavenQueryable`/`isQueryable` as `!isAsync && …`, and `isAsync` gates **more than SP9 recorded**:
+declared `sortColumns` (`:322-326`), row-filter pushdown (`:309-312`), search pushdown (`:317-320`),
+index projection (`:291-294`) *and* `.Include()` (`:297-305`) are all skipped for a
+`Task<>`-returning custom query. This milestone's own step 1 already said "return a **synchronous**
+`IQueryable<Account>`"; the code shipped `async Task<IQueryable<Account>>` and therefore has no
+sorting. Making it synchronous is the whole win.
+
+#### Decision
+
+**Compute the rows in memory; do not build the index.** It is the only option that preserves A5's
+per-viewer correctness with **one** definition of visibility (`RepositoryVisibility.IsVisible`, shared
+with the row filter, so drift is impossible) and zero staleness, and the sorting complaint is
+addressed by D rather than by an index. The escalation path is recorded below for when — if ever —
+the grid outgrows it.
+
+Rejected alternatives, with the reason each fails, so this is not relitigated: the proposed
+multi-map/reduce (C1–C3); a single-map + `LoadDocument` variant (same C1/C3); and denormalizing the
+aggregates onto `UserAccess` at rebuild time — which looks attractive until you notice a coverage
+upload bumps neither the TTL nor `AccessEpoch`, so the app's headline number would be **up to 60
+minutes stale with no signal**. That last one is the most tempting and the most dangerous.
+
+#### Steps
+
+1. **Make `My_Accounts` synchronous** (`AccountActions.cs`). Resolve the viewer from
+   `HttpContext.User` claims (no await) and pre-warm the `UserAccess`/visibility snapshot so the
+   method body needs no `await`; return `IQueryable<Account>`. Then declare `sortColumns` in the query
+   and drop the in-method `OrderBy` once header-click sorting is verified. Depends on **SP14**.
+2. **Retro-apply the same fix to `CommitActions.Repository_Commits`**, which declares
+   `sortColumns: Date desc` that has never run (SP9) — it only looks correct because the method
+   orders internally.
+3. **Give the row its own model entity type** (`MyAccountRow`), exposed as an `IRavenQueryable<>`
+   root on `CoverageSparkContext` so `ModelShapeDiscovery.QueryableRoots` gives it its own model file
+   and its own three columns — then **remove `RepoCount`/`AggregateCoverage`/`IsAppInstalled` from
+   `Account`**, which also removes three meaningless columns from the anonymous `GetAccounts` grid
+   (finding B). Depends on **SP15**. If SP15 says no, accept the leak and track Spark#284 instead;
+   do not reach for `[IgnoreForIndex]`.
+4. **Aggregate over the *visible* repository set** — `RepositoryVisibility.IsVisible`, not the
+   owner's whole set. This is finding A5 and it is the reason this milestone is a security item and
+   not a cosmetic one.
+5. Replace the card body with `<spark-sub-query queryId="my-accounts" parentId="" parentType="" />`
+   (SP6). The component renders its own `bs-card` + header, so the existing card wrapper comes out.
+6. Keep the grid to **three or four columns**. Column count, not CSS, is what makes this usable on a
+   phone — see the honest note below.
+
+**Honest note on mobile, unchanged from the first draft.** The Spark datatable is *not* responsive:
+its entire shipped stylesheet contains one at-rule (`prefers-reduced-motion`), and `[isResponsive]` is
+a dead input whose own JSDoc calls it "legacy […] currently a CSS hook". What it *does* fix is exactly
+the reported complaint — `white-space: nowrap` + `text-overflow: ellipsis` make the mid-word fracture
+impossible and rows uniform height, with overflow confined to the grid's own `overflow: auto` box.
+What you get instead is a shrunken desktop table behind a horizontal swipe, with sub-44px touch
+targets. The win is real but it is a *change* of failure mode; step 6 is what buys mobile quality.
+
+**Cheap interim, if M4 slips.** `home.component.html:53` sets `d-flex` with no `flex-wrap` (the
+sibling reauth alert 36 lines above *does* have it), while `.card { word-wrap: break-word }` lets the
+over-constrained line fracture mid-word and the badge's `white-space: nowrap` refuses to shrink.
+Adding `flex-wrap` there plus `text-nowrap` on the badge stops the fracture in two classes.
+
+#### Escalation path, if the grid ever outgrows in-memory computation
+
+Only for a viewer with thousands of owners, which is not a real shape today. Recorded so the design
+is not rediscovered from scratch, and shaped to avoid all three blockers:
+
+- Store the per-owner **visible repository id list** on `UserAccess` at rebuild time, computed in C#
+  with `RepositoryVisibility.IsVisible` — so visibility still has exactly one definition, and the
+  index only aggregates.
+- Aggregate with `AbstractMultiMapIndexCreationTask<MyAccountRow>` + `Reduce`. **Never** the two-arg
+  `AbstractIndexCreationTask<TDoc,TReduce>`: Spark's catalog matches only the one-generic-argument
+  forms (`SparkMiddleware.cs:532-548`, `IndexCatalog.cs:214-236`), so the two-arg form is *deployed
+  by `IndexCreation.CreateIndexes` but invisible to the catalog*, and a query naming it throws.
+  Measured against Raven 7.2.5 — and note Spark's own `DefaultIndexAnalyzer.cs:136-138` comment
+  asserts the opposite, which is 🟩 upstream bug report **U3**.
+- `LoadDocument` **only `Repository`**, never `Account` (blocker C3). Freshness then rides on
+  reference re-indexing: seconds, not the 60 minutes a denormalized field would cost.
+- Materialize with `OutputReduceToCollection` so rows are real documents. That restores everything
+  blocker C2 takes away: a `UserId` row filter that composes server-side, working redaction, a
+  clickable detail page, and its own model file (so no column leak). Caveats to verify first:
+  artificial documents are per-node and not replicated, and the row type needs its own `security.json`
+  grant — where `Everyone` is the only group today, making the `UserId` filter the sole gate.
+- Follow the reference apps' **zero-seed** pattern
+  (`Insurance.Library/Indexes/InsurancePolicyDocumentTypes_InsurancePolicyDocumentCount.cs`): map 1
+  seeds `count = 0` from the parent collection, map 2 emits `1` per child, reduce sums. Without the
+  seed, an account with no visible repositories produces no reduce group and **vanishes from the
+  grid**. `Insurance.Library/Indexes/People_DKVErrors.cs:705-716` documents the same trap from the
+  other side.
+- `StoreAllFields(FieldStorage.Yes)` is mandatory and is unconditional house style in both reference
+  apps. Spark calls `ProjectInto<T>()` for you (`QueryExecutor.ApplyProjection`), so never write it
+  in app code on these paths.
+- Reduce-computed columns must be **hand-added** attributes in the model JSON with
+  `isRequired: false` — the synchronizer preserves them (`ModelSynchronizer.cs:708-750`) but never
+  generates them, and `isRequired` would make `ValidationService` block every save of the type.
+- The index must be registered when `--spark-synchronize-model` runs, or the synchronizer **silently
+  retargets the query's `indexName` to the entity default** (`ModelSynchronizer.cs:148-158`).
+- Never make the reduce index the entity's `[DefaultIndex]`: the PO-list path hardcodes
+  `isMapReduce: false` (`DatabaseAccess.cs:419`).
+- **We would be the first.** `grep -rn "Reduce\s*=|OutputReduceToCollection"` across all of Spark —
+  libs, tests, and every demo app — returns **zero hits**. Multi-map *registration* is tested;
+  multi-map *querying* is not tested at all. A verification spike is mandatory, not optional.
 
 ### M5 — Surface hardening 🟦 · cost S–M
 
@@ -697,6 +813,20 @@ stricter tier for auto-provisioned repos", so implement it there rather than dup
 Reconsider-if: the argument for keeping auto-provisioning was onboarding friction, which is weak with no
 users yet. If the quota turns out to be more than an M, **requiring the App to be installed** is now a
 cheap alternative that deletes A2's root cause instead of bounding it — revisit rather than grind.
+
+---
+
+## 6a. Upstream Spark asks
+
+Generic concerns, so they belong upstream per the layering rule — one PR per repo. None blocks the
+revised M4; U1 unblocks a design option, U2/U3 are correctness reports.
+
+| # | Ask | Why it is Spark's problem, not Coverage's |
+|---|---|---|
+| **U1** | **Drop the parameterless-constructor requirement on `SparkContext`.** `SparkMiddleware.cs:154` registers the context via DI (so constructor injection works at runtime), but the offline model commands build it with `Activator.CreateInstance` and *check* for a public parameterless ctor, exiting `ExitMisconfigured` (`SparkDevelopmentExtensions.cs:312-321`); the generic overload additionally constrains `where TContext : SparkContext, new()` (`:82`). The code's own comment says the synchronizer "reflects over the context's property **TYPES** and never invokes a getter", so the instance is only a carrier for its `Type`. Fix: take a `Type`, or use `RuntimeHelpers.GetUninitializedObject`. | Until this lands, no consuming app can put a request-scoped dependency (a current user, a tenant) on its context — the natural home for a "my …" query. |
+| **U2** | **`AbstractIndexCreationTask<TDoc,TReduce>` is deployed but invisible to the index catalog.** `IsAbstractIndexCreationTask` (`SparkMiddleware.cs:532-548`) and `GetCollectionTypeFromIndex` (`IndexCatalog.cs:214-236`) match only the one-generic-argument forms, while `IndexCreation.CreateIndexes` (`:522`) deploys everything. So the *standard* map-reduce base class yields a live index no query can bind to, and the failure is a throw at query time rather than at startup. | It is the most natural way to write a map-reduce index, and the trap is silent until a query names it. |
+| **U3** | **`DefaultIndexAnalyzer.cs:136-138` states the base-type relationship backwards.** Its comment claims the two-argument form derives from the one-argument form "so the walk covers it". Measured against Raven 7.2.5 the reverse is true: `AbstractIndexCreationTask<T>` derives from `AbstractIndexCreationTask<T,T>`. That comment is what would lead a maintainer to believe U2 is already handled. | A wrong comment in the analyzer guarding this exact area. |
+| **U4** | *(already filed)* [Spark#284](https://github.com/MintPlayer/MintPlayer.Spark/issues/284) — per-query grid columns. Spark derives `showedOn` from projection-vs-entity membership (`ModelSynchronizer.cs:585-601`), so a column cannot appear on one query of an entity and not another. This is what forces M4 step 3's separate row type. | Without it, every computed column added for one grid leaks onto every other grid of the same entity. |
 
 ---
 

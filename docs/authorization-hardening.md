@@ -1,6 +1,42 @@
 # PRD + Plan — Authorization hardening: per-repository entitlement, anonymous surface, and the accounts grid
 
-**Status: PROPOSED 2026-08-20. Not started.**
+**Status: IN PROGRESS on branch `authorization-hardening`, [PR #16](https://github.com/MintPlayer/CodeCoverage/pull/16) (draft). Last updated 2026-08-21.**
+
+| Milestone | State |
+|---|---|
+| **M0** re-key entitlement on `GitHubId` | ✅ shipped |
+| **M1** persisted per-repository entitlement + visibility leases | ✅ shipped |
+| **M2** close the anonymous surface | ✅ shipped |
+| **M3** split read from manage | ✅ shipped |
+| **M4** the accounts grid | 🔶 server side shipped; **client blocked on [Spark#308](https://github.com/MintPlayer/MintPlayer.Spark/pull/308)** |
+| **M5** surface hardening | 🔶 M5.1 (GitHub-only sign-in) shipped early; **the rest is rewritten by Spark preview.60 — see §5a** |
+| **M6** membership webhooks | ⬜ not started |
+| **M7** bound OIDC auto-provisioning | ⬜ not started |
+
+Also shipped along the way: Spark **preview.59** adoption, and a **CI boot smoke job** — the only
+thing in this repo that catches a startup-time failure. It earned its keep immediately (see F1 below).
+
+CI green on every commit. Suite 156/156.
+
+**Uncommitted, and a decision is pending:** `home.component.{html,ts}` are reverted to the working
+`bs-card` + list-group, because the grid rendered nothing (SP6, falsified). Either ship the two-class
+interim fix now, or wait for Spark#308 and swap to the grid — see M4.
+
+### Things that went wrong, and what caught them
+
+Recorded because each is a class of failure this plan should keep expecting, not a one-off.
+
+| # | What | What caught it |
+|---|---|---|
+| **F1** | M0's migration called a `query()` helper that RavenDB's patch scripting does not have. It threw at startup and **would have failed the production deploy.** | Booting the app. 154 green tests said nothing. |
+| **F2** | `spark-sub-query` requires a *parent*, so the new grid rendered nothing — no request, no error, no log. **SP6 was falsified.** | A browser, via Playwright. No test could have. |
+| **F3** | Twice I inferred document state from an id (`repository.Id is null` as "newly inserted"; re-parsing a repo id out of an id the same code had just built). | Owner review. |
+| **F4** | My first `PublicRepoCount` design had writers *recount* from an index that had not seen the pending write — every writer would have persisted a stale number. | Caught before commit, while writing the reconciliation. |
+| **F5** | A commit labelled "docs: … no code changes" carried 229 lines of known-defective M4 code, swept in by `git add -A`. | Re-reading `--stat` before answering a status question. |
+| **F6** | My planned C4 fix was `[ValidateAntiForgeryToken]`. Spark#307 measured that it **implements a different interface** from the one Spark's gate reads: *"the obviously-correct annotation compiled, read as protection, and did nothing."* | Upstream, before I wrote it. |
+
+The pattern: **tests confirmed the things tests can see.** Every finding above needed a boot, a
+browser, a reviewer, or an upstream measurement.
 
 **Owner decisions taken 2026-08-20, all folded in below:**
 
@@ -434,6 +470,42 @@ Ranked. Everything **[verified]** unless marked. "New" = not previously recorded
 | **C7** | **`POST /api/github/webhooks` is not rate-limited** — Coverage narrowed `PathPrefixes` to `/spark`, `/connect`, `/api/browse`. Signature verification is sound and constant-time, but each request costs an HMAC over the full body first. | `Program.cs:101-102` | ✅ |
 | **C8** | **`GetVisibleRepositoryIdsAsync` is unbounded** and feeds an `IN` clause covering *all* publicly-visible repos. Behaviour at Raven's clause limits **[unverified]** — see SP2. | `SparkVisibility.cs:31-35`; `CommitActions.cs:28` | ✅ |
 
+### Closed, with the commit that closed each
+
+| # | Finding | Closed by |
+|---|---|---|
+| **A1** | Private source disclosed across an org, via the installation token behind an owner-granular check | `8b255ac` (M1) + `f310d80` — per-repository entitlement, plus a live re-check on the private-source path and the installation token passed only for a verified viewer |
+| **A2** | OIDC-provisioned repositories marked public forever | `8b255ac` (M1) — `VisibilityCheckedAtUtc` lease, renewed inline and by a cron sweep |
+| **A3** | Manage rights equalled read rights | `1d3bcfd` (M3) — `Admin` on the repository, or across the account for an account-scoped token |
+| **A4** | Every account anonymously enumerable | `ce453c8` (M2) — `AccountVisibility` + `PublicRepoCount` |
+| **A5** | Home-card aggregates spanned repositories the viewer may not see | `62943e1` (M4) — both the grid *and* `/api/me/accounts` |
+| **B1** | `Repository.Gate` anonymously readable | `ce453c8` (M2) |
+| **B2** | CI internals on the anonymous build grid | `ce453c8` (M2) |
+| **B3** | `InstallationId` redacted but sortable | `ce453c8` (M2), and generalised upstream by Spark#295 |
+| **B4** | `/health/ready` echoed exception text | `ce453c8` (M2) |
+| **C1** | Local-password surface mounted and anonymous | `4a67ba2` (M5.1), both tiers, proven by the CI smoke job |
+| **C3/C6** | `UserName` never re-synced; joins on a mutable login | `4dd8cb4` (M0) |
+
+**Still open:** C2 (degraded auth fails open to the claimed login), C4 (antiforgery — now via §5a),
+C5 (`X-Forwarded-For` trusted from any peer), C7 (webhook path unmetered), C8 (unbounded `IN`, and
+SP2 was never measured).
+
+### Two live behaviour changes introduced by this branch
+
+Neither is a defect; both will surprise someone if they are not written down.
+
+1. **`Repository_Commits` now sorts twice.** It declares `sortColumns: Date desc` *and* orders
+   server-side on the index's coalesced `AuthoredAt`. Until preview.59 the declaration was silently
+   ignored; it now runs, in memory, over the get-only `Commit.Date`. Both survive only because
+   `Date` is `AuthoredAt ?? FirstSeenAtUtc` — the same coalescing the index applies. That is a
+   coincidence, not a design. The server-side ordering is the one that matters, because it runs
+   before materialization.
+2. **A repository that flips to private stops rendering its badge.** The lease will detect it and the
+   badge renders `unknown` — correct, and the point of A2's fix, but it lands as "my badge broke and
+   nobody told me". PRD §6.4 rules out a distinct "private" label (existence oracle), so the agreed
+   remedy is the `unknown` badge plus a warning on the repository page, next to the last-sync
+   indicator roadmap T0.2 is adding. **The warning surface is not built yet** (M1 step 8).
+
 ### Verified clean — worth recording so it isn't re-audited
 
 - **No IDOR in the `/api` surface.** Every `{owner}/{name}`, `{login}`, `{sha}`, `{path}`, `{flag}`,
@@ -472,14 +544,72 @@ be resolved by guessing.
 | **SP10** | ~~Which membership events can the App receive, under which permission?~~ | — | **RESOLVED 2026-08-20** by the owner inspecting and configuring the App: `Organization: Members: Read` + four subscriptions — **Member**, **Organization**, **Team**, **Team add**. Two invalidation shapes (targeted vs epoch) per D3. |
 | **SP12** | ~~Is `Membership` subscribable?~~ | — | **RESOLVED 2026-08-20** — owner subscribed it. Handle as a **targeted** invalidation (payload names the user). Team-mediated access is now covered from both sides; TTL set to 60 min. |
 | **SP13** | ~~Are `team` payloads resolvable to an `Account`?~~ | — | **RESOLVED 2026-08-20** by reflecting over `Octokit.Webhooks` 4.1.2 (the package already referenced) — see the payload table in D3. **Yes**: every relevant event carries `Organization` with an `Int64 Id`. Residual, cheap: confirm `Repository` is non-null on the `added_to_repository` / `removed_from_repository` actions specifically, which would allow a narrower invalidation than the account-wide epoch. |
-| **SP14** | Can `My_Accounts` be made **synchronous**? It needs the viewer's id and their `UserAccess` snapshot; the id is available from `HttpContext.User` claims without awaiting, but the snapshot load is async. Determine whether pre-warming it makes a synchronous body possible, and whether `ISparkVisibility`'s task-memoized members are already complete by the time a custom query runs. | This is the entire user-visible win of M4 (finding D): `isAsync` gates declared sorting, row-filter pushdown, search pushdown, index projection and `.Include()`. If it cannot be made synchronous, header-click sorting stays inert and the PR should say so rather than let it look like an oversight. | Read what `QueryExecutor` awaits before invoking the method (`:235-330`), then try it. |
-| **SP15** | Can a plain CLR row type (`MyAccountRow`) be exposed as an `IRavenQueryable<>` root on `CoverageSparkContext` and get **its own model file**, with no RavenDB collection behind it? Does `--spark-synchronize-model` generate one, does `modelHashes.json` accept it, and does the startup gate pass? | M4 step 3 — the only fix for the column leak (finding B) short of Spark#284. The pattern exists in the Vidyano reference apps (`Fleet/Service/FleetContext.cs:124-125` returns `null!` for a PO with no Raven backing), but Spark is unverified. | Add the root, synchronize, then boot in a **non-Development** environment — that is where the hash gate throws rather than warns. |
-| **SP16** | Confirm the grid's aggregate semantics with the owner: is "repositories" **"those I am explicitly entitled to"** or **"those I can see"** (which includes public repositories of a reachable owner where the viewer holds no explicit permission)? | Finding C1. The two differ, today's code answers the second, and an index could only ever answer the first. It changes the number on screen, so it is a product decision — and it is *why* the index was rejected, not a detail of how to build one. | Owner's call. Recommendation: keep "those I can see", matching every other surface. |
+| **SP14** | ~~Can `My_Accounts` be made synchronous?~~ | — | **RESOLVED 2026-08-21, upstream instead.** The app should not be contorted: `isAsync` gated capability the code had already normalised away (`returnType` is unwrapped from `Task<>` four lines above the tests that consult it, and `result` is awaited before every gated step). Filed as Spark#294, shipped in **preview.59** — but *not* with the one-line fix I proposed. They inferred capability from the **runtime result** instead, and measured that my version would have left both declared-weaker-than-actual cases failing. Consequence: M4 step 1 disappears and the method stays `async`. |
+| **SP14-original** | *(superseded)* Can `My_Accounts` be made **synchronous**? It needs the viewer's id and their `UserAccess` snapshot; the id is available from `HttpContext.User` claims without awaiting, but the snapshot load is async. Determine whether pre-warming it makes a synchronous body possible, and whether `ISparkVisibility`'s task-memoized members are already complete by the time a custom query runs. | This is the entire user-visible win of M4 (finding D): `isAsync` gates declared sorting, row-filter pushdown, search pushdown, index projection and `.Include()`. If it cannot be made synchronous, header-click sorting stays inert and the PR should say so rather than let it look like an oversight. | Read what `QueryExecutor` awaits before invoking the method (`:235-330`), then try it. |
+| **SP15** | ~~Can a non-document CLR type get its own model file?~~ | — | **RESOLVED YES 2026-08-21, verified.** Declaring it on the context is enough: `--spark-synchronize-model` emitted `App_Data/Model/MyAccountRow.json`, the hash gate passes, and hand-curated `showedOn`/labels survive a re-synchronize. ⚠️ **Trap found:** declaring a root also makes the synchronizer emit a `Database.MyAccountRows` query for it, so a *throwing* getter turns that generated query into a 500. The property returns an empty query instead. |
+| **SP15-original** | *(superseded)* Can a plain CLR row type (`MyAccountRow`) be exposed as an `IRavenQueryable<>` root on `CoverageSparkContext` and get **its own model file**, with no RavenDB collection behind it? Does `--spark-synchronize-model` generate one, does `modelHashes.json` accept it, and does the startup gate pass? | M4 step 3 — the only fix for the column leak (finding B) short of Spark#284. The pattern exists in the Vidyano reference apps (`Fleet/Service/FleetContext.cs:124-125` returns `null!` for a PO with no Raven backing), but Spark is unverified. | Add the root, synchronize, then boot in a **non-Development** environment — that is where the hash gate throws rather than warns. |
+| **SP16** | ~~"Entitled to" or "can see"?~~ | — | **DECIDED 2026-08-21: "repositories I can see"**, i.e. the status quo, matching every other surface. Implemented via `RepositoryVisibility.IsVisible` in both `MyAccountRowActions.My_Accounts` and `/api/me/accounts`, so there is one definition of the rule. |
+| **SP16-original** | *(superseded)* Confirm the grid's aggregate semantics with the owner: is "repositories" **"those I am explicitly entitled to"** or **"those I can see"** (which includes public repositories of a reachable owner where the viewer holds no explicit permission)? | Finding C1. The two differ, today's code answers the second, and an index could only ever answer the first. It changes the number on screen, so it is a product decision — and it is *why* the index was rejected, not a detail of how to build one. | Owner's call. Recommendation: keep "those I can see", matching every other surface. |
 | **SP11** | ~~Can per-installation granted permissions be read at runtime?~~ | — | **RESOLVED 2026-08-20 from the referenced assemblies.** `Octokit.Webhooks.Models.Installation.Permissions` is an `AppPermissions`, which exposes **`Members`** (alongside `Administration`, `Contents`, `Metadata`, …); `Octokit.InstallationPermissions` exposes `Members` too, for the REST path. So the flag is readable with no new dependency. ⚠️ **Implementation trap:** only the **`installation`** event carries the full `Installation` model. Every other event (`MemberEvent`, `TeamEvent`, `MembershipEvent`, …) carries **`InstallationLite`, which has just `Id` and `NodeId`** — no permissions. So read and persist `Members` on the `installation` / `new_permissions_accepted` events (already handled at `GitHubEventsRecipient.cs:66-72`) and store it on `Account`; do not expect to read it off the event you happen to be handling. |
-| **SP6** | Does a Spark **custom query** return rows when `parentId`/`parentType` are bound to empty strings from a page with no parent PO? | The accounts-grid design depends on a parentless `spark-sub-query`. Read as correct on both halves of the wire (`SparkService.executeQuery` only appends truthy params; `Spark@Endpoints/Queries/Execute.cs:96-108` skips parent resolution when either is empty) — but it has never been *run*. | Declare the query, bind `parentId=""`, load the page. |
+| **SP6** | ~~Does a custom query work from a page with no parent PO?~~ | — | **FALSIFIED 2026-08-21, in a browser.** The server and `SparkService.executeQuery` both tolerate an absent parent — that half was right — but `SparkSubQueryComponent`'s effect is `if (qId && pId && pType)`, so binding `parentId=""` leaves it **inert: no request, no error, no console output.** The component mounts and renders two empty containers, indistinguishable from a query that returned nothing. Fixed upstream in [Spark#308](https://github.com/MintPlayer/MintPlayer.Spark/pull/308) (parent inputs become optional; three specs, each observed failing with the guard restored). This spike said "read as correct on both halves of the wire — but it has never been *run*", and that caveat is the only reason it was caught before merge. |
+| **SP6-original** | *(superseded, kept for the reasoning)* Does a Spark **custom query** return rows when `parentId`/`parentType` are bound to empty strings from a page with no parent PO? | The accounts-grid design depends on a parentless `spark-sub-query`. Read as correct on both halves of the wire (`SparkService.executeQuery` only appends truthy params; `Spark@Endpoints/Queries/Execute.cs:96-108` skips parent resolution when either is empty) — but it has never been *run*. | Declare the query, bind `parentId=""`, load the page. |
 | **SP7** | Is `POST /spark/auth/register` actually reachable on the deployed instance (C1)? | Determines whether C1 is a live surface or only a mapped one. **[unverified]** — the code maps it; production behaviour untested. | `curl -X POST https://coverage.mintplayer.com/spark/auth/register …` against production. |
 | **SP8** | Can `spark-sub-query`'s column set be curated **per query** rather than per entity, or does adding `RepoCount`/`AggregateCoverage` to `Account` also add them to the global accounts grid? | Already filed upstream as [Spark#284](https://github.com/MintPlayer/MintPlayer.Spark/issues/284). If unresolved, the global grid gains two columns — acceptable, but it should be a decision not a surprise. | Check #284's status; otherwise accept and note it. |
 | **SP9** | Declared `sortColumns` are **silently ignored** for custom queries returning `Task<...>` (`Spark@QueryExecutor.cs:428,322-326` — `IsQueryable = !isAsync && …`). Is this a Spark bug worth filing? | It is a **live latent bug in this repo already**: `Model/Commit.json:229-234` declares `sortColumns: Date desc` on `Repository_Commits`, which returns `Task<IQueryable<Commit>>`, so the declared sort never runs and header-click sorting is a no-op — it only looks right because the method itself orders. | Confirm, then file upstream. Meanwhile return a **synchronous** `IQueryable` from the accounts query. |
+
+---
+
+## 5a. Spark preview.60 — a migration and a rewrite of M5
+
+[Spark#307](https://github.com/MintPlayer/MintPlayer.Spark/pull/307) is merged but **unreleased**. It
+carries four breaking changes, two of which land squarely on this branch. Read before touching M5.
+
+### Mandatory migration: `security.json`
+
+**`Everyone` is gone.** Well-known groups are declared by **id** in a `wellKnown` block, and an
+unmigrated file **fails to load**. The reason is worth knowing, because it is the same class of bug
+this document is about: groups used to be matched by *display name* through
+`TranslatedString.GetDefaultValue()`, which returns the first translation in **file order** — so
+`{"en":"Everyone","nl":"Iedereen"}` matched and `{"nl":"Iedereen","en":"Everyone"}` did not.
+**Reordering two JSON keys silently changed who could reach what.**
+
+⚠️ **The behaviour-preserving migration is one grant becoming two.** `Everyone` was the floor for
+*every* caller, so moving a grant to `anonymous` alone **narrows** it. Coverage's four
+`QueryRead/{Account,Repository,Commit,Build}` grants must each become an `anonymous` grant **and** an
+`authenticated` grant, or signed-in users lose the public surface.
+
+Our `QueryRead/MyAccountRow` grant is the easy case: it is already `Authenticated`-only, so it
+becomes a single `authenticated` grant and the hand-rolled group definition goes away.
+
+### `SparkLocalCredentials` now defaults to `Disabled`
+
+Our explicit setting becomes redundant. **Keep it** — it documents intent at the call site, and the
+comment next to it explains why startup fails without a provider.
+
+### M5's replacement steps
+
+1. **`spark.AddControllers()` / `spark.UseControllers()`** (new `MintPlayer.Spark.Controllers`
+   package). A bare `MapControllers()` now trips **SPARK010** — a warning, because it measured as
+   "one endpoint per action, protection lost", not a broken route table.
+2. **`spark.AddAntiforgeryProtection(a => { a.PathPrefixes = ["/spark", "/api"]; a.RequireAntiforgery = true; })`**
+   — this is C4's real fix. It inverts a default rather than stamping metadata, which is what makes it
+   cover a `MapPost` we wrote ourselves; no MVC convention reaches one of those. Off by default in
+   preview.60 with a warning-only migration mode, so adopt it deliberately.
+3. **`[SparkAuthorize("Read", nameof(Entity))]`** on the controllers — the same right string the
+   pipeline checks, so a controller and its Spark equivalent provably agree. It must derive from
+   `AuthorizeAttribute` or `AuthorizationMiddleware` never looks at it, and *that* failure is open.
+4. **`ISparkRowRule<T>`** — lets `BrowseController` apply the *same* row rule as the pipeline instead
+   of the parallel `RepositoryVisibility` call it makes today. `ApplyAsync` applies both halves in one
+   call, deliberately: a filter-only API returns `null` (meaning *unrestricted*) for a type whose
+   policy lives in `IsAllowedAsync`, so a caller consuming only the filter sees every row while
+   believing it applied the rule.
+5. **`--spark-verify-security`** in CI. This is a better version of M2's anonymous test matrix: it
+   turns a widened anonymous surface into a reviewable diff and needs no database. Every startup also
+   now prints the anonymous surface, *including when it is empty* — because silence is
+   indistinguishable from the check not running.
+
+Everything else in M5 stands as written: `X-Forwarded-For` (C5), the webhook rate limit (C7), and
+failing closed on degraded auth (C2).
 
 ---
 
@@ -654,6 +784,37 @@ aggregates onto `UserAccess` at rebuild time — which looks attractive until yo
 upload bumps neither the TTL nor `AccessEpoch`, so the app's headline number would be **up to 60
 minutes stale with no signal**. That last one is the most tempting and the most dangerous.
 
+#### As built (2026-08-21)
+
+**Server side is done and correct.** `MyAccountRow` + `MyAccountRowActions.My_Accounts` +
+`App_Data/Model/MyAccountRow.json`, its read right scoped to the **`Authenticated`** group
+(Spark#304's first real use here — "your accounts" is meaningless without a viewer). Verified against
+a running app: the query resolves by alias and an anonymous execute returns
+`401 {"error":"Authentication required"}`.
+
+**A5 is closed on both surfaces** — the grid *and* `/api/me/accounts` aggregate only over
+repositories the viewer may see, via `RepositoryVisibility.IsVisible`. The endpoint was fixed too,
+not just the UI that used it: it is still reachable directly.
+
+**Client side is blocked.** The grid renders nothing, because `spark-sub-query` requires a parent
+(SP6, falsified — see the spike table). Fixed upstream in
+[Spark#308](https://github.com/MintPlayer/MintPlayer.Spark/pull/308); needs a publish before Coverage
+can consume it.
+
+**Pending decision — pick one:**
+
+1. **Ship the interim now.** Keep the restored `bs-card` + list-group and fix the actual wrapping bug
+   with two classes: `flex-wrap` on `home.component.html`'s row (the sibling reauth alert 36 lines
+   above already has it) and `text-nowrap` on the badge. Fixes the reported complaint today, no
+   dependency on a publish.
+2. **Wait for Spark#308**, then swap to `<spark-sub-query queryId="my-accounts" />` and let the
+   component own the card — it renders its own `bs-card` + header from the query's `description`, so
+   the outer card comes out or you get a card inside a card.
+
+Either way the server work stands. Note for whoever does (2): `home.component.{html,ts}` are
+currently reverted in the working tree, and the grid markup — including the `gridEpoch` remount that
+makes Resync actually refresh — is in commit `62943e1` to restore from.
+
 #### Steps
 
 1. **Make `My_Accounts` synchronous** (`AccountActions.cs`). Resolve the viewer from
@@ -731,7 +892,20 @@ is not rediscovered from scratch, and shaped to avoid all three blockers:
   libs, tests, and every demo app — returns **zero hits**. Multi-map *registration* is tested;
   multi-map *querying* is not tested at all. A verification spike is mandatory, not optional.
 
-### M5 — Surface hardening 🟦 · cost S–M
+### M5 — Surface hardening 🟦 · cost S–M · **rewritten by Spark preview.60, see §5a**
+
+⚠️ **Do not start the antiforgery step from the original plan.** It said
+`[ValidateAntiForgeryToken]`; Spark#307 measured that MVC's attribute implements a **different
+interface** from the one Spark's gate reads, so *"the obviously-correct annotation compiled, read as
+protection, and did nothing."* Finding **F6**. The replacement is
+`spark.AddControllers()` + `spark.AddAntiforgeryProtection(...)`, in §5a.
+
+**M5.1 is shipped** (commit `4a67ba2`): GitHub-only sign-in, both tiers. It arrived early because
+ng-spark-auth 22.3.0 forced it — `sparkAuthRoutes()` went from "mounts all five pages" to "nothing
+unless a feature asks", so the old no-argument call would have shipped an app with no auth pages at
+all. Client: `sparkAuthRoutes(withExternalLogin(githubProvider()))` plus
+`provideSparkAuth({ loginUrl: '/sign-in' })`. Server: `LocalCredentials = Disabled`. Proven by the CI
+smoke job: all six local-credential endpoints POST-404, `external-login` 405s (mapped, GET-only).
 
 1. **Disable the local-password surface** (C1) — 🟩 **handed off upstream 2026-08-20**. Spark will
    introduce a feature to disable these endpoints **and the client-side pages**; when it ships, adopt it
@@ -816,17 +990,26 @@ cheap alternative that deletes A2's root cause instead of bounding it — revisi
 
 ---
 
-## 6a. Upstream Spark asks
+## 6a. Upstream Spark work
 
-Generic concerns, so they belong upstream per the layering rule — one PR per repo. None blocks the
-revised M4; U1 unblocks a design option, U2/U3 are correctness reports.
+Generic concerns belong upstream, one PR per repo. Five of the seven are already resolved — this
+branch has been a fairly productive source of upstream findings.
 
-| # | Ask | Why it is Spark's problem, not Coverage's |
+| # | Ask | State |
 |---|---|---|
-| **U1** | **Drop the parameterless-constructor requirement on `SparkContext`.** `SparkMiddleware.cs:154` registers the context via DI (so constructor injection works at runtime), but the offline model commands build it with `Activator.CreateInstance` and *check* for a public parameterless ctor, exiting `ExitMisconfigured` (`SparkDevelopmentExtensions.cs:312-321`); the generic overload additionally constrains `where TContext : SparkContext, new()` (`:82`). The code's own comment says the synchronizer "reflects over the context's property **TYPES** and never invokes a getter", so the instance is only a carrier for its `Type`. Fix: take a `Type`, or use `RuntimeHelpers.GetUninitializedObject`. | Until this lands, no consuming app can put a request-scoped dependency (a current user, a tenant) on its context — the natural home for a "my …" query. |
-| **U2** | **`AbstractIndexCreationTask<TDoc,TReduce>` is deployed but invisible to the index catalog.** `IsAbstractIndexCreationTask` (`SparkMiddleware.cs:532-548`) and `GetCollectionTypeFromIndex` (`IndexCatalog.cs:214-236`) match only the one-generic-argument forms, while `IndexCreation.CreateIndexes` (`:522`) deploys everything. So the *standard* map-reduce base class yields a live index no query can bind to, and the failure is a throw at query time rather than at startup. | It is the most natural way to write a map-reduce index, and the trap is silent until a query names it. |
-| **U3** | **`DefaultIndexAnalyzer.cs:136-138` states the base-type relationship backwards.** Its comment claims the two-argument form derives from the one-argument form "so the walk covers it". Measured against Raven 7.2.5 the reverse is true: `AbstractIndexCreationTask<T>` derives from `AbstractIndexCreationTask<T,T>`. That comment is what would lead a maintainer to believe U2 is already handled. | A wrong comment in the analyzer guarding this exact area. |
-| **U4** | *(already filed)* [Spark#284](https://github.com/MintPlayer/MintPlayer.Spark/issues/284) — per-query grid columns. Spark derives `showedOn` from projection-vs-entity membership (`ModelSynchronizer.cs:585-601`), so a column cannot appear on one query of an entity and not another. This is what forces M4 step 3's separate row type. | Without it, every computed column added for one grid leaks onto every other grid of the same entity. |
+| **U1** | Drop the parameterless-constructor requirement on `SparkContext`. The synchronizer converts its argument to a `Type` on the first line and never touches the instance again, so requiring a constructible context blocked any request-scoped dependency (a current user, a tenant) on the context. | ✅ Filed as [#292](https://github.com/MintPlayer/MintPlayer.Spark/issues/292), shipped in [#291](https://github.com/MintPlayer/MintPlayer.Spark/pull/291). Two of my claims were corrected there by measurement: it does **not** wipe `App_Data/Model` (only `modelHashes.json`, certifying an empty model over a populated directory), and `--spark-verify-model` does **not** catch it, because both sides of its comparison come from the same caller-supplied type. |
+| **U2** | The two-arg `AbstractIndexCreationTask<TDoc,TReduce>` is deployed by `IndexCreation.CreateIndexes` but invisible to the index catalog, so the *standard* map-reduce base class yields a live index no query can bind to — and the failure is a throw at query time, not at startup. | ⬜ **Not filed.** Only matters if M4's escalation path is ever taken. |
+| **U3** | `DefaultIndexAnalyzer.cs:136-138` states the base-type relationship backwards, claiming the two-arg form derives from the one-arg form. Measured against Raven 7.2.5 it is the reverse — and that comment is what would convince a maintainer U2 is already handled. | ⬜ **Not filed.** Cheap; worth doing with U2. |
+| **U4** | Per-query grid columns — Spark derives `showedOn` from projection-vs-entity membership, so a column cannot appear on one query of an entity and not another. | 🔶 [#284](https://github.com/MintPlayer/MintPlayer.Spark/issues/284) still open. This is what forces `MyAccountRow` to exist; when it ships, that type can collapse back into `Account`. |
+| **U5** | Async custom queries were second-class: `isAsync` stripped declared `sortColumns`, row-filter pushdown, search pushdown, index projection and `.Include()`. | ✅ Filed as [#294](https://github.com/MintPlayer/MintPlayer.Spark/issues/294), shipped in [#306](https://github.com/MintPlayer/MintPlayer.Spark/pull/306) / preview.59. Fixed better than proposed — capability is inferred from the runtime result, and they measured that my one-line version would have left both declared-weaker-than-actual cases failing. |
+| **U6** | `spark-sub-query` required a parent, so a standalone grid rendered nothing with no request, no error and no log. | 🔶 [#308](https://github.com/MintPlayer/MintPlayer.Spark/pull/308) open — **blocks M4's client half.** |
+| **U7** | A regression test pinning that `--spark-synchronize-model` / `--spark-verify-model` still work under `LocalCredentials = Disabled` with no provider registered. | ⬜ **Not filed.** Verified by hand that they do (the guard lives in endpoint mapping, which the offline commands never reach), but nothing asserts it — so the guard could migrate into `AddAuthentication` and silently break every consumer's CI. |
+
+**Landed upstream without us asking**, and directly relevant: `#295` (the `sortColumns` parameter was
+a disclosure oracle — finding B3, generalised: sorting resolved any CLR property by reflection,
+consulting neither the model nor redaction, so a redacted attribute was recoverable by bisecting sort
+order); `#304` (the `Authenticated` group, which M4 now uses); `#300`/`#301` (controllers under
+Spark's rules — C4's real fix, see §5a); `#298` (`--spark-verify-security`).
 
 ---
 

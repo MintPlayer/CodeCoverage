@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Security.Claims;
+using Coverage.Entities;
 using Coverage.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -205,5 +206,30 @@ internal sealed class ScriptedAccessService(GitHubVisibility visibility) : IGitH
     public async Task<long[]> GetAllowedOwnerIdsAsync(CancellationToken ct = default) => (await GetVisibilityAsync(ct)).OwnerGitHubIds;
     public async Task<bool> IsOwnerAllowedAsync(long ownerGitHubId, CancellationToken ct = default)
         => (await GetVisibilityAsync(ct)).OwnerGitHubIds.Contains(ownerGitHubId);
+    public Task InvalidateAsync(CancellationToken ct = default) => Task.CompletedTask;
+}
+
+/// <summary>
+/// The access rule without GitHub: a public repository is readable by anyone, a
+/// private one gets whatever level the test scripts. No lease renewal — the
+/// endpoint tests are about what the endpoints serve, not about the refresh.
+/// </summary>
+internal sealed class ScriptedRepositoryAccessService(
+    RepositoryAccessLevel privateLevel = RepositoryAccessLevel.None) : IRepositoryAccessService
+{
+    public Task<RepositoryAccessLevel> GetAsync(Repository repository, CancellationToken ct = default)
+        => Task.FromResult(repository.IsPrivate ? privateLevel : RepositoryAccessLevel.Read);
+
+    public Task<RepositoryAccessLevel> GetVerifiedAsync(Repository repository, CancellationToken ct = default)
+        => GetAsync(repository, ct);
+}
+
+/// <summary>
+/// A viewer with no persisted snapshot — entitled to public repositories only.
+/// Also the shape a local account with no GitHub identity resolves to.
+/// </summary>
+internal sealed class EmptyUserAccessService : IUserAccessService
+{
+    public Task<UserAccess?> GetAsync(CancellationToken ct = default) => Task.FromResult<UserAccess?>(null);
     public Task InvalidateAsync(CancellationToken ct = default) => Task.CompletedTask;
 }

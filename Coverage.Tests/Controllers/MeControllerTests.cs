@@ -37,6 +37,7 @@ public class MeControllerTests : CoverageRavenTest
         var services = new ServiceCollection();
         services.AddSingleton(session);
         services.AddSingleton<IGitHubAccessService>(new ScriptedAccessService(visibility));
+        services.AddSingleton<IUserAccessService>(new EmptyUserAccessService());
         services.AddSingleton(GitHubAuthTestFakes.TestConfiguration());
         services.AddSingleton<IWebHostEnvironment>(new FakeWebHostEnvironment());
         services.AddScoped<MeController>();

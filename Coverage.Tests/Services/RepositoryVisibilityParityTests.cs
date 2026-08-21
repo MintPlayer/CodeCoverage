@@ -26,7 +26,14 @@ public class RepositoryVisibilityParityTests : CoverageRavenTest
     private const long Acme = 100;
     private const long Globex = 200;
     private const long Initech = 300;
-    private const long Nobody = 999;
+
+    // Repository GitHub ids from the corpus below. Entitlement is per
+    // repository, not per owner: reaching an organization's installation must
+    // not grant every repository that organization owns.
+    private const long AcmeSecret = 2;
+    private const long GlobexHidden = 4;
+    private const long InitechConfidential = 5;
+    private const long UnknownRepository = 999;
 
     private static Repository Repo(long id, long ownerId, string owner, string name, bool isPrivate) => new()
     {
@@ -61,25 +68,31 @@ public class RepositoryVisibilityParityTests : CoverageRavenTest
     [Theory]
     // Anonymous: the filter must reduce to "public only".
     [InlineData(new long[0], new[] { "acme/public-one", "globex/public-two" })]
-    // One granted owner adds exactly that owner's private repositories.
-    [InlineData(new[] { Acme }, new[] { "acme/public-one", "acme/secret", "globex/public-two" })]
-    [InlineData(new[] { Acme, Initech },
+    // One entitled private repository adds exactly that one.
+    [InlineData(new[] { AcmeSecret }, new[] { "acme/public-one", "acme/secret", "globex/public-two" })]
+    [InlineData(new[] { AcmeSecret, InitechConfidential },
         new[] { "acme/public-one", "acme/secret", "globex/public-two", "initech/confidential" })]
-    // An owner we know nothing about grants nothing.
-    [InlineData(new[] { Nobody }, new[] { "acme/public-one", "globex/public-two" })]
+    // A repository we know nothing about grants nothing.
+    [InlineData(new[] { UnknownRepository }, new[] { "acme/public-one", "globex/public-two" })]
+    // The regression that motivated per-repository entitlement: being entitled
+    // to one repository of an owner must NOT surface that owner's siblings.
+    // Under the old owner-granular rule, AcmeSecret would have dragged in every
+    // private repository acme owns.
+    [InlineData(new[] { GlobexHidden },
+        new[] { "acme/public-one", "globex/hidden", "globex/public-two" })]
     public async Task Both_surfaces_resolve_the_same_repositories_for_the_same_principal(
-        long[] allowedOwners, string[] expected)
+        long[] entitledRepositoryIds, string[] expected)
     {
         using var store = await SeedCorpus();
         using var session = store.OpenAsyncSession();
 
         // The /spark surface: a row filter pushed down to RavenDB.
         var throughRowFilter = await session.Query<Repository, Repositories_Overview>()
-            .Where(RepositoryVisibility.Filter(allowedOwners))
+            .Where(RepositoryVisibility.Filter(entitledRepositoryIds))
             .ToListAsync();
 
         // The /api/browse surface: the same rule evaluated on a loaded document.
-        var throughImperativeCheck = Corpus.Where(r => RepositoryVisibility.IsVisible(r, allowedOwners));
+        var throughImperativeCheck = Corpus.Where(r => RepositoryVisibility.IsVisible(r, entitledRepositoryIds));
 
         throughRowFilter.Select(r => r.FullName).Should().BeEquivalentTo(expected);
         throughImperativeCheck.Select(r => r.FullName).Should().BeEquivalentTo(expected);
@@ -100,7 +113,7 @@ public class RepositoryVisibilityParityTests : CoverageRavenTest
     public async Task Renaming_an_owner_does_not_change_what_its_members_may_see()
     {
         using var store = await SeedCorpus();
-        long[] allowed = [Acme];
+        long[] allowed = [AcmeSecret];
 
         using (var session = store.OpenAsyncSession())
         {

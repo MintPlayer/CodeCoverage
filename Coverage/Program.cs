@@ -72,7 +72,25 @@ builder.Services.AddSpark(builder.Configuration, spark =>
         // Only register the provider when configured: the OAuth handler validates
         // ClientId on first request and would 500 every request otherwise.
         var gitHubClientId = builder.Configuration[$"GitHub:{envPrefix}:ClientId"];
-        if (!string.IsNullOrEmpty(gitHubClientId))
+        if (string.IsNullOrEmpty(gitHubClientId))
+        {
+            // Named keys and the consequence, because Spark's own guard fires later
+            // with only "no external authentication provider is registered" — true,
+            // but it cannot know which configuration this app expected.
+            //
+            // Reported rather than thrown, deliberately: this callback runs during
+            // service registration, which --spark-verify-model reaches before it
+            // returns. Throwing here would make CI's model gate depend on OAuth
+            // credentials it has no business holding. The startup failure still
+            // happens, at UseSpark(), which the offline commands never reach.
+            Console.Error.WriteLine(
+                $"Coverage: 'GitHub:{envPrefix}:ClientId' is not configured, so GitHub sign-in is "
+                + "not registered. This app has no local credentials (LocalCredentials = Disabled), "
+                + "so GitHub is the only way in and startup will fail. Set "
+                + $"'GitHub:{envPrefix}:ClientId' and 'GitHub:{envPrefix}:ClientSecret' — "
+                + "user-secrets in Development, environment variables or appsettings elsewhere.");
+        }
+        else
         {
             identity.AddGitHub(options =>
             {

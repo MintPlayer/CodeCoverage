@@ -25,7 +25,8 @@ namespace Coverage.Controllers;
 public partial class BrowseController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;
-    [Inject] private readonly IGitHubAccessService gitHubAccess;
+    [Inject] private readonly IRepositoryAccessService repositoryAccess;
+    [Inject] private readonly ISparkVisibility entitlement;
     [Inject] private readonly IGitHubContentService gitHubContent;
     [Inject] private readonly IConfiguration configuration;
 
@@ -48,17 +49,22 @@ public partial class BrowseController : ControllerBase
     [HttpGet("accounts/{login}/repos")]
     public async Task<ActionResult<IEnumerable<RepoInfo>>> GetAccountRepos(string login, CancellationToken cancellationToken)
     {
-        var includePrivate = await gitHubAccess.IsOwnerAllowedAsync(login, cancellationToken);
+        var account = await ResolveAccount(login, cancellationToken);
+        if (account is null) return Ok(Enumerable.Empty<RepoInfo>());
 
         var repos = await session.Query<Repository, Indexes.Repositories_Overview>()
-            .Where(r => r.OwnerLogin == login)
+            .Where(r => r.OwnerGitHubId == account.GitHubId)
             .Take(1024)
             .ToListAsync(cancellationToken);
 
+        // Per repository, from the viewer's snapshot — being a member of the
+        // owner is not a claim on all of its repositories. Snapshot lookups, so
+        // this is a list decision without a call per row.
+        var entitled = await entitlement.GetEntitledRepositoryGitHubIdsAsync();
         return Ok(repos
-            .Where(r => includePrivate || !r.IsPrivate)
+            .Where(r => RepositoryVisibility.IsVisible(r, entitled))
             .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(r => ToRepoInfo(r, includePrivate)));
+            .Select(r => ToRepoInfo(r, canManage: false)));
     }
 
     [HttpGet("repos/{owner}/{name}")]
@@ -66,7 +72,9 @@ public partial class BrowseController : ControllerBase
     {
         var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
         if (repository is null) return NotFound();
-        var canManage = await gitHubAccess.IsOwnerAllowedAsync(repository.OwnerLogin, cancellationToken);
+        // canManage decides whether BadgeToken leaves the server, so it is the
+        // administrative bar on this repository, not owner visibility.
+        var canManage = await repositoryAccess.GetAsync(repository, cancellationToken) >= RepositoryAccessLevel.Admin;
         return Ok(ToRepoInfo(repository, canManage));
     }
 
@@ -137,13 +145,17 @@ public partial class BrowseController : ControllerBase
     [HttpGet("accounts/{login}/sparklines")]
     public async Task<ActionResult<Dictionary<string, double[]>>> GetSparklines(string login, CancellationToken cancellationToken)
     {
-        var includePrivate = await gitHubAccess.IsOwnerAllowedAsync(login, cancellationToken);
+        var account = await ResolveAccount(login, cancellationToken);
+        if (account is null) return Ok(new Dictionary<string, double[]>());
 
         var repos = await session.Query<Repository, Indexes.Repositories_Overview>()
-            .Where(r => r.OwnerLogin == login)
+            .Where(r => r.OwnerGitHubId == account.GitHubId)
             .Take(1024)
             .ToListAsync(cancellationToken);
-        var visible = repos.Where(r => includePrivate || !r.IsPrivate).ToDictionary(r => r.Id!, r => r.FullName);
+        var entitled = await entitlement.GetEntitledRepositoryGitHubIdsAsync();
+        var visible = repos
+            .Where(r => RepositoryVisibility.IsVisible(r, entitled))
+            .ToDictionary(r => r.Id!, r => r.FullName);
         if (visible.Count == 0) return Ok(new Dictionary<string, double[]>());
 
         var repoIds = visible.Keys.ToArray();
@@ -195,9 +207,7 @@ public partial class BrowseController : ControllerBase
     [HttpGet("accounts/{login}")]
     public async Task<ActionResult<AccountRef>> GetAccount(string login, CancellationToken cancellationToken)
     {
-        var account = await session.Query<Account, Indexes.Accounts_Overview>()
-            .Where(a => a.Login == login)
-            .FirstOrDefaultAsync(cancellationToken);
+        var account = await ResolveAccount(login, cancellationToken);
         if (account is null) return NotFound();
         return Ok(new AccountRef(account.Id!, account.Login));
     }
@@ -390,9 +400,23 @@ public partial class BrowseController : ControllerBase
             FileCoverage.DocumentId(commit.LatestBuildId, path), cancellationToken);
         if (fileCoverage is null) return NotFound();
 
-        long? installationId = null;
-        if (repository.Account is not null)
+        // Source is the sharpest disclosure in the system and the one place the
+        // app lends out its installation privilege, so a private repository is
+        // re-verified live rather than served on a snapshot that may be an hour
+        // old. ResolveVisibleRepository already passed; this can only narrow.
+        if (repository.IsPrivate
+            && await repositoryAccess.GetVerifiedAsync(repository, cancellationToken) < RepositoryAccessLevel.Read)
         {
+            return NotFound();
+        }
+
+        long? installationId = null;
+        if (repository.IsPrivate && repository.Account is not null)
+        {
+            // Only for a private repository whose viewer we just verified. A
+            // public file comes from raw.githubusercontent.com, so the
+            // installation token is never spent — and never lent — on a caller
+            // we have not checked.
             var account = await session.LoadAsync<Account>(repository.Account, cancellationToken);
             installationId = account?.InstallationId;
         }
@@ -436,6 +460,15 @@ public partial class BrowseController : ControllerBase
         return files;
     }
 
+    /// <summary>
+    /// A login in the URL is a display key, so every entitlement decision has to
+    /// go through the account it names and use its immutable GitHub id.
+    /// </summary>
+    private async Task<Account?> ResolveAccount(string login, CancellationToken cancellationToken)
+        => await session.Query<Account, Indexes.Accounts_Overview>()
+            .Where(a => a.Login == login)
+            .FirstOrDefaultAsync(cancellationToken);
+
     private async Task<Repository?> ResolveVisibleRepository(string owner, string name, CancellationToken cancellationToken)
     {
         var repository = await session.Query<Repository, Indexes.Repositories_Overview>()
@@ -446,13 +479,19 @@ public partial class BrowseController : ControllerBase
         // Same rule as the /spark surface, from the same place — the two must
         // agree forever, and a shared doc-comment was the only thing binding
         // them. The owner list is only fetched when it can matter.
-        if (!repository.IsPrivate) return repository;
-        var owners = await gitHubAccess.GetAllowedOwnersAsync(cancellationToken);
-        return RepositoryVisibility.IsVisible(repository, owners) ? repository : null;
+        // Per-repository, and it renews the public/private lease on the way — a
+        // cached IsPrivate is only safe if reading it also re-confirms it.
+        var level = await repositoryAccess.GetAsync(repository, cancellationToken);
+        return level >= RepositoryAccessLevel.Read ? repository : null;
     }
 
     // BaseUrl rides along so the SPA builds badge markdown against the public
     // URL rather than location.origin (dead links when copied from localhost).
+    //
+    // canManage is false on list endpoints: it gates BadgeToken, and establishing
+    // administrative rights per row is not something a list should pay for. The
+    // single-repository endpoint answers it properly, which is where the badge UI
+    // asks anyway.
     private RepoInfo ToRepoInfo(Repository r, bool canManage)
         // Id first: the /r/{owner}/{name} route resolves it to forward into the
         // generic Spark detail page.

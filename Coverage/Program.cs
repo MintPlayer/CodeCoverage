@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using MintPlayer.AspNetCore.SpaServices.Extensions;
 using MintPlayer.Spark;
 using MintPlayer.Spark.Abstractions.Authentication;
+using MintPlayer.Spark.Authorization.Configuration;
 using MintPlayer.Spark.Authorization.Extensions;
 using MintPlayer.Spark.Extensions;
 using MintPlayer.Spark.Authorization.Identity;
@@ -51,13 +52,45 @@ builder.Services.AddSpark(builder.Configuration, spark =>
     spark.AddAuthorization();
     spark.AddActions();
 
-    spark.AddAuthentication<SparkUser>(configureProviders: identity =>
+    // GitHub is the only identity this app has, so the entire local-credential
+    // surface is switched off: no register, no password login, no forgot/reset,
+    // no confirm/resend. Those endpoints were reachable and unused — register is
+    // an enumeration oracle, the recovery family is an unauthenticated mail-send
+    // trigger, and login distinguishes LockedOut from NotAllowed. This is the
+    // server half of the same decision app.routes.ts makes on the client.
+    //
+    // Disabled REFUSES TO BOOT without an external provider, by design: an
+    // authentication surface nobody can sign into is a misconfiguration, not a
+    // degraded mode. That is a deliberate change from the previous behaviour
+    // noted below — a missing ClientId used to boot with a dead sign-in button,
+    // and would now leave local credentials as the only way in, which is exactly
+    // what this turns off. Failing fast with Spark's named error beats that.
+    spark.AddAuthentication<SparkUser>(
+        configure: auth => auth.LocalCredentials = SparkLocalCredentials.Disabled,
+        configureProviders: identity =>
     {
         // Only register the provider when configured: the OAuth handler validates
-        // ClientId on first request and would 500 every request otherwise. Without
-        // credentials the app still boots — the sign-in button just won't work.
+        // ClientId on first request and would 500 every request otherwise.
         var gitHubClientId = builder.Configuration[$"GitHub:{envPrefix}:ClientId"];
-        if (!string.IsNullOrEmpty(gitHubClientId))
+        if (string.IsNullOrEmpty(gitHubClientId))
+        {
+            // Named keys and the consequence, because Spark's own guard fires later
+            // with only "no external authentication provider is registered" — true,
+            // but it cannot know which configuration this app expected.
+            //
+            // Reported rather than thrown, deliberately: this callback runs during
+            // service registration, which --spark-verify-model reaches before it
+            // returns. Throwing here would make CI's model gate depend on OAuth
+            // credentials it has no business holding. The startup failure still
+            // happens, at UseSpark(), which the offline commands never reach.
+            Console.Error.WriteLine(
+                $"Coverage: 'GitHub:{envPrefix}:ClientId' is not configured, so GitHub sign-in is "
+                + "not registered. This app has no local credentials (LocalCredentials = Disabled), "
+                + "so GitHub is the only way in and startup will fail. Set "
+                + $"'GitHub:{envPrefix}:ClientId' and 'GitHub:{envPrefix}:ClientSecret' — "
+                + "user-secrets in Development, environment variables or appsettings elsewhere.");
+        }
+        else
         {
             identity.AddGitHub(options =>
             {
@@ -278,7 +311,15 @@ app.UseEndpoints(endpoints =>
     endpoints.MapGet("/health/ready", async (IGitHubAppReadinessService readiness, CancellationToken cancellationToken) =>
     {
         var gitHubApp = await readiness.CheckAsync(cancellationToken);
-        var payload = new { status = gitHubApp.Status == GitHubAppReadiness.Failed ? "unready" : "ready", gitHubApp };
+        // Status only, never Detail: this endpoint is anonymous and Detail carries
+        // exception text, which on a misconfigured host is the absolute path of
+        // the GitHub App private key. The classification is what a probe needs;
+        // the diagnosis belongs in the log.
+        var payload = new
+        {
+            status = gitHubApp.Status == GitHubAppReadiness.Failed ? "unready" : "ready",
+            gitHubApp = new { gitHubApp.Status },
+        };
         return gitHubApp.Status == GitHubAppReadiness.Failed
             ? Results.Json(payload, statusCode: StatusCodes.Status503ServiceUnavailable)
             : Results.Json(payload);

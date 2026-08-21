@@ -1,0 +1,154 @@
+{
+  "persistentObject": {
+    "id": "637e7cec-fcab-4a67-9486-077d963722c7",
+    "name": "MyAccountRow",
+    "clrType": "Coverage.Entities.MyAccountRow",
+    "breadcrumb": "{GitHubId}",
+    "tabs": [],
+    "groups": [],
+    "attributes": [
+      {
+        "id": "f800e1e1-44a2-4277-a8f8-fe7d343b753d",
+        "name": "AggregateCoverage",
+        "label": {
+          "en": "Coverage %"
+        },
+        "dataType": "decimal",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 4,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "94ac873e-b4d0-406f-82ce-0d028c127abd",
+        "name": "AvatarUrl",
+        "label": {
+          "en": "Avatar Url"
+        },
+        "dataType": "string",
+        "isRequired": false,
+        "isVisible": false,
+        "isReadOnly": false,
+        "order": 5,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "5b8e1951-e761-4552-8fa4-9ea90320ad30",
+        "name": "GitHubId",
+        "label": {
+          "en": "Git Hub Id"
+        },
+        "dataType": "number",
+        "isRequired": true,
+        "isVisible": false,
+        "isReadOnly": false,
+        "order": 6,
+        "isArray": false,
+        "showedOn": "PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "d70e2629-983c-4f86-bf2f-334e91c95e12",
+        "name": "IsAppInstalled",
+        "label": {
+          "en": "App"
+        },
+        "dataType": "boolean",
+        "isRequired": true,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 2,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": [],
+        "renderer": "app-installed"
+      },
+      {
+        "id": "8aa2d098-f3bf-435b-8222-cb11f329c04b",
+        "name": "Login",
+        "label": {
+          "en": "Account"
+        },
+        "dataType": "string",
+        "isRequired": false,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 1,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": [],
+        "renderer": "account-login"
+      },
+      {
+        "id": "1050a8ae-4f46-4c5d-9fc0-890a1c5447de",
+        "name": "RepositoryCount",
+        "label": {
+          "en": "Repositories"
+        },
+        "dataType": "number",
+        "isRequired": true,
+        "isVisible": true,
+        "isReadOnly": false,
+        "order": 3,
+        "isArray": false,
+        "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "9c4d1547-e099-4980-80b0-ffc1a92f00b1",
+        "name": "Type",
+        "label": {
+          "en": "Type"
+        },
+        "dataType": "string",
+        "isRequired": false,
+        "isVisible": false,
+        "isReadOnly": false,
+        "order": 7,
+        "isArray": false,
+        "showedOn": "PersistentObject",
+        "rules": []
+      }
+    ],
+    "queries": []
+  },
+  "queries": [
+    {
+      "id": "f3649d8b-328a-4b89-860d-ff8298102aae",
+      "name": "GetMyAccountRows",
+      "source": "Database.MyAccountRows",
+      "sortColumns": [
+        {
+          "property": "AvatarUrl",
+          "direction": "asc"
+        }
+      ],
+      "renderMode": "Pagination",
+      "entityType": "MyAccountRow",
+      "isStreamingQuery": false
+    },
+    {
+      "id": "3f6b1d24-9c8a-4f52-8e07-6b1d94a7c530",
+      "name": "My_Accounts",
+      "description": {
+        "en": "Your accounts"
+      },
+      "source": "Custom.My_Accounts",
+      "alias": "my-accounts",
+      "sortColumns": [
+        {
+          "property": "Login",
+          "direction": "asc"
+        }
+      ],
+      "renderMode": "Pagination",
+      "entityType": "MyAccountRow",
+      "isStreamingQuery": false
+    }
+  ]
+}

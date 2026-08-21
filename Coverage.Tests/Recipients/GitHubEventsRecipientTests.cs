@@ -60,6 +60,7 @@ public class GitHubEventsRecipientTests : CoverageRavenTest
         services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.None));
         services.AddSingleton(session);
         services.AddSingleton<MintPlayer.Spark.Messaging.Abstractions.IMessageBus>(new RecordingMessageBus());
+        services.AddSingleton<Coverage.Services.IAccountPublicityService>(new Coverage.Tests.Services.NoOpAccountPublicityService());
         services.AddScoped<GitHubEventsRecipient>();
         return services.BuildServiceProvider().GetRequiredService<GitHubEventsRecipient>();
     }

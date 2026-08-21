@@ -16,8 +16,12 @@ public class ApiToken
     /// <summary>"Account" (all repos of a user/org) or "Repository" (one repo).</summary>
     public string Scope { get; set; } = "Account";
 
-    /// <summary>Owner login this token uploads for, when Scope is "Account".</summary>
-    public string? AccountLogin { get; set; }
+    /// <summary>
+    /// Owning account's GitHub numeric id this token uploads for, when Scope
+    /// is "Account". An id rather than a login so an org rename neither
+    /// orphans the token nor re-points it at whoever took the freed login.
+    /// </summary>
+    public long? AccountGitHubId { get; set; }
 
     /// <summary>GitHub repository id this token uploads for, when Scope is "Repository".</summary>
     public long? RepositoryGitHubId { get; set; }

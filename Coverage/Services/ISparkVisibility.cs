@@ -9,8 +9,19 @@ namespace Coverage.Services;
 /// </summary>
 public interface ISparkVisibility
 {
-    /// <summary>Owners the current viewer may see; empty for anonymous viewers.</summary>
-    Task<string[]> GetAllowedOwnersAsync();
+    /// <summary>
+    /// Numeric GitHub ids of the **repositories** the current viewer is entitled
+    /// to, from their persisted snapshot; empty for anonymous viewers. Feeds the
+    /// Repository row filter, which adds the public subset on top.
+    /// </summary>
+    Task<long[]> GetEntitledRepositoryGitHubIdsAsync();
+
+    /// <summary>
+    /// Numeric GitHub ids of accounts the viewer can reach. Only for deciding
+    /// what to *list* (and for the manage gate) — never for deciding whether one
+    /// specific repository may be served.
+    /// </summary>
+    Task<long[]> GetAllowedOwnerIdsAsync();
 
     /// <summary>
     /// Document ids of repositories the current viewer may see (public ones plus
@@ -19,6 +30,16 @@ public interface ISparkVisibility
     /// </summary>
     Task<string[]> GetVisibleRepositoryIdsAsync();
 
-    /// <summary>Whether the viewer manages this owner (gates BadgeToken/InstallationId visibility).</summary>
-    Task<bool> CanManageOwnerAsync(string ownerLogin);
+    /// <summary>
+    /// Whether the viewer administers this repository — the gate on BadgeToken,
+    /// which is a credential however narrow. Snapshot-only: this runs once per
+    /// row in the redaction hook, so it must never trigger a GitHub call.
+    /// </summary>
+    Task<bool> CanManageRepositoryAsync(long repositoryGitHubId);
+
+    /// <summary>
+    /// Whether the viewer administers at least one repository of this account —
+    /// the gate on account-level operational detail (InstallationId).
+    /// </summary>
+    Task<bool> CanManageAccountAsync(long accountGitHubId);
 }

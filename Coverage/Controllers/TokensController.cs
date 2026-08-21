@@ -14,8 +14,14 @@ namespace Coverage.Controllers;
 
 /// <summary>
 /// Upload-token management for the signed-in user (cookie auth + XSRF via the
-/// Spark middleware). Whether a user may manage an account's tokens mirrors
-/// their GitHub visibility of that account.
+/// Spark middleware).
+///
+/// The bar matches the reach of the credential, never mere visibility of the
+/// account: a repository-scoped token needs Admin on that repository, an
+/// account-scoped one needs Admin across every repository of the account, and
+/// listing needs Admin on at least one. Visibility used to be the whole gate,
+/// which meant any org member -- read-only on a single repository included --
+/// could mint an org-wide upload credential and revoke everyone else's.
 /// </summary>
 [ApiController]
 [Route("api/tokens")]
@@ -23,7 +29,8 @@ namespace Coverage.Controllers;
 public partial class TokensController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;
-    [Inject] private readonly IGitHubAccessService gitHubAccess;
+    [Inject] private readonly IAccountAccessService accountAccess;
+    [Inject] private readonly IRepositoryAccessService repositoryAccess;
     [Inject] private readonly UserManager<SparkUser> userManager;
 
     public sealed record CreateTokenRequest(string AccountLogin, string? Description, string? Scope, string? RepositoryFullName);
@@ -31,17 +38,33 @@ public partial class TokensController : ControllerBase
     public sealed record TokenInfo(string Id, string AccountLogin, string? Description, string Scope, string? RepositoryFullName,
         DateTime CreatedAtUtc, DateTime? RevokedAtUtc);
 
+    private async Task<bool> CanAdministerRepositoryAsync(long repositoryGitHubId, CancellationToken cancellationToken)
+    {
+        var repository = await session.LoadAsync<Repository>(
+            Repository.DocumentId(repositoryGitHubId), cancellationToken);
+        return repository is not null
+            && await repositoryAccess.GetAsync(repository, cancellationToken) >= RepositoryAccessLevel.Admin;
+    }
+
+    private async Task<Account?> ResolveAccount(string login, CancellationToken cancellationToken)
+        => await session.Query<Account, Indexes.Accounts_Overview>()
+            .Where(a => a.Login == login)
+            .FirstOrDefaultAsync(cancellationToken);
+
     [HttpPost]
     public async Task<ActionResult<CreatedToken>> Create([FromBody] CreateTokenRequest request, CancellationToken cancellationToken)
     {
-        if (!await gitHubAccess.IsOwnerAllowedAsync(request.AccountLogin, cancellationToken))
-            return Forbid();
+        // The wire contract names the owner by login (that is what the UI has);
+        // entitlement and storage both key on the account's immutable GitHub id.
+        var account = await ResolveAccount(request.AccountLogin, cancellationToken);
+        if (account is null)
+            return NotFound(new { error = $"Account '{request.AccountLogin}' is unknown here." });
 
         var user = await userManager.GetUserAsync(User);
         if (user is null) return Unauthorized();
 
-        // A repo-scoped token still records AccountLogin so it shows up in the
-        // account's token list; the upload handler authorizes on Scope alone.
+        // A repo-scoped token still records the owning account so it shows up in
+        // that account's token list; the upload handler authorizes on Scope alone.
         Repository? repository = null;
         if (request.Scope == "Repository")
         {
@@ -50,19 +73,34 @@ public partial class TokensController : ControllerBase
             repository = await session.Query<Repository, Indexes.Repositories_Overview>()
                 .Where(r => r.FullName == request.RepositoryFullName)
                 .FirstOrDefaultAsync(cancellationToken);
-            if (repository is null || !string.Equals(repository.OwnerLogin, request.AccountLogin, StringComparison.OrdinalIgnoreCase))
+            if (repository is null || repository.OwnerGitHubId != account.GitHubId)
                 return NotFound(new { error = $"Repository '{request.RepositoryFullName}' is unknown here or not owned by {request.AccountLogin}." });
+
+            // A repository-scoped token uploads for exactly this repository, so
+            // administering it is the whole requirement.
+            if (await repositoryAccess.GetAsync(repository, cancellationToken) < RepositoryAccessLevel.Admin)
+                return Forbid();
         }
         else if (request.Scope is not (null or "Account"))
         {
             return BadRequest(new { error = "scope must be Account or Repository." });
+        }
+        else if (!await accountAccess.CanAdministerWholeAccountAsync(account.GitHubId, cancellationToken))
+        {
+            // An account-scoped token can upload for every repository of the
+            // account, so minting one requires administering every repository of
+            // the account. This is the gate that used to be mere installation
+            // visibility, which let any org member -- including read-only on a
+            // single repository -- mint an org-wide credential and revoke
+            // everyone else's.
+            return Forbid();
         }
 
         var tokenValue = ApiTokenService.GenerateTokenValue();
         var token = new ApiToken
         {
             Scope = repository is null ? "Account" : "Repository",
-            AccountLogin = request.AccountLogin,
+            AccountGitHubId = account.GitHubId,
             RepositoryGitHubId = repository?.GitHubId,
             Description = request.Description,
             CreatedByUserId = user.Id!,
@@ -72,17 +110,19 @@ public partial class TokensController : ControllerBase
         await session.SaveChangesAsync(cancellationToken);
 
         // The plaintext value exists only in this response.
-        return Ok(new CreatedToken(tokenValue, request.AccountLogin, request.Description, token.Scope, repository?.FullName));
+        return Ok(new CreatedToken(tokenValue, account.Login, request.Description, token.Scope, repository?.FullName));
     }
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<TokenInfo>>> List([FromQuery] string account, CancellationToken cancellationToken)
     {
-        if (!await gitHubAccess.IsOwnerAllowedAsync(account, cancellationToken))
+        var resolved = await ResolveAccount(account, cancellationToken);
+        if (resolved is null) return Ok(Enumerable.Empty<TokenInfo>());
+        if (!await accountAccess.CanManageAnyRepositoryAsync(resolved.GitHubId, cancellationToken))
             return Forbid();
 
         var tokens = await session.Query<ApiToken>()
-            .Where(t => t.AccountLogin == account)
+            .Where(t => t.AccountGitHubId == resolved.GitHubId)
             .ToListAsync(cancellationToken);
 
         var repositories = await session.LoadAsync<Repository>(
@@ -93,7 +133,7 @@ public partial class TokensController : ControllerBase
 
         return Ok(tokens
             .OrderByDescending(t => t.CreatedAtUtc)
-            .Select(t => new TokenInfo(t.Id!, t.AccountLogin!, t.Description, t.Scope,
+            .Select(t => new TokenInfo(t.Id!, resolved.Login, t.Description, t.Scope,
                 t.RepositoryGitHubId is null ? null
                     : repositories.GetValueOrDefault(Repository.DocumentId(t.RepositoryGitHubId.Value))?.FullName,
                 t.CreatedAtUtc, t.RevokedAtUtc)));
@@ -105,7 +145,17 @@ public partial class TokensController : ControllerBase
         var token = await session.LoadAsync<ApiToken>(ApiToken.DocumentId(hash), cancellationToken);
         if (token is null) return NotFound();
 
-        if (token.AccountLogin is null || !await gitHubAccess.IsOwnerAllowedAsync(token.AccountLogin, cancellationToken))
+        if (token.AccountGitHubId is null)
+            return Forbid();
+
+        // Revoking matches the reach of what is being revoked: a
+        // repository-scoped token needs admin on that repository, an
+        // account-scoped one needs admin across the account. Otherwise a
+        // single-repository maintainer could revoke the org's credentials.
+        var mayRevoke = token.RepositoryGitHubId is { } repositoryGitHubId
+            ? await CanAdministerRepositoryAsync(repositoryGitHubId, cancellationToken)
+            : await accountAccess.CanAdministerWholeAccountAsync(token.AccountGitHubId.Value, cancellationToken);
+        if (!mayRevoke)
             return Forbid();
 
         token.RevokedAtUtc = DateTime.UtcNow;

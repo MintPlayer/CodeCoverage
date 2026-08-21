@@ -65,6 +65,117 @@ jobs:
           flags: unit
           finish: true
 
+  # Nothing else in this repository catches a failure that only happens at
+  # startup. Migrations run inside UseSpark(), the model-hash gate throws outside
+  # Development, and the LocalCredentials guard refuses to map an auth surface
+  # nobody can sign into — none of which a unit test reaches. A migration that
+  # called a query() helper RavenDB's patch scripting does not have passed 154
+  # green tests and would have failed the production deploy; this job is what
+  # would have caught it.
+  smoke:
+    runs-on: ubuntu-latest
+
+    services:
+      # Same image the deployment pins. Unsecured access is fine here: the
+      # service container is reachable only from this job.
+      ravendb:
+        image: docker.io/ravendb/ravendb:7.1.10-ubuntu.22.04-x64
+        ports:
+          - 8080:8080
+        env:
+          RAVEN_Setup_Mode: None
+          RAVEN_Security_UnsecuredAccessAllowed: PublicNetwork
+          RAVEN_ServerUrl: http://0.0.0.0:8080
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          dotnet-quality: preview
+
+      - name: Build
+        run: dotnet build Coverage/Coverage.csproj --configuration Release
+
+      # The app connects to a database, it does not create one — in production the
+      # database is provisioned once, out of band. So the job has to do it, and
+      # waiting for Raven to answer is part of that: a service container is
+      # "started" before it is listening.
+      - name: Create the RavenDB database
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf --max-time 2 http://127.0.0.1:8080/build/version >/dev/null && break
+            sleep 2
+          done
+          curl -sf --max-time 10 -X PUT "http://127.0.0.1:8080/admin/databases?replicationFactor=1" -H 'Content-Type: application/json' -d '{"DatabaseName":"CoverageSmoke"}'
+
+      # Staging, not Development: UseAngularCliServer is Development-only, so this
+      # avoids spawning a dev server the job has no use for. The GitHub client id
+      # is a placeholder and never leaves the runner — it exists because
+      # LocalCredentials = Disabled refuses to boot with no external provider, and
+      # the OAuth handler only validates the value on a real sign-in request.
+      - name: Boot the app
+        env:
+          ASPNETCORE_ENVIRONMENT: Staging
+          ASPNETCORE_URLS: http://127.0.0.1:5310
+          Spark__RavenDb__Urls__0: http://127.0.0.1:8080
+          Spark__RavenDb__Database: CoverageSmoke
+          GitHub__Staging__ClientId: smoke-client-id
+          GitHub__Staging__ClientSecret: smoke-secret
+        run: |
+          dotnet run --project Coverage/Coverage.csproj --configuration Release --no-build --no-launch-profile > boot.log 2>&1 &
+          echo $! > runner.pid
+          for i in $(seq 1 60); do
+            if curl -sf --max-time 2 http://127.0.0.1:5310/health >/dev/null; then
+              echo "started after ${i}s"
+              exit 0
+            fi
+            if ! kill -0 "$(cat runner.pid)" 2>/dev/null; then
+              echo "::error::the app exited during startup"
+              cat boot.log
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "::error::the app did not become ready within 60s"
+          cat boot.log
+          exit 1
+
+      # 404 versus 405 is the assertion: a 405 proves the route exists and only
+      # refuses the verb, so "not 200" would pass against a live endpoint. These
+      # are POST endpoints, so a 404 means absent from the route table — which is
+      # the point of LocalCredentials = Disabled, rather than shadowing them.
+      - name: The local-credential surface is absent
+        run: |
+          status=0
+          for path in register login forgotPassword resetPassword confirmEmail resendConfirmationEmail; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X POST "http://127.0.0.1:5310/spark/auth/$path")
+            if [ "$code" = "404" ]; then
+              echo "ok      /spark/auth/$path -> 404"
+            else
+              echo "::error::/spark/auth/$path returned $code, expected 404 (the endpoint is still mapped)"
+              status=1
+            fi
+          done
+          exit $status
+
+      # The other half: switching the local family off must not take external
+      # sign-in with it. 405 is the pass — the route is mapped and GET-only.
+      - name: External sign-in is still mapped
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X POST http://127.0.0.1:5310/spark/auth/external-login)
+          echo "/spark/auth/external-login -> $code"
+          [ "$code" = "405" ] || { echo "::error::expected 405 (mapped, GET-only), got $code"; exit 1; }
+
+      - name: Startup log
+        if: always()
+        run: cat boot.log || true
+
+      - name: Stop the app
+        if: always()
+        run: kill "$(cat runner.pid)" 2>/dev/null || true
+
   angular-build:
     runs-on: ubuntu-latest
     steps:

@@ -64,7 +64,14 @@ public partial class UploadsController : ControllerBase
         var commit = await session.LoadAsync<Commit>(commitId, cancellationToken);
         if (commit is null)
         {
-            commit = new Commit { Sha = form.CommitSha, Repository = repository.Id, FirstSeenAtUtc = DateTimeOffset.UtcNow };
+            // Composed, not repository.Id: on the auto-provision path the
+            // repository was stored moments ago in this same session.
+            commit = new Commit
+            {
+                Sha = form.CommitSha,
+                Repository = Entities.Repository.DocumentId(repository.GitHubId),
+                FirstSeenAtUtc = DateTimeOffset.UtcNow,
+            };
             await session.StoreAsync(commit, commitId, cancellationToken);
         }
         commit.Branch ??= form.Branch;
@@ -393,7 +400,7 @@ public partial class UploadsController : ControllerBase
 
         var authorized = scope switch
         {
-            "Account" => string.Equals(account, repository.OwnerLogin, StringComparison.OrdinalIgnoreCase),
+            "Account" => account == repository.OwnerGitHubId.ToString(),
             "Repository" => repoId == repository.GitHubId.ToString(),
             _ => false,
         };
@@ -425,27 +432,40 @@ public partial class UploadsController : ControllerBase
         var fullName = User.FindFirst(GitHubOidc.RepositoryClaim)!.Value;
         var ownerLogin = User.FindFirst(GitHubOidc.RepositoryOwnerClaim)?.Value ?? fullName.Split('/')[0];
 
-        Account? account = null;
-        if (long.TryParse(User.FindFirst(GitHubOidc.RepositoryOwnerIdClaim)?.Value, out var ownerId))
+        // The owner id is required, not best-effort: it is the repository's
+        // authorization key (OwnerGitHubId), so provisioning without it would
+        // create a row no viewer rule could ever match. GitHub always sends the
+        // claim; refusing is strictly better than storing an unkeyed row.
+        if (!long.TryParse(User.FindFirst(GitHubOidc.RepositoryOwnerIdClaim)?.Value, out var ownerId))
         {
-            account = await session.LoadAsync<Account>(Account.DocumentId(ownerId), cancellationToken);
-            if (account is null)
-            {
-                account = new Account { GitHubId = ownerId, Login = ownerLogin };
-                await session.StoreAsync(account, Account.DocumentId(ownerId), cancellationToken);
-            }
+            logger.LogWarning("OIDC upload for {FullName} carried no parseable repository_owner_id claim", fullName);
+            return null;
+        }
+
+        var account = await session.LoadAsync<Account>(Account.DocumentId(ownerId), cancellationToken);
+        if (account is null)
+        {
+            account = new Account { GitHubId = ownerId, Login = ownerLogin };
+            await session.StoreAsync(account, Account.DocumentId(ownerId), cancellationToken);
         }
 
         repository = new Repository
         {
             GitHubId = gitHubRepoId,
-            Account = account?.Id,
+            // The composed id, not account.Id: for a just-stored document the
+            // latter depends on RavenDB having assigned the identity property
+            // already, which holds for an explicit id but not for every id
+            // convention. The value is the same and this cannot be null.
+            Account = Account.DocumentId(ownerId),
             Name = fullName.Split('/')[1],
             FullName = fullName,
             OwnerLogin = ownerLogin,
+            OwnerGitHubId = ownerId,
             IsPrivate = false,
         };
         await session.StoreAsync(repository, Repository.DocumentId(gitHubRepoId), cancellationToken);
+        // Provisioned public, so the owner becomes anonymously visible.
+        account.PublicRepoCount++;
         logger.LogInformation("Auto-provisioned public repository {FullName} from OIDC upload", fullName);
         return repository;
     }

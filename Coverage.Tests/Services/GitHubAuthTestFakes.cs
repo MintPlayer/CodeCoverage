@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Security.Claims;
+using Coverage.Entities;
 using Coverage.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -50,10 +51,11 @@ internal static class GitHubAuthTestFakes
         ], authenticationType: "Test"));
 }
 
-internal sealed class InMemoryUserStore : IUserStore<SparkUser>, IUserAuthenticationTokenStore<SparkUser>
+internal sealed class InMemoryUserStore : IUserStore<SparkUser>, IUserAuthenticationTokenStore<SparkUser>, IUserLoginStore<SparkUser>
 {
     private readonly ConcurrentDictionary<string, SparkUser> users = new();
     private readonly ConcurrentDictionary<(string UserId, string Provider, string Name), string?> tokens = new();
+    private readonly ConcurrentDictionary<string, List<UserLoginInfo>> logins = new();
 
     public InMemoryUserStore Add(SparkUser user)
     {
@@ -69,6 +71,37 @@ internal sealed class InMemoryUserStore : IUserStore<SparkUser>, IUserAuthentica
 
     public string? StoredToken(SparkUser user, string name) =>
         tokens.TryGetValue((user.Id!, "GitHub", name), out var value) ? value : null;
+
+    /// <summary>
+    /// Binds the user to a GitHub identity the way the external-login flow does:
+    /// ProviderKey is the numeric GitHub id, which is what authorization keys on.
+    /// </summary>
+    public InMemoryUserStore WithGitHubLogin(SparkUser user, long gitHubId)
+    {
+        logins.GetOrAdd(user.Id!, _ => []).Add(new UserLoginInfo("GitHub", gitHubId.ToString(), "GitHub"));
+        return this;
+    }
+
+    Task IUserLoginStore<SparkUser>.AddLoginAsync(SparkUser user, UserLoginInfo login, CancellationToken ct)
+    {
+        logins.GetOrAdd(user.Id!, _ => []).Add(login);
+        return Task.CompletedTask;
+    }
+
+    Task IUserLoginStore<SparkUser>.RemoveLoginAsync(SparkUser user, string loginProvider, string providerKey, CancellationToken ct)
+    {
+        if (logins.TryGetValue(user.Id!, out var list))
+            list.RemoveAll(l => l.LoginProvider == loginProvider && l.ProviderKey == providerKey);
+        return Task.CompletedTask;
+    }
+
+    Task<IList<UserLoginInfo>> IUserLoginStore<SparkUser>.GetLoginsAsync(SparkUser user, CancellationToken ct)
+        => Task.FromResult<IList<UserLoginInfo>>(logins.TryGetValue(user.Id!, out var list) ? [.. list] : []);
+
+    Task<SparkUser?> IUserLoginStore<SparkUser>.FindByLoginAsync(string loginProvider, string providerKey, CancellationToken ct)
+        => Task.FromResult(users.Values.FirstOrDefault(u =>
+            logins.TryGetValue(u.Id!, out var list)
+            && list.Any(l => l.LoginProvider == loginProvider && l.ProviderKey == providerKey)));
 
     Task<string> IUserStore<SparkUser>.GetUserIdAsync(SparkUser user, CancellationToken ct) => Task.FromResult(user.Id!);
     Task<string?> IUserStore<SparkUser>.GetUserNameAsync(SparkUser user, CancellationToken ct) => Task.FromResult(user.UserName);
@@ -170,8 +203,86 @@ internal sealed class ScriptedTokenService(Func<bool, GitHubUserToken> script) :
 internal sealed class ScriptedAccessService(GitHubVisibility visibility) : IGitHubAccessService
 {
     public Task<GitHubVisibility> GetVisibilityAsync(CancellationToken ct = default) => Task.FromResult(visibility);
-    public async Task<string[]> GetAllowedOwnersAsync(CancellationToken ct = default) => (await GetVisibilityAsync(ct)).Owners;
-    public async Task<bool> IsOwnerAllowedAsync(string ownerLogin, CancellationToken ct = default)
-        => (await GetVisibilityAsync(ct)).Owners.Contains(ownerLogin, StringComparer.OrdinalIgnoreCase);
+    public async Task<long[]> GetAllowedOwnerIdsAsync(CancellationToken ct = default) => (await GetVisibilityAsync(ct)).OwnerGitHubIds;
+    public async Task<bool> IsOwnerAllowedAsync(long ownerGitHubId, CancellationToken ct = default)
+        => (await GetVisibilityAsync(ct)).OwnerGitHubIds.Contains(ownerGitHubId);
     public Task InvalidateAsync(CancellationToken ct = default) => Task.CompletedTask;
+}
+
+/// <summary>
+/// The access rule without GitHub: a public repository is readable by anyone, a
+/// private one gets whatever level the test scripts. No lease renewal — the
+/// endpoint tests are about what the endpoints serve, not about the refresh.
+/// </summary>
+internal sealed class ScriptedRepositoryAccessService(
+    RepositoryAccessLevel privateLevel = RepositoryAccessLevel.None) : IRepositoryAccessService
+{
+    public Task<RepositoryAccessLevel> GetAsync(Repository repository, CancellationToken ct = default)
+        => Task.FromResult(repository.IsPrivate ? privateLevel : RepositoryAccessLevel.Read);
+
+    public Task<RepositoryAccessLevel> GetVerifiedAsync(Repository repository, CancellationToken ct = default)
+        => GetAsync(repository, ct);
+}
+
+/// <summary>
+/// A viewer with no persisted snapshot — entitled to public repositories only.
+/// Also the shape a local account with no GitHub identity resolves to.
+/// </summary>
+internal sealed class EmptyUserAccessService : IUserAccessService
+{
+    public Task<UserAccess?> GetAsync(CancellationToken ct = default) => Task.FromResult<UserAccess?>(null);
+    public Task InvalidateAsync(CancellationToken ct = default) => Task.CompletedTask;
+}
+
+/// <summary>
+/// Entitlement without GitHub: the viewer is entitled to exactly the repository
+/// ids given, and administers exactly the ones given as admin. Mirrors the real
+/// shape — snapshot lookups, no calls — so list endpoints under test still make
+/// a real per-repository decision.
+/// </summary>
+internal sealed class ScriptedSparkVisibility(
+    long[]? entitledRepositoryIds = null,
+    long[]? administeredRepositoryIds = null,
+    long[]? allowedOwnerIds = null,
+    string[]? visibleRepositoryDocumentIds = null) : ISparkVisibility
+{
+    public Task<long[]> GetEntitledRepositoryGitHubIdsAsync()
+        => Task.FromResult(entitledRepositoryIds ?? []);
+
+    public Task<long[]> GetAllowedOwnerIdsAsync()
+        => Task.FromResult(allowedOwnerIds ?? []);
+
+    public Task<string[]> GetVisibleRepositoryIdsAsync()
+        => Task.FromResult(visibleRepositoryDocumentIds ?? []);
+
+    public Task<bool> CanManageRepositoryAsync(long repositoryGitHubId)
+        => Task.FromResult((administeredRepositoryIds ?? []).Contains(repositoryGitHubId));
+
+    public Task<bool> CanManageAccountAsync(long accountGitHubId)
+        => Task.FromResult((administeredRepositoryIds ?? []).Length > 0);
+}
+
+/// <summary>A viewer whose persisted entitlement snapshot is scripted outright.</summary>
+internal sealed class ScriptedUserAccessService(UserAccess? access) : IUserAccessService
+{
+    public Task<UserAccess?> GetAsync(CancellationToken ct = default) => Task.FromResult(access);
+    public Task InvalidateAsync(CancellationToken ct = default) => Task.CompletedTask;
+}
+
+/// <summary>
+/// Records deltas without touching the database — the webhook tests are about
+/// document upserts, not about the denormalized publicity count. Exposed so a
+/// test can assert the delta if it ever needs to.
+/// </summary>
+internal sealed class NoOpAccountPublicityService : IAccountPublicityService
+{
+    public int NetDelta { get; private set; }
+
+    public void Adjust(Account account, int delta)
+    {
+        NetDelta += delta;
+        account.PublicRepoCount = Math.Max(0, account.PublicRepoCount + delta);
+    }
+
+    public Task ReconcileAllAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 }

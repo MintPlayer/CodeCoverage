@@ -50,7 +50,7 @@
               } @else {
                 <bs-list-group>
                   @for (account of list; track account.login) {
-                    <bs-list-group-item class="d-flex align-items-center gap-2">
+                    <bs-list-group-item class="d-flex align-items-center gap-2 flex-wrap">
                       @if (account.avatarUrl) {
                         <img [src]="account.avatarUrl" [alt]="account.login" width="24" height="24" class="rounded">
                       } @else {
@@ -64,9 +64,9 @@
                         }
                       </span>
                       @if (account.installed) {
-                        <bs-badge class="text-bg-success">{{ 'app.appInstalled' | t }}</bs-badge>
+                        <bs-badge class="text-bg-success text-nowrap">{{ 'app.appInstalled' | t }}</bs-badge>
                       } @else {
-                        <bs-badge class="text-bg-secondary">{{ 'app.appNotInstalled' | t }}</bs-badge>
+                        <bs-badge class="text-bg-secondary text-nowrap">{{ 'app.appNotInstalled' | t }}</bs-badge>
                       }
                     </bs-list-group-item>
                   }

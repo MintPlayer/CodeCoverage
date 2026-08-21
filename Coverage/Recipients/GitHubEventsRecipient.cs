@@ -1,9 +1,13 @@
 using System.Text.Json;
 using Coverage.Entities;
+using Coverage.Services;
 using MintPlayer.SourceGenerators.Attributes;
 using MintPlayer.Spark.Messaging.Abstractions;
 using MintPlayer.Spark.Webhooks.GitHub.Messages;
 using Octokit.Webhooks.Events;
+using Octokit.Webhooks.Events.InstallationTarget;
+using Raven.Client.Documents.Operations;
+using Raven.Client.Documents.Queries;
 using Raven.Client.Documents.Session;
 
 namespace Coverage.Recipients;
@@ -23,6 +27,7 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
 {
     [Inject] private readonly IAsyncDocumentSession session;
     [Inject] private readonly IMessageBus messageBus;
+    [Inject] private readonly IAccountPublicityService publicity;
     [Inject] private readonly ILogger<GitHubEventsRecipient> logger;
 
     public async Task HandleAsync(GitHubWebhookMessage message, CancellationToken cancellationToken = default)
@@ -34,6 +39,9 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
                 break;
             case "installation_repositories":
                 await OnInstallationRepositories(Deserialize<InstallationRepositoriesEvent>(message), cancellationToken);
+                break;
+            case "installation_target":
+                await OnInstallationTarget(Deserialize<InstallationTargetRenamedEvent>(message), cancellationToken);
                 break;
             case "repository":
                 await OnRepository(Deserialize<RepositoryEvent>(message), cancellationToken);
@@ -70,10 +78,12 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
                 account.InstallationId = evt.Installation.Id;
                 await UpsertRepositories(
                     (evt.Repositories ?? []).Select(r => (r.Id, r.Name, r.FullName, r.Private)), account, ct);
+                BumpAccessEpoch(account, $"installation {evt.Action}");
                 break;
             case "deleted":
             case "suspend":
                 account.InstallationId = null;
+                BumpAccessEpoch(account, $"installation {evt.Action}");
                 break;
         }
 
@@ -92,6 +102,8 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
         await UpsertRepositories(
             (evt.RepositoriesAdded ?? []).Select(r => (r.Id, r.Name, r.FullName, r.Private)), account, ct);
 
+        BumpAccessEpoch(account, "installation repositories changed");
+
         var removedIds = (evt.RepositoriesRemoved ?? [])
             .Select(r => Repository.DocumentId(r.Id))
             .ToArray();
@@ -100,10 +112,51 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
             var loaded = await session.LoadAsync<Repository>(removedIds, ct);
             foreach (var existing in loaded.Values)
             {
-                if (existing is not null)
-                    session.Delete(existing);
+                if (existing is null) continue;
+                if (!existing.IsPrivate) publicity.Adjust(account, -1);
+                session.Delete(existing);
             }
         }
+    }
+
+    /// <summary>
+    /// A user or organization was renamed. Logins are display keys — every gate
+    /// runs on GitHub ids — but they are still embedded in Repository.FullName
+    /// and OwnerLogin, which is what the browse URLs resolve against. Without
+    /// this the account keeps its old name forever and every /r/{owner}/{repo}
+    /// link built from the new name 404s.
+    /// </summary>
+    private async Task OnInstallationTarget(InstallationTargetRenamedEvent evt, CancellationToken ct)
+    {
+        if (evt.Action != "renamed" || evt.Account is null) return;
+
+        var account = await GetOrCreateAccount(evt.Account.Id, ct);
+        var previous = account.Login;
+        account.Login = evt.Account.Login;
+        account.AvatarUrl = evt.Account.AvatarUrl;
+
+        // Patch-by-query rather than load-and-mutate: an org can hold more
+        // repositories than a session may load, and a silently truncated rename
+        // is worse than a slow one.
+        var operation = await session.Advanced.DocumentStore.Operations.SendAsync(
+            new PatchByQueryOperation(new IndexQuery
+            {
+                Query = """
+                    from Repositories as r
+                    where r.OwnerGitHubId = $ownerId
+                    update { r.OwnerLogin = $login; r.FullName = $login + '/' + r.Name; }
+                    """,
+                QueryParameters = new Raven.Client.Parameters
+                {
+                    { "ownerId", evt.Account.Id },
+                    { "login", evt.Account.Login },
+                },
+            }),
+            token: ct);
+        await operation.WaitForCompletionAsync(TimeSpan.FromMinutes(2));
+
+        logger.LogInformation("Renamed account {From} -> {To} (GitHub id {GitHubId}) and repatched its repositories",
+            previous, evt.Account.Login, evt.Account.Id);
     }
 
     private async Task OnRepository(RepositoryEvent evt, CancellationToken ct)
@@ -233,21 +286,45 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
         {
             var id = Repository.DocumentId(item.GitHubId);
             var repository = loaded.GetValueOrDefault(id);
+
+            // Captured before the upsert, because the Account row filter reads the
+            // public count and a recount would come from an index that has not
+            // seen this write yet. A repository we did not have counts as private,
+            // so a new public one is a +1 rather than a no-op.
+            var wasPublic = repository is not null && !repository.IsPrivate;
+
             if (repository is null)
             {
                 repository = new Repository { GitHubId = item.GitHubId };
                 await session.StoreAsync(repository, id, ct);
             }
             ApplyRepositoryFields(repository, item.Name, item.FullName, item.IsPrivate, account);
+            publicity.Adjust(account, IAccountPublicityService.DeltaFor(!wasPublic, item.IsPrivate));
         }
+    }
+
+    /// <summary>
+    /// Marks every persisted entitlement snapshot for this account stale, without
+    /// having to know which users are affected. One integer, no fan-out write, no
+    /// members lookup — which is what makes team-level invalidation affordable.
+    /// </summary>
+    private void BumpAccessEpoch(Account account, string reason)
+    {
+        account.AccessEpoch++;
+        logger.LogInformation("Account {Login} ({GitHubId}) access epoch -> {Epoch} ({Reason})",
+            account.Login, account.GitHubId, account.AccessEpoch, reason);
     }
 
     private static void ApplyRepositoryFields(Repository repository, string name, string fullName, bool isPrivate, Account account)
     {
-        repository.Account = account.Id;
+        // Composed, not account.Id: GetOrCreateAccount may have stored this
+        // account moments ago, and a reference that silently lands null detaches
+        // the repository from its owner for every gate that reads it.
+        repository.Account = Account.DocumentId(account.GitHubId);
         repository.Name = name;
         repository.FullName = fullName;
         repository.OwnerLogin = fullName.Split('/')[0];
+        repository.OwnerGitHubId = account.GitHubId;
         repository.IsPrivate = isPrivate;
     }
 

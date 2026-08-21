@@ -24,8 +24,14 @@ public partial class GitHubAccessService : IGitHubAccessService
 
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
 
-    public async Task<string[]> GetAllowedOwnersAsync(CancellationToken cancellationToken = default)
-        => (await GetVisibilityAsync(cancellationToken)).Owners;
+    /// <summary>
+    /// The external-login provider Spark registers for GitHub — the login's
+    /// <c>ProviderKey</c> is the user's immutable GitHub numeric id.
+    /// </summary>
+    private const string GitHubLoginProvider = "GitHub";
+
+    public async Task<long[]> GetAllowedOwnerIdsAsync(CancellationToken cancellationToken = default)
+        => (await GetVisibilityAsync(cancellationToken)).OwnerGitHubIds;
 
     public async Task<GitHubVisibility> GetVisibilityAsync(CancellationToken cancellationToken = default)
     {
@@ -38,16 +44,24 @@ public partial class GitHubAccessService : IGitHubAccessService
             return new([], GitHubTokenState.Ok);
 
         var cacheKey = $"github-owners/{user.Id}";
-        if (memoryCache.TryGetValue<string[]>(cacheKey, out var cached) && cached is not null)
+        if (memoryCache.TryGetValue<long[]>(cacheKey, out var cached) && cached is not null)
             return new(cached, GitHubTokenState.Ok);
 
-        var username = principal.FindFirstValue(ClaimTypes.Name);
+        // The GitHub numeric id, not ClaimTypes.Name. The cookie's Name claim is
+        // the local UserName, captured from the GitHub login at first sign-in and
+        // never refreshed — so trusting it grants access under whatever login the
+        // account was created with, even after that login moved to someone else.
+        // The external login's ProviderKey is the id GitHub itself issued and
+        // cannot be reassigned. An account with no GitHub login (a local
+        // password registration) resolves to null and therefore gets no owner
+        // grant at all, which is the correct answer for it.
+        var ownGitHubId = await GetOwnGitHubIdAsync(user);
 
         var token = await tokenService.GetAccessTokenAsync(user, forceRefresh: false, cancellationToken);
         if (token.State != GitHubTokenState.Ok)
-            return Degraded(username, token.State);
+            return Degraded(ownGitHubId, token.State);
 
-        var (installations, unauthorized) = await QueryGitHubInstallationsAsync(token.AccessToken!, user.Id, username, cancellationToken);
+        var (installations, unauthorized) = await QueryGitHubInstallationsAsync(token.AccessToken!, user.Id, ownGitHubId, cancellationToken);
         if (unauthorized)
         {
             // The token looked fresh but GitHub refused it (revoked, or expiry
@@ -55,15 +69,15 @@ public partial class GitHubAccessService : IGitHubAccessService
             // Spark's installation-token TokenRefreshingHandler uses.
             token = await tokenService.GetAccessTokenAsync(user, forceRefresh: true, cancellationToken);
             if (token.State != GitHubTokenState.Ok)
-                return Degraded(username, token.State);
+                return Degraded(ownGitHubId, token.State);
 
-            (installations, unauthorized) = await QueryGitHubInstallationsAsync(token.AccessToken!, user.Id, username, cancellationToken);
+            (installations, unauthorized) = await QueryGitHubInstallationsAsync(token.AccessToken!, user.Id, ownGitHubId, cancellationToken);
             if (unauthorized)
             {
                 // A just-refreshed token GitHub still refuses: the
                 // authorization itself is gone. Only a browser fixes this.
-                logger.LogWarning("GitHub refused a freshly refreshed token for user {UserId} ({Login}) — reauth required", user.Id, username);
-                return Degraded(username, GitHubTokenState.ReauthRequired);
+                logger.LogWarning("GitHub refused a freshly refreshed token for user {UserId} (GitHub id {GitHubId}) — reauth required", user.Id, ownGitHubId);
+                return Degraded(ownGitHubId, GitHubTokenState.ReauthRequired);
             }
         }
 
@@ -72,28 +86,47 @@ public partial class GitHubAccessService : IGitHubAccessService
             // GitHub unreachable: visibility degrades to the user's own repos
             // for this request, but an unknown answer is neither cached nor
             // used to clear anything — failure is not absence.
-            return Degraded(username, GitHubTokenState.Unavailable);
+            return Degraded(ownGitHubId, GitHubTokenState.Unavailable);
         }
 
-        await BackfillInstallationIdsAsync(installations, username, cancellationToken);
+        await BackfillInstallationIdsAsync(installations, ownGitHubId, cancellationToken);
 
         var owners = installations
-            .Select(i => i.Login)
-            .Concat(username is not null ? [username] : [])
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(i => i.AccountGitHubId)
+            .Concat(ownGitHubId is not null ? [ownGitHubId.Value] : [])
+            .Distinct()
             .ToArray();
 
         memoryCache.Set(cacheKey, owners, CacheDuration);
         return new(owners, GitHubTokenState.Ok);
     }
 
-    private static GitHubVisibility Degraded(string? username, GitHubTokenState state)
-        => new(username is not null ? [username] : [], state);
-
-    public async Task<bool> IsOwnerAllowedAsync(string ownerLogin, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// The signed-in user's GitHub numeric id, from the external login's
+    /// ProviderKey. Null when the account has no GitHub login at all.
+    /// </summary>
+    private async Task<long?> GetOwnGitHubIdAsync(SparkUser user)
     {
-        var owners = await GetAllowedOwnersAsync(cancellationToken);
-        return owners.Contains(ownerLogin, StringComparer.OrdinalIgnoreCase);
+        var logins = await userManager.GetLoginsAsync(user);
+        var providerKey = logins
+            .FirstOrDefault(l => string.Equals(l.LoginProvider, GitHubLoginProvider, StringComparison.OrdinalIgnoreCase))
+            ?.ProviderKey;
+
+        if (long.TryParse(providerKey, out var gitHubId))
+            return gitHubId;
+
+        if (providerKey is not null)
+            logger.LogWarning("GitHub login for user {UserId} has a non-numeric ProviderKey", user.Id);
+        return null;
+    }
+
+    private static GitHubVisibility Degraded(long? ownGitHubId, GitHubTokenState state)
+        => new(ownGitHubId is not null ? [ownGitHubId.Value] : [], state);
+
+    public async Task<bool> IsOwnerAllowedAsync(long ownerGitHubId, CancellationToken cancellationToken = default)
+    {
+        var owners = await GetAllowedOwnerIdsAsync(cancellationToken);
+        return owners.Contains(ownerGitHubId);
     }
 
     public async Task InvalidateAsync(CancellationToken cancellationToken = default)
@@ -111,7 +144,7 @@ public partial class GitHubAccessService : IGitHubAccessService
     /// callers must treat differently from an empty but successful response.
     /// Unauthorized is surfaced separately so the caller can refresh and retry.</summary>
     private async Task<(GitHubInstallation[]? Installations, bool Unauthorized)> QueryGitHubInstallationsAsync(
-        string accessToken, string? userId, string? username, CancellationToken cancellationToken)
+        string accessToken, string? userId, long? ownGitHubId, CancellationToken cancellationToken)
     {
         try
         {
@@ -126,8 +159,8 @@ public partial class GitHubAccessService : IGitHubAccessService
                 return (null, Unauthorized: true);
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning("GitHub /user/installations query failed: {StatusCode} for user {UserId} ({Login})",
-                    response.StatusCode, userId, username);
+                logger.LogWarning("GitHub /user/installations query failed: {StatusCode} for user {UserId} (GitHub id {GitHubId})",
+                    response.StatusCode, userId, ownGitHubId);
                 return (null, false);
             }
 
@@ -136,7 +169,7 @@ public partial class GitHubAccessService : IGitHubAccessService
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to query GitHub installations for user {UserId} ({Login})", userId, username);
+            logger.LogError(ex, "Failed to query GitHub installations for user {UserId} (GitHub id {GitHubId})", userId, ownGitHubId);
             return (null, false);
         }
     }
@@ -180,7 +213,7 @@ public partial class GitHubAccessService : IGitHubAccessService
     /// the badge green forever). For orgs, absence may simply mean lost
     /// visibility, so clearing those stays the webhook's job.
     /// </summary>
-    private async Task BackfillInstallationIdsAsync(GitHubInstallation[] installations, string? username, CancellationToken cancellationToken)
+    private async Task BackfillInstallationIdsAsync(GitHubInstallation[] installations, long? ownGitHubId, CancellationToken cancellationToken)
     {
         var active = installations.Where(i => !i.Suspended).ToArray();
 
@@ -207,23 +240,22 @@ public partial class GitHubAccessService : IGitHubAccessService
                 account.InstallationId = installation.Id;
             }
 
-            if (username is not null
-                && !active.Any(i => string.Equals(i.Login, username, StringComparison.OrdinalIgnoreCase)))
+            if (ownGitHubId is not null && !active.Any(i => i.AccountGitHubId == ownGitHubId.Value))
             {
-                var own = await session.Query<Account, Indexes.Accounts_Overview>()
-                    .Where(a => a.Login == username)
-                    .FirstOrDefaultAsync(cancellationToken);
+                // A point-load now the key is the GitHub id — this used to be an
+                // index query on a mutable login, which also went stale on rename.
+                var own = await session.LoadAsync<Account>(Account.DocumentId(ownGitHubId.Value), cancellationToken);
                 if (own?.InstallationId is not null)
                 {
                     own.InstallationId = null;
                     logger.LogInformation(
-                        "Cleared InstallationId for {Login}: own account absent from /user/installations", username);
+                        "Cleared InstallationId for GitHub id {GitHubId}: own account absent from /user/installations", ownGitHubId);
                 }
             }
 
             if (session.Advanced.HasChanges)
             {
-                // The caller immediately queries Accounts by Login; wait for
+                // The caller immediately queries Accounts by GitHubId; wait for
                 // indexing so a just-created account shows up in that query
                 // (existing accounts are unaffected — their index entry is
                 // already there and documents load fresh).

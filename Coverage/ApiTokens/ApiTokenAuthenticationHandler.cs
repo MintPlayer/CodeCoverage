@@ -17,6 +17,12 @@ public class ApiTokenAuthenticationHandler : AuthenticationHandler<Authenticatio
     public const string SchemeName = "ApiToken";
 
     public const string ScopeClaim = "covt:scope";
+
+    /// <summary>
+    /// The owning account's GitHub numeric id, as a string. An id and not a
+    /// login: a token minted for an org must keep pointing at that org after a
+    /// rename, and must not follow the freed login to whoever takes it next.
+    /// </summary>
     public const string AccountClaim = "covt:account";
     public const string RepositoryClaim = "covt:repoid";
     public const string TokenHashClaim = "covt:hash";
@@ -60,8 +66,8 @@ public class ApiTokenAuthenticationHandler : AuthenticationHandler<Authenticatio
             new(ScopeClaim, token.Scope),
             new(TokenHashClaim, hash),
         };
-        if (token.AccountLogin is not null)
-            claims.Add(new Claim(AccountClaim, token.AccountLogin));
+        if (token.AccountGitHubId is not null)
+            claims.Add(new Claim(AccountClaim, token.AccountGitHubId.Value.ToString()));
         if (token.RepositoryGitHubId is not null)
             claims.Add(new Claim(RepositoryClaim, token.RepositoryGitHubId.Value.ToString()));
 

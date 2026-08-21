@@ -11,10 +11,17 @@ public interface IGitHubContentService
 }
 
 /// <summary>
-/// Fetches file content from GitHub at view time — source is never stored
-/// here. Private repos read through the App installation token; public repos
-/// fall back to raw.githubusercontent.com. Content at a full SHA is immutable,
-/// so cache entries can live long.
+/// Fetches file content from GitHub at view time — source is never stored here.
+/// Content at a full SHA is immutable, so cache entries can live long.
+///
+/// <para>
+/// The installation token is a privilege the app lends out, so callers pass
+/// <c>installationId</c> **only for a private repository whose viewer they have
+/// verified**. A public file comes from raw.githubusercontent.com instead: it is
+/// public either way, and routing it through the installation would spend a
+/// shared rate-limit budget and widen the confused-deputy surface for nothing.
+/// Pass null and this reads raw; pass an id and it reads as the App.
+/// </para>
 /// </summary>
 [Register(typeof(IGitHubContentService), ServiceLifetime.Scoped)]
 public partial class GitHubContentService : IGitHubContentService

@@ -16,7 +16,7 @@ namespace Coverage.Controllers;
 public partial class RepoSettingsController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;
-    [Inject] private readonly IGitHubAccessService gitHubAccess;
+    [Inject] private readonly IRepositoryAccessService repositoryAccess;
 
     /// <summary>
     /// (Re)generates the badge token. Rotation invalidates the previous badge
@@ -73,8 +73,14 @@ public partial class RepoSettingsController : ControllerBase
             .FirstOrDefaultAsync(cancellationToken);
         if (repository is null) return null;
 
+        // Rotating the badge token and rewriting the gate policy are administrative
+        // acts on this repository, so they need Admin on *this* repository — not
+        // mere visibility of the owner's installation, which any read-only org
+        // member has.
+        //
         // NotFound for the unauthorized too, upstream of this: an existence
         // oracle is the thing the badge-token endpoint already refuses to be.
-        return await gitHubAccess.IsOwnerAllowedAsync(repository.OwnerLogin, cancellationToken) ? repository : null;
+        var level = await repositoryAccess.GetAsync(repository, cancellationToken);
+        return level >= RepositoryAccessLevel.Admin ? repository : null;
     }
 }

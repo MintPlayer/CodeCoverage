@@ -10,26 +10,46 @@ namespace Coverage.Services;
 public partial class SparkVisibility : ISparkVisibility
 {
     [Inject] private readonly IGitHubAccessService gitHubAccess;
+    [Inject] private readonly IUserAccessService userAccess;
+    [Inject] private readonly IAccountAccessService accountAccess;
     [Inject] private readonly IAsyncDocumentSession session;
 
     // Task-memoized so concurrent awaiters within the request share one computation.
-    private Task<string[]>? owners;
+    private Task<long[]>? ownerIds;
+    private Task<long[]>? entitledRepositoryIds;
     private Task<string[]>? visibleRepositoryIds;
 
-    public Task<string[]> GetAllowedOwnersAsync()
-        => owners ??= gitHubAccess.GetAllowedOwnersAsync();
+    public Task<long[]> GetAllowedOwnerIdsAsync()
+        => ownerIds ??= gitHubAccess.GetAllowedOwnerIdsAsync();
+
+    public Task<long[]> GetEntitledRepositoryGitHubIdsAsync()
+        => entitledRepositoryIds ??= QueryEntitledRepositoryIdsAsync();
+
+    private async Task<long[]> QueryEntitledRepositoryIdsAsync()
+    {
+        var access = await userAccess.GetAsync();
+        return access is null
+            ? []
+            : [.. access.Repositories.Select(r => r.RepositoryGitHubId)];
+    }
 
     public Task<string[]> GetVisibleRepositoryIdsAsync()
         => visibleRepositoryIds ??= QueryVisibleRepositoryIdsAsync();
 
-    public async Task<bool> CanManageOwnerAsync(string ownerLogin)
-        => (await GetAllowedOwnersAsync()).Contains(ownerLogin, StringComparer.OrdinalIgnoreCase);
+    public async Task<bool> CanManageRepositoryAsync(long repositoryGitHubId)
+    {
+        var access = await userAccess.GetAsync();
+        return access is not null && access.LevelFor(repositoryGitHubId) >= RepositoryAccessLevel.Admin;
+    }
+
+    public Task<bool> CanManageAccountAsync(long accountGitHubId)
+        => accountAccess.CanManageAnyRepositoryAsync(accountGitHubId);
 
     private async Task<string[]> QueryVisibleRepositoryIdsAsync()
     {
-        var allowed = await GetAllowedOwnersAsync();
+        var entitled = await GetEntitledRepositoryGitHubIdsAsync();
         var ids = await session.Query<Repository, Indexes.Repositories_Overview>()
-            .Where(RepositoryVisibility.Filter(allowed))
+            .Where(RepositoryVisibility.Filter(entitled))
             .Select(r => r.Id)
             .ToListAsync();
         return [.. ids.OfType<string>()];

@@ -200,6 +200,21 @@
         "renderer": "repo-name"
       },
       {
+        "id": "18a7cb7b-b210-41b2-b8ff-9fadd795a52c",
+        "name": "OwnerGitHubId",
+        "label": {
+          "en": "Owner Git Hub Id"
+        },
+        "dataType": "number",
+        "isRequired": true,
+        "isVisible": false,
+        "isReadOnly": false,
+        "order": 6,
+        "isArray": false,
+        "showedOn": "PersistentObject",
+        "rules": []
+      },
+      {
         "id": "28457041-7915-454c-9186-f6bc79f788ce",
         "name": "OwnerLogin",
         "label": {
@@ -210,6 +225,21 @@
         "isVisible": true,
         "isReadOnly": false,
         "order": 7,
+        "isArray": false,
+        "showedOn": "PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "1b96f21b-80b2-4407-b7f3-f8a2f491a5ae",
+        "name": "VisibilityCheckedAtUtc",
+        "label": {
+          "en": "Visibility Checked At Utc"
+        },
+        "dataType": "datetime",
+        "isRequired": false,
+        "isVisible": false,
+        "isReadOnly": false,
+        "order": 8,
         "isArray": false,
         "showedOn": "PersistentObject",
         "rules": []

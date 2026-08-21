@@ -21,8 +21,32 @@ public class Account
 
     public string? AvatarUrl { get; set; }
 
-    /// <summary>GitHub App installation on this account, when the app is installed.</summary>
+    /// <summary>
+    /// GitHub App installation on this account, when the app is installed.
+    ///
+    /// [IgnoreForIndex] because redaction nulls the value but cannot remove the
+    /// attribute from the model — and a declared attribute is an accepted
+    /// <c>sortColumns</c> value, so an anonymous caller could order the grid by a
+    /// field they are not allowed to read. Removing it from the index removes the
+    /// channel rather than papering over it; nothing filters or sorts on it.
+    /// </summary>
+    [IgnoreForIndex]
     public long? InstallationId { get; set; }
+
+    /// <summary>
+    /// How many of this account's repositories are currently public.
+    ///
+    /// Denormalized because it is the Account row filter, and a row filter has to
+    /// be one RavenDB-translatable expression — it cannot join to Repositories.
+    /// Without it every account is anonymously enumerable, including accounts that
+    /// exist *only* because they own private repositories, which discloses who
+    /// uses this service.
+    ///
+    /// Maintained exactly by the webhook and provisioning paths, and reconciled
+    /// periodically by the visibility sweep so drift heals itself rather than
+    /// silently hiding or exposing an account forever.
+    /// </summary>
+    public int PublicRepoCount { get; set; }
 
     /// <summary>
     /// Bumped whenever something happens that could change *anyone's* access to

@@ -453,6 +453,8 @@ public partial class UploadsController : ControllerBase
             IsPrivate = false,
         };
         await session.StoreAsync(repository, Repository.DocumentId(gitHubRepoId), cancellationToken);
+        // Provisioned public, so the owner becomes anonymously visible.
+        account.PublicRepoCount++;
         logger.LogInformation("Auto-provisioned public repository {FullName} from OIDC upload", fullName);
         return repository;
     }

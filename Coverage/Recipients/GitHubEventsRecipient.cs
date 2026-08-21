@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Coverage.Entities;
+using Coverage.Services;
 using MintPlayer.SourceGenerators.Attributes;
 using MintPlayer.Spark.Messaging.Abstractions;
 using MintPlayer.Spark.Webhooks.GitHub.Messages;
@@ -26,6 +27,7 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
 {
     [Inject] private readonly IAsyncDocumentSession session;
     [Inject] private readonly IMessageBus messageBus;
+    [Inject] private readonly IAccountPublicityService publicity;
     [Inject] private readonly ILogger<GitHubEventsRecipient> logger;
 
     public async Task HandleAsync(GitHubWebhookMessage message, CancellationToken cancellationToken = default)
@@ -110,8 +112,9 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
             var loaded = await session.LoadAsync<Repository>(removedIds, ct);
             foreach (var existing in loaded.Values)
             {
-                if (existing is not null)
-                    session.Delete(existing);
+                if (existing is null) continue;
+                if (!existing.IsPrivate) publicity.Adjust(account, -1);
+                session.Delete(existing);
             }
         }
     }
@@ -283,12 +286,20 @@ public partial class GitHubEventsRecipient : IRecipient<GitHubWebhookMessage>
         {
             var id = Repository.DocumentId(item.GitHubId);
             var repository = loaded.GetValueOrDefault(id);
+
+            // Captured before the upsert, because the Account row filter reads the
+            // public count and a recount would come from an index that has not
+            // seen this write yet. A repository we did not have counts as private,
+            // so a new public one is a +1 rather than a no-op.
+            var wasPublic = repository is not null && !repository.IsPrivate;
+
             if (repository is null)
             {
                 repository = new Repository { GitHubId = item.GitHubId };
                 await session.StoreAsync(repository, id, ct);
             }
             ApplyRepositoryFields(repository, item.Name, item.FullName, item.IsPrivate, account);
+            publicity.Adjust(account, IAccountPublicityService.DeltaFor(!wasPublic, item.IsPrivate));
         }
     }
 

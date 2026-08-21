@@ -268,3 +268,21 @@ internal sealed class ScriptedUserAccessService(UserAccess? access) : IUserAcces
     public Task<UserAccess?> GetAsync(CancellationToken ct = default) => Task.FromResult(access);
     public Task InvalidateAsync(CancellationToken ct = default) => Task.CompletedTask;
 }
+
+/// <summary>
+/// Records deltas without touching the database — the webhook tests are about
+/// document upserts, not about the denormalized publicity count. Exposed so a
+/// test can assert the delta if it ever needs to.
+/// </summary>
+internal sealed class NoOpAccountPublicityService : IAccountPublicityService
+{
+    public int NetDelta { get; private set; }
+
+    public void Adjust(Account account, int delta)
+    {
+        NetDelta += delta;
+        account.PublicRepoCount = Math.Max(0, account.PublicRepoCount + delta);
+    }
+
+    public Task ReconcileAllAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+}

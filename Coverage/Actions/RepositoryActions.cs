@@ -38,10 +38,17 @@ public partial class RepositoryActions : DefaultPersistentObjectActions<Reposito
     /// goes to repository administrators only — not to everyone who can read the
     /// repository, and not to everyone who can reach the owner's installation.
     /// </summary>
+    /// <summary>
+    /// BadgeToken is a credential, however narrow. Gate is the owner's CI policy —
+    /// thresholds, targets, whether it blocks; the /api route for it already
+    /// required ownership, while the generic detail PO handed it to anyone who
+    /// could read the repository, which for a public repository is everyone.
+    /// </summary>
+    public static readonly string[] AdministratorOnlyAttributes =
+        [nameof(Repository.BadgeToken), nameof(Repository.Gate)];
+
     public override async Task<IReadOnlyCollection<string>?> GetProtectedAttributesAsync(string action, Repository entity)
-        => await visibility.CanManageRepositoryAsync(entity.GitHubId)
-            ? null
-            : [nameof(Repository.BadgeToken)];
+        => await visibility.CanManageRepositoryAsync(entity.GitHubId) ? null : AdministratorOnlyAttributes;
 
     public override IReadOnlyCollection<string>? GetDefaultIncludes() => [nameof(Repository.Account)];
 

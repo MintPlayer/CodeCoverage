@@ -14,6 +14,7 @@ public partial class RepositoryAccessService : IRepositoryAccessService
     [Inject] private readonly IGitHubUserTokenService tokenService;
     [Inject] private readonly UserManager<SparkUser> userManager;
     [Inject] private readonly IHttpContextAccessor httpContextAccessor;
+    [Inject] private readonly IAccountPublicityService publicity;
     [Inject] private readonly IAsyncDocumentSession session;
     [Inject] private readonly ILogger<RepositoryAccessService> logger;
 
@@ -129,8 +130,17 @@ public partial class RepositoryAccessService : IRepositoryAccessService
                 repository.FullName);
         }
 
+        var delta = IAccountPublicityService.DeltaFor(repository.IsPrivate, !publiclyVisible.Value);
         repository.IsPrivate = !publiclyVisible.Value;
         repository.VisibilityCheckedAtUtc = DateTime.UtcNow;
+
+        if (delta != 0)
+        {
+            var account = await session.LoadAsync<Account>(
+                Account.DocumentId(repository.OwnerGitHubId), cancellationToken);
+            if (account is not null) publicity.Adjust(account, delta);
+        }
+
         await session.SaveChangesAsync(cancellationToken);
     }
 

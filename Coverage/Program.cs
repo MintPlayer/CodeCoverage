@@ -278,7 +278,15 @@ app.UseEndpoints(endpoints =>
     endpoints.MapGet("/health/ready", async (IGitHubAppReadinessService readiness, CancellationToken cancellationToken) =>
     {
         var gitHubApp = await readiness.CheckAsync(cancellationToken);
-        var payload = new { status = gitHubApp.Status == GitHubAppReadiness.Failed ? "unready" : "ready", gitHubApp };
+        // Status only, never Detail: this endpoint is anonymous and Detail carries
+        // exception text, which on a misconfigured host is the absolute path of
+        // the GitHub App private key. The classification is what a probe needs;
+        // the diagnosis belongs in the log.
+        var payload = new
+        {
+            status = gitHubApp.Status == GitHubAppReadiness.Failed ? "unready" : "ready",
+            gitHubApp = new { gitHubApp.Status },
+        };
         return gitHubApp.Status == GitHubAppReadiness.Failed
             ? Results.Json(payload, statusCode: StatusCodes.Status503ServiceUnavailable)
             : Results.Json(payload);

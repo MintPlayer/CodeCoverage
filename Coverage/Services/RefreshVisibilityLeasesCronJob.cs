@@ -26,6 +26,7 @@ public partial class RefreshVisibilityLeasesCronJob : ISparkCronJob
 {
     [Inject] private readonly IAsyncDocumentSession session;
     [Inject] private readonly IGitHubEntitlementSource entitlementSource;
+    [Inject] private readonly IAccountPublicityService publicity;
     [Inject] private readonly ILogger<RefreshVisibilityLeasesCronJob> logger;
 
     public static string CronSchedule => "*/5 * * * *";
@@ -51,7 +52,14 @@ public partial class RefreshVisibilityLeasesCronJob : ISparkCronJob
             .Take(BatchSize)
             .ToListAsync(cancellationToken);
 
-        if (stale.Count == 0) return;
+        if (stale.Count == 0)
+        {
+            // No pending writes here, so the index the reconciliation reads is
+            // current — this is the only safe moment to heal drift in the
+            // denormalized counts the Account row filter depends on.
+            await publicity.ReconcileAllAsync(cancellationToken);
+            return;
+        }
 
         logger.LogInformation("Visibility lease sweep: {Count} repositories with an expired lease", stale.Count);
 
@@ -87,8 +95,15 @@ public partial class RefreshVisibilityLeasesCronJob : ISparkCronJob
                     repository.FullName);
             }
 
+            var delta = IAccountPublicityService.DeltaFor(repository.IsPrivate, !publiclyVisible.Value);
             repository.IsPrivate = !publiclyVisible.Value;
             repository.VisibilityCheckedAtUtc = DateTime.UtcNow;
+
+            if (delta != 0 && repository.Account is not null
+                && accounts.GetValueOrDefault(repository.Account) is { } owner)
+            {
+                publicity.Adjust(owner, delta);
+            }
         }
 
         if (session.Advanced.HasChanges)

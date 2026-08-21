@@ -66,7 +66,8 @@
         "isReadOnly": false,
         "order": 5,
         "isArray": false,
-        "showedOn": "Query, PersistentObject",
+        "inQueryType": false,
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {
@@ -82,6 +83,21 @@
         "order": 2,
         "isArray": false,
         "showedOn": "Query, PersistentObject",
+        "rules": []
+      },
+      {
+        "id": "1cdc7f5e-437a-47b1-b269-61ff63373b33",
+        "name": "PublicRepoCount",
+        "label": {
+          "en": "Public Repo Count"
+        },
+        "dataType": "number",
+        "isRequired": true,
+        "isVisible": false,
+        "isReadOnly": false,
+        "order": 6,
+        "isArray": false,
+        "showedOn": "PersistentObject",
         "rules": []
       },
       {

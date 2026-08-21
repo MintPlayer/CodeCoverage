@@ -22,19 +22,62 @@ public partial class BuildActions : DefaultPersistentObjectActions<Build>
 
     public override async Task<bool> IsAllowedAsync(string action, Build entity)
     {
-        var repoId = RepositoryIdFromCommitId(entity.Commit);
-        if (repoId is null) return false;
+        if (RepositoryGitHubIdFromCommitId(entity.Commit) is not { } repositoryGitHubId)
+            return false;
         var visible = await visibility.GetVisibleRepositoryIdsAsync();
-        return visible.Contains(repoId, StringComparer.OrdinalIgnoreCase);
+        return visible.Contains(Repository.DocumentId(repositoryGitHubId), StringComparer.OrdinalIgnoreCase);
     }
 
-    private static string? RepositoryIdFromCommitId(string? commitId)
+    /// <summary>
+    /// The owning repository's GitHub id, recovered from the commit reference's id
+    /// shape (<c>Commits/{repoGitHubId}/{sha}</c>). Builds carry no owner field,
+    /// and this is not expressible as a pushdown expression — hence the per-row
+    /// predicate above.
+    /// </summary>
+    private static long? RepositoryGitHubIdFromCommitId(string? commitId)
     {
         var parts = commitId?.Split('/');
-        if (parts is not { Length: >= 3 } || !long.TryParse(parts[1], out var repoGitHubId))
-            return null;
-        return Repository.DocumentId(repoGitHubId);
+        return parts is { Length: >= 3 } && long.TryParse(parts[1], out var repositoryGitHubId)
+            ? repositoryGitHubId
+            : null;
     }
+
+    /// <summary>
+    /// CI internals are not coverage data. A build carries the runner's absolute
+    /// workspace path, the uploaded file names, the job name, parse error text,
+    /// the gate snapshot and check-run ids — all of which reached anonymous
+    /// callers, on the grid as well as the detail view, because <c>Sessions</c> is
+    /// a query column. None of it is needed to read a coverage percentage, and it
+    /// describes someone else's build environment.
+    ///
+    /// Dotted names recurse into the embedded session rows, which is the only way
+    /// to reach fields a row filter cannot see.
+    /// </summary>
+    public override async Task<IReadOnlyCollection<string>?> GetProtectedAttributesAsync(string action, Build entity)
+    {
+        if (RepositoryGitHubIdFromCommitId(entity.Commit) is { } repositoryGitHubId
+            && await visibility.CanManageRepositoryAsync(repositoryGitHubId))
+        {
+            return null;
+        }
+
+        return AdministratorOnlyAttributes;
+    }
+
+    /// <summary>
+    /// Dotted names recurse into the embedded session rows, which is the only way
+    /// to reach fields a row filter cannot see.
+    /// </summary>
+    public static readonly string[] AdministratorOnlyAttributes =
+    [
+        $"{nameof(Build.Sessions)}.{nameof(BuildSession.RootDir)}",
+        $"{nameof(Build.Sessions)}.{nameof(BuildSession.RawFileNames)}",
+        $"{nameof(Build.Sessions)}.{nameof(BuildSession.JobName)}",
+        $"{nameof(Build.Sessions)}.{nameof(BuildSession.Error)}",
+        nameof(Build.GateSnapshot),
+        nameof(Build.Feedback),
+        nameof(Build.DeclaredBaseSha),
+    ];
 
     public override IReadOnlyCollection<string>? GetDefaultIncludes() => [nameof(Build.Commit)];
 

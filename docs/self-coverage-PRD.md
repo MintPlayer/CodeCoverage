@@ -25,8 +25,8 @@ uploads via `uses: ./action`. `Coverage.Tests` already references
 follows: no `coverlet.runsettings` (so no exclusions, no format control), no
 `--results-directory`, no "did a report actually get produced" guard, no
 `disable-search: true`, no fork-PR guard, no `fail-ci-if-error: false`, and no
-`base-sha` on pull requests. `publish.yml` runs `dotnet test` with **no coverage at
-all**, so master pushes — the runs that set the badge — measure nothing.
+`base-sha` on pull requests. (`publish.yml` runs its own `dotnet test` without
+coverage, which is correct and stays that way — see M1.)
 
 **TypeScript — nothing.** `Coverage/ClientApp` has 34 `.ts` files, **zero**
 `.spec.ts`, no test runner in `devDependencies`, and no `test` target in
@@ -100,8 +100,16 @@ Genuinely not being done, not deferred:
 - `ci.yml` Test step gains `--settings coverlet.runsettings --results-directory coverage`.
 - Add the "Assert tests actually ran" guard — `dotnet test` exits 0 and prints
   nothing when it finds no test project, so a silently empty run must fail loudly.
-- `publish.yml`: same collection, plus an upload placed **before** the Docker build,
-  with `fail-ci-if-error: false` so a coverage outage never blocks a deploy.
+- `publish.yml` deliberately gets **no** coverage collection and no upload. Both
+  workflows trigger on a master push, so `ci.yml` already produces a complete
+  three-flag build for that commit; a second, .NET-only upload from `publish.yml`
+  would land as a separate build for the same sha and make the badge flap between
+  the full number and the .NET-only one depending on which run finalized last. Its
+  test job stays a plain deploy gate.
+- `publish.yml`'s test job does gain `RAVENDB_LICENSE`, which `ci.yml` has and it
+  does not — today the gate that guards a production deploy runs the embedded
+  server in restricted mode while CI runs it licensed, so the two disagree about
+  what passes.
 - `.gitignore`: `/coverage/` (the existing `coverage*` patterns match files, not a
   results directory).
 

@@ -49,10 +49,31 @@ jobs:
             echo "::notice::RAVENDB_LICENSE is not set — the embedded server runs restricted. Expected on fork pull requests; otherwise check the secret name."
           fi
 
+      # --no-build keeps this measuring the Release build the step above produced;
+      # without it `dotnet test` silently rebuilds in Debug and measures that instead.
+      # --collect writes coverage.cobertura.xml into a GUID-named subdirectory of
+      # --results-directory, one per test project, hence the ** in the globs below.
       - name: Test with coverage
         env:
           RAVENDB_LICENSE: ${{ secrets.RAVENDB_LICENSE }}
-        run: dotnet test Coverage.Tests/Coverage.Tests.csproj --configuration Release --no-build --collect:"XPlat Code Coverage"
+        run: >
+          dotnet test Coverage.Tests/Coverage.Tests.csproj --configuration Release --no-build
+          --settings coverlet.runsettings
+          --collect:"XPlat Code Coverage" --results-directory coverage
+
+      # `dotnet test` exits 0 and prints nothing when it finds no test project, so a
+      # suite that silently stopped running would upload nothing and read as a
+      # coverage collapse rather than as the CI failure it is.
+      - name: Assert tests actually ran
+        run: |
+          shopt -s globstar nullglob
+          reports=(coverage/**/coverage.cobertura.xml)
+          if [ ${#reports[@]} -eq 0 ]; then
+            echo "::error::No coverage report was produced. Either no test project ran, or the coverlet collector failed."
+            exit 1
+          fi
+          echo "Found ${#reports[@]} coverage report(s):"
+          printf '  %s\n' "${reports[@]}"
 
       # Dogfood: upload our own coverage to a deployed Coverage instance,
       # when one is configured for this repository.

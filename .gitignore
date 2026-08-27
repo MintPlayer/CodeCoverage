@@ -25,3 +25,7 @@ boot-*.log
 
 # Playwright MCP browser-session artifacts
 .playwright-mcp/
+
+# Coverage results directory (--results-directory coverage); the patterns above match
+# FILES named coverage*, not a directory named coverage.
+/coverage/

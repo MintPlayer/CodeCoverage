@@ -59,7 +59,7 @@ jobs:
         run: >
           dotnet test Coverage.Tests/Coverage.Tests.csproj --configuration Release --no-build
           --settings coverlet.runsettings
-          --collect:"XPlat Code Coverage" --results-directory coverage
+          --collect:"XPlat Code Coverage" --results-directory artifacts/coverage
 
       # `dotnet test` exits 0 and prints nothing when it finds no test project, so a
       # suite that silently stopped running would upload nothing and read as a
@@ -67,7 +67,7 @@ jobs:
       - name: Assert tests actually ran
         run: |
           shopt -s globstar nullglob
-          reports=(coverage/**/coverage.cobertura.xml)
+          reports=(artifacts/coverage/**/coverage.cobertura.xml)
           if [ ${#reports[@]} -eq 0 ]; then
             echo "::error::No coverage report was produced. Either no test project ran, or the coverlet collector failed."
             exit 1
@@ -98,6 +98,12 @@ jobs:
         run: |
           npm ci
           npx ng build
+
+      # @angular/build:unit-test with the vitest runner; coverage settings live in
+      # angular.json rather than a runner config file.
+      - name: Unit tests with coverage
+        working-directory: Coverage/ClientApp
+        run: npx ng test
 
   action-dist-check:
     runs-on: ubuntu-latest

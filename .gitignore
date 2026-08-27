@@ -13,8 +13,11 @@ dist/
 .angular/
 .nx/
 out-tsc/
-# Test-coverage output only — never the Coverage/ project folder (git ignores case on Windows)
-ClientApp/coverage/
+# Vitest coverage output. Both paths are spelled in full from the repo root: a
+# bare `coverage/` would also match the Coverage/ project folder, because git is
+# case-insensitive on Windows.
+Coverage/ClientApp/coverage/
+action/coverage/
 
 # Environment
 .env
@@ -25,3 +28,8 @@ boot-*.log
 
 # Playwright MCP browser-session artifacts
 .playwright-mcp/
+
+# .NET test results (--results-directory artifacts/coverage). Deliberately NOT a
+# root-level `coverage/`: git is case-insensitive on Windows, so that pattern also
+# matches the Coverage/ project folder and hides the whole app from git.
+/artifacts/

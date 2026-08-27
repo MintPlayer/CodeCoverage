@@ -1,5 +1,8 @@
 # Coverage
 
+[![Coverage](https://coverage.mintplayer.com/badge/MintPlayer/CodeCoverage.svg)](https://coverage.mintplayer.com/r/MintPlayer/CodeCoverage)
+[![CI](https://github.com/MintPlayer/CodeCoverage/actions/workflows/ci.yml/badge.svg)](https://github.com/MintPlayer/CodeCoverage/actions/workflows/ci.yml)
+
 A self-hosted code-coverage analyzer for GitHub — upload coverage reports from your
 workflows, browse coverage per organization → repository → commit → file, and embed
 badges in your READMEs.
@@ -13,6 +16,37 @@ Built on [MintPlayer.Spark](https://github.com/MintPlayer/MintPlayer.Spark)
 - **The upload GitHub Action**: [action/README.md](action/README.md) (`uses: MintPlayer/CodeCoverage/action@master`)
 - **The upload API contract** (states, polling, gating a PR): [docs/upload-api.md](docs/upload-api.md)
 - **Upstream (Spark) work items**: [docs/spark-handoff.md](docs/spark-handoff.md)
+- **How this repo measures itself**: [docs/self-coverage-PRD.md](docs/self-coverage-PRD.md)
+
+## How this repo measures itself
+
+The badge above is this application reporting on its own source, through the same
+API and the same action every other repository uses. Worth knowing if you are
+setting up a repository that looks like this one:
+
+- **Three reports, three flags, one build.** `.github/workflows/ci.yml` measures the
+  .NET projects (coverlet → Cobertura), the Angular SPA and the action's TypeScript
+  (Vitest → lcov) in separate jobs, then a single `coverage-upload` job uploads all
+  three. Because the server keys a build on `(repository, commitSha, runId,
+  runAttempt)` and merges sessions into it, `flags: dotnet` / `angular` / `action`
+  give a number per language *and* one headline number. `finish: true` rides on the
+  last of the three uploads — the action rejects an upload carrying no files, so
+  there is no finish-only call to put at the end.
+- **Nested workspaces must rebase their lcov paths.** Vitest writes `SF:` paths
+  relative to its own project root, so `action/` and `Coverage/ClientApp/` both emit
+  `src/main.ts`. The server resolves report paths against `git ls-files` by longest
+  suffix and **drops ambiguous ones silently** — the report simply arrives smaller.
+  `tools/rebase-lcov-paths.mjs` rewrites them to repo-root-relative and fails the
+  job if any path names no tracked file. If your coverage looks inexplicably low
+  after wiring up a monorepo, check this first.
+- **The workflow uses `./action`, not `MintPlayer/CodeCoverage/action@master`.**
+  Consuming repositories should pin `@master` as documented in
+  [action/README.md](action/README.md). This one deliberately does not: uploading
+  with the action *as the pull request changes it* is what catches a regression in
+  the uploader before the next repository inherits it.
+- **`publish.yml` collects no coverage on purpose.** It also fires on a master push,
+  and a second, .NET-only upload for the same commit would leave the badge showing
+  whichever run finalized last.
 
 ## Local development
 

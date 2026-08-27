@@ -73,6 +73,28 @@
             }
           },
           "defaultConfiguration": "development"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "buildTarget": "ClientApp:build:development",
+            "tsConfig": "tsconfig.spec.json",
+            "runner": "vitest",
+            "coverage": true,
+            "coverageReporters": [
+              "lcovonly",
+              "text-summary"
+            ],
+            "coverageExclude": [
+              "src/**/*.spec.ts",
+              "src/main.ts",
+              "src/spark-auth.setup.ts",
+              "src/app/app.config.ts"
+            ],
+            "coverageInclude": [
+              "src/**/*.ts"
+            ]
+          }
         }
       }
     }

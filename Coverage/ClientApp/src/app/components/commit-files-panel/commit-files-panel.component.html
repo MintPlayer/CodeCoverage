@@ -70,7 +70,9 @@
     @if (t.entries.length === 0) {
       <p class="text-muted mb-0">No coverage data in this folder.</p>
     } @else {
-      <bs-table>
+      <!-- isResponsive is BsTable's own .table-responsive + nowrap wrapper, off by
+           default; without it a wide file table overflows its card on a phone. -->
+      <bs-table [isResponsive]="true">
         <thead>
           <tr><th>Name</th><th>Coverage</th><th class="text-end">Lines</th></tr>
         </thead>

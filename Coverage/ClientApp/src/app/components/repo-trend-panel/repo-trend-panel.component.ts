@@ -37,7 +37,7 @@ export class RepoTrendPanelComponent {
 
   owner = input.required<string>();
   name = input.required<string>();
-  /** '' = all branches. */
+  /** '' = the repository's default branch, which the server resolves. */
   branch = input<string>('');
 
   private readonly history = signal<HistoryPoint[]>([]);

@@ -49,21 +49,45 @@ jobs:
             echo "::notice::RAVENDB_LICENSE is not set — the embedded server runs restricted. Expected on fork pull requests; otherwise check the secret name."
           fi
 
+      # --no-build keeps this measuring the Release build the step above produced;
+      # without it `dotnet test` silently rebuilds in Debug and measures that instead.
+      # --collect writes coverage.cobertura.xml into a GUID-named subdirectory of
+      # --results-directory, one per test project, hence the ** in the globs below.
+      #
+      # artifacts/coverage rather than coverage/: git is case-insensitive on Windows,
+      # so a root-level `coverage/` ignore rule would also hide the Coverage/ project
+      # folder from every local checkout.
       - name: Test with coverage
         env:
           RAVENDB_LICENSE: ${{ secrets.RAVENDB_LICENSE }}
-        run: dotnet test Coverage.Tests/Coverage.Tests.csproj --configuration Release --no-build --collect:"XPlat Code Coverage"
+        run: >
+          dotnet test Coverage.Tests/Coverage.Tests.csproj --configuration Release --no-build
+          --settings coverlet.runsettings
+          --collect:"XPlat Code Coverage" --results-directory artifacts/coverage
 
-      # Dogfood: upload our own coverage to a deployed Coverage instance,
-      # when one is configured for this repository.
-      - name: Upload coverage
-        if: ${{ vars.COVERAGE_URL != '' }}
-        uses: ./action
+      # `dotnet test` exits 0 and prints nothing when it finds no test project, so a
+      # suite that silently stopped running would upload nothing and read as a
+      # coverage collapse rather than as the CI failure it is.
+      - name: Assert tests actually ran
+        run: |
+          shopt -s globstar nullglob
+          reports=(artifacts/coverage/**/coverage.cobertura.xml)
+          if [ ${#reports[@]} -eq 0 ]; then
+            echo "::error::No coverage report was produced. Either no test project ran, or the coverlet collector failed."
+            exit 1
+          fi
+          echo "Found ${#reports[@]} coverage report(s):"
+          printf '  %s\n' "${reports[@]}"
+
+      # always(): a failing suite still produced a report for everything that did
+      # run, and losing that commit's coverage entirely is worse than posting a
+      # number that reflects a red build.
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          url: ${{ vars.COVERAGE_URL }}
-          token: ${{ secrets.COVERAGE_TOKEN }}
-          flags: unit
-          finish: true
+          name: coverage-dotnet
+          path: artifacts/coverage
+          if-no-files-found: error
 
   angular-build:
     runs-on: ubuntu-latest
@@ -78,6 +102,22 @@ jobs:
           npm ci
           npx ng build
 
+      # @angular/build:unit-test with the vitest runner; the coverage settings live
+      # in angular.json rather than in a runner config file.
+      - name: Unit tests with coverage
+        working-directory: Coverage/ClientApp
+        run: npx ng test
+
+      # always(): a failing suite still produced a report for everything that did
+      # run, and losing that commit's coverage entirely is worse than posting a
+      # number that reflects a red build.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-angular
+          path: Coverage/ClientApp/coverage/ClientApp/lcov.info
+          if-no-files-found: error
+
   action-dist-check:
     runs-on: ubuntu-latest
     steps:
@@ -85,13 +125,138 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Rebuild action and verify dist is current
+      - name: Unit tests with coverage
         working-directory: action
         run: |
           npm ci
+          npm run test:coverage
+
+      - name: Rebuild action and verify dist is current
+        working-directory: action
+        run: |
           npm run build
           if [ -n "$(git status --porcelain dist)" ]; then
             echo "::error::action/dist is stale — run 'npm run build' in action/ and commit the result."
             git diff --stat dist
             exit 1
           fi
+
+      # always(): a failing suite still produced a report for everything that did
+      # run, and losing that commit's coverage entirely is worse than posting a
+      # number that reflects a red build.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-action
+          path: action/coverage/lcov.info
+          if-no-files-found: error
+
+  # Dogfood: this repository's coverage goes to the instance this repository is.
+  #
+  # One job rather than an upload per producing job, because the three reports must
+  # be rebased against a single checkout before any of them is uploaded, and because
+  # `finish: true` has to ride on the last upload — the action rejects an upload
+  # carrying no files, so there is no finish-only invocation to put at the end.
+  #
+  # `uses: ./action`, deliberately, where every consuming repo pins
+  # MintPlayer/CodeCoverage/action@master: this uploads with the action *as this
+  # pull request changes it*, so a regression in the uploader fails here rather than
+  # in the next repository to pick it up.
+  coverage-upload:
+    needs: [test, angular-build, action-dist-check]
+    runs-on: ubuntu-latest
+    # always(): coverage is posted for every pull request and every push to master,
+    # including runs where a suite failed — `needs:` alone would skip this job and
+    # the commit would post nothing at all.
+    #
+    # Fork pull requests get no secrets, so the upload cannot authenticate. Skip it
+    # rather than fail a contributor's PR over a reporting step.
+    if: >
+      always()
+      && (github.event_name != 'pull_request'
+          || github.event.pull_request.head.repo.full_name == github.repository)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # continue-on-error: a job that failed before writing its report leaves no
+      # artifact, and the remaining reports should still be posted.
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: coverage-*
+          path: reports
+
+      - name: Test the rebase tool
+        run: node --test "tools/*.test.mjs"
+
+      # Vitest reports paths relative to its own project root, so both workspaces
+      # emit `src/main.ts`. The server resolves report paths against `git ls-files`
+      # by longest suffix and drops what is ambiguous *without reporting it*, so
+      # uploading these unrebased would silently lose every same-named file. The
+      # tool fails the job if a rebased path names no tracked file.
+      - name: Rebase lcov paths onto the repository root
+        run: |
+          set -e
+          for report in "reports/coverage-angular/lcov.info:Coverage/ClientApp" "reports/coverage-action/lcov.info:action"; do
+            file=${report%%:*}
+            base=${report##*:}
+            if [ -f "$file" ]; then
+              node tools/rebase-lcov-paths.mjs "$file" "$base"
+            else
+              echo "::warning::$file is absent — its job did not get far enough to produce one. Its coverage is not in this build."
+            fi
+          done
+
+      # Three sessions, one build. The server keys a build on
+      # (repository, commitSha, runId, runAttempt) and merges sessions into it with
+      # max semantics, reporting per-flag totals — so this yields a readable number
+      # per language as well as one headline. base-sha is what the patch and
+      # baseline comparisons are computed against on a pull request; it is empty on
+      # a push, which the action treats as absent.
+      - name: Upload .NET coverage
+        if: hashFiles('reports/coverage-dotnet/**/coverage.cobertura.xml') != ''
+        continue-on-error: true
+        uses: ./action
+        with:
+          url: https://coverage.mintplayer.com
+          token: ${{ secrets.COVERAGE_TOKEN }}
+          files: reports/coverage-dotnet/**/coverage.cobertura.xml
+          disable-search: true
+          flags: dotnet
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          fail-ci-if-error: false
+
+      - name: Upload Angular coverage
+        if: hashFiles('reports/coverage-angular/lcov.info') != ''
+        continue-on-error: true
+        uses: ./action
+        with:
+          url: https://coverage.mintplayer.com
+          token: ${{ secrets.COVERAGE_TOKEN }}
+          files: reports/coverage-angular/lcov.info
+          disable-search: true
+          flags: angular
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          fail-ci-if-error: false
+
+      # finish: true closes the build now instead of waiting out the server's
+      # ~2-minute debounce, so it rides on the last of the three uploads. If this
+      # one is skipped because its report never arrived, the build finalizes on the
+      # debounce instead — later, but never lost: the server finalizes every build
+      # within 30 minutes regardless.
+      - name: Upload action coverage
+        if: hashFiles('reports/coverage-action/lcov.info') != ''
+        continue-on-error: true
+        uses: ./action
+        with:
+          url: https://coverage.mintplayer.com
+          token: ${{ secrets.COVERAGE_TOKEN }}
+          files: reports/coverage-action/lcov.info
+          disable-search: true
+          flags: action
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          finish: true
+          fail-ci-if-error: false

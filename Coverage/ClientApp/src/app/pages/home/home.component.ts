@@ -17,6 +17,7 @@ import { GitHubLoginService } from '../../services/github-login.service';
   selector: 'app-home',
   imports: [CommonModule, RouterModule, BsAlertComponent, BsCardComponent, BsCardHeaderComponent, BsGridComponent, BsGridRowDirective, BsGridColumnDirective, BsListGroupComponent, BsListGroupItemComponent, BsBadgeComponent, BsSpinnerComponent, TranslateKeyPipe],
   templateUrl: './home.component.html',
+  styleUrl: './home.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export default class HomeComponent {

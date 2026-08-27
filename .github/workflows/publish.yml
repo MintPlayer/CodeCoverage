@@ -35,7 +35,18 @@ jobs:
       - name: Restore & build
         run: dotnet build Coverage.slnx --configuration Release
 
+      # No coverage collection here on purpose. ci.yml also runs on a master push and
+      # already uploads the complete three-flag build for this commit; a second,
+      # .NET-only upload would land as a separate build for the same sha and leave the
+      # badge showing whichever run happened to finalize last. This job is a deploy
+      # gate, nothing more.
+      #
+      # RAVENDB_LICENSE for the same reason ci.yml passes it: without it the embedded
+      # server starts restricted, and the gate that guards a production deploy would
+      # be exercising different code paths than the CI run that approved the PR.
       - name: Test
+        env:
+          RAVENDB_LICENSE: ${{ secrets.RAVENDB_LICENSE }}
         run: dotnet test Coverage.Tests/Coverage.Tests.csproj --configuration Release --no-build
 
   publish:

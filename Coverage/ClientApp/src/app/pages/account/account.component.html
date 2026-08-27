@@ -62,7 +62,8 @@
       @if (list.length === 0) {
         <p class="text-muted small mb-0">No upload tokens yet. Create one and pass it to the coverage action as <code>token</code>.</p>
       } @else {
-        <bs-table>
+        <!-- See commit-files-panel: the library's responsive wrapper is opt-in. -->
+        <bs-table [isResponsive]="true">
           <thead>
             <tr><th>Description</th><th>Scope</th><th>Created</th><th>Status</th><th></th></tr>
           </thead>

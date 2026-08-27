@@ -157,4 +157,112 @@ public class BrowseControllerTests : CoverageRavenTest
         sub.UnmatchedFiles.Should().BeEmpty();
         sub.UnmatchedTotal.Should().Be(0);
     }
+
+    /// <summary>
+    /// Seeds one repository with covered commits on the default branch and on a
+    /// feature branch, and returns the history the panel would render.
+    /// </summary>
+    private async Task<IReadOnlyList<BrowseController.HistoryPoint>> SeedAndGetHistory(
+        long repoId, string? defaultBranch)
+    {
+        using var store = GetDocumentStore();
+        using (var seed = store.OpenAsyncSession())
+        {
+            await seed.StoreAsync(new Repository
+            {
+                GitHubId = repoId,
+                Name = "repo",
+                FullName = $"owner/repo{repoId}",
+                OwnerLogin = "owner",
+                IsPrivate = false,
+                DefaultBranch = defaultBranch,
+            }, Repository.DocumentId(repoId));
+
+            await StoreCoveredCommit(seed, repoId, "aaa", "master", 80, days: -2);
+            await StoreCoveredCommit(seed, repoId, "bbb", "feature/x", 10, days: -1);
+            await seed.SaveChangesAsync();
+        }
+        WaitForIndexing(store);
+
+        using var session = store.OpenAsyncSession();
+        var result = await CreateController(session).GetHistory($"owner", $"repo{repoId}", branch: null, take: 100, CancellationToken.None);
+        return ((OkObjectResult)result.Result!).Value is IEnumerable<BrowseController.HistoryPoint> points
+            ? points.ToList()
+            : throw new InvalidOperationException("unexpected payload");
+    }
+
+    private static Task StoreCoveredCommit(IAsyncDocumentSession session, long repoId, string sha, string branch, int covered, int days)
+        => session.StoreAsync(new Commit
+        {
+            Sha = sha,
+            Branch = branch,
+            Repository = Repository.DocumentId(repoId),
+            AuthoredAt = DateTimeOffset.UtcNow.AddDays(days),
+            Coverage = new CoverageSummary { LinesCovered = covered, LinesCoverable = 100, FilesCount = 1 },
+        }, Commit.DocumentId(repoId, sha));
+
+    /// <summary>
+    /// #17: the chart ordered commits by time alone, so a feature branch's points
+    /// interleaved with the default branch's and the line zig-zagged between two
+    /// unrelated populations — while the badge beside it had always been
+    /// default-branch-scoped.
+    /// </summary>
+    [Fact]
+    public async Task GetHistory_returns_only_the_default_branch_when_no_branch_is_asked_for()
+    {
+        var points = await SeedAndGetHistory(repoId: 71, defaultBranch: "master");
+
+        points.Should().ContainSingle("only the default branch belongs in the trend");
+        points[0].Sha.Should().Be("aaa");
+    }
+
+    /// <summary>
+    /// A repository provisioned by an OIDC upload has no DefaultBranch — it is only
+    /// ever written from a GitHub webhook payload. Filtering on null would render an
+    /// empty chart, so every branch is the correct fallback.
+    /// </summary>
+    [Fact]
+    public async Task GetHistory_falls_back_to_every_branch_when_the_default_branch_is_unknown()
+    {
+        var points = await SeedAndGetHistory(repoId: 72, defaultBranch: null);
+
+        points.Should().HaveCount(2, "an empty chart would be worse than a mixed one");
+        points.Select(p => p.Sha).Should().BeEquivalentTo(["aaa", "bbb"]);
+    }
+
+    /// <summary>
+    /// The sparklines on the account table had the same defect as the trend chart,
+    /// and cannot reuse one branch name because they span repositories.
+    /// </summary>
+    [Fact]
+    public async Task GetSparklines_scopes_each_repository_to_its_own_default_branch()
+    {
+        using var store = GetDocumentStore();
+        using (var seed = store.OpenAsyncSession())
+        {
+            foreach (var (repoId, defaultBranch) in new (long, string?)[] { (81, "master"), (82, null) })
+            {
+                await seed.StoreAsync(new Repository
+                {
+                    GitHubId = repoId,
+                    Name = $"repo{repoId}",
+                    FullName = $"sparks/repo{repoId}",
+                    OwnerLogin = "sparks",
+                    IsPrivate = false,
+                    DefaultBranch = defaultBranch,
+                }, Repository.DocumentId(repoId));
+                await StoreCoveredCommit(seed, repoId, $"{repoId}a", "master", 80, days: -2);
+                await StoreCoveredCommit(seed, repoId, $"{repoId}b", "feature/x", 10, days: -1);
+            }
+            await seed.SaveChangesAsync();
+        }
+        WaitForIndexing(store);
+
+        using var session = store.OpenAsyncSession();
+        var result = await CreateController(session).GetSparklines("sparks", CancellationToken.None);
+        var series = (Dictionary<string, double[]>)((OkObjectResult)result.Result!).Value!;
+
+        series["sparks/repo81"].Should().Equal([80.0], "the feature branch is not part of this repo's trend");
+        series["sparks/repo82"].Should().HaveCount(2, "a repo with no known default branch keeps every branch");
+    }
 }

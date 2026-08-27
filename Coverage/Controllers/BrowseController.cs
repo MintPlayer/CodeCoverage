@@ -101,6 +101,11 @@ public partial class BrowseController : ControllerBase
     /// Coverage over time for one repository (ascending, ready for
     /// bs-trend-chart). Timestamp is AuthoredAt coalesced with FirstSeenAtUtc
     /// and may still be null for documents that predate either stamp.
+    /// <para>
+    /// Scoped to <paramref name="branch"/>, defaulting to the repository's default
+    /// branch — a trend that mixes branches is not a trend. Repositories with no
+    /// known default branch fall back to every branch; see the body.
+    /// </para>
     /// </summary>
     [HttpGet("repos/{owner}/{name}/history")]
     public async Task<ActionResult<IEnumerable<HistoryPoint>>> GetHistory(
@@ -109,10 +114,23 @@ public partial class BrowseController : ControllerBase
         var repository = await ResolveVisibleRepository(owner, name, cancellationToken);
         if (repository is null) return NotFound();
 
+        // Commits are ordered by time alone, so without a branch filter a feature
+        // branch's points interleave with the default branch's and the line
+        // zig-zags between two unrelated populations. The badge beside this chart
+        // has always been default-branch-scoped (BadgeController.LoadBranchCoverage);
+        // this makes the chart agree with it.
+        //
+        // DefaultBranch is null for repositories provisioned by an OIDC upload — it
+        // is only ever written from a GitHub webhook payload — and filtering on null
+        // would render an empty chart. Falling back to every branch is what
+        // BuildFinalizer and BaseResolver do in the same situation, and for a
+        // repository with effectively one branch it is the same picture anyway.
+        var effectiveBranch = string.IsNullOrEmpty(branch) ? repository.DefaultBranch : branch;
+
         var query = session.Query<Indexes.Commits_ByRepository.Result, Indexes.Commits_ByRepository>()
             .Where(c => c.Repository == repository.Id && c.HasCoverage);
-        if (!string.IsNullOrEmpty(branch))
-            query = query.Where(c => c.Branch == branch);
+        if (!string.IsNullOrEmpty(effectiveBranch))
+            query = query.Where(c => c.Branch == effectiveBranch);
 
         var commits = await query
             .OrderByDescending(c => c.AuthoredAt)
@@ -133,6 +151,13 @@ public partial class BrowseController : ControllerBase
     /// for table sparklines. One query: the newest ~1000 covered commits
     /// across the account, grouped per repo — sparsely-uploaded repos may
     /// show fewer points, which is fine for a sparkline.
+    /// <para>
+    /// Each repository's points are scoped to its own default branch, for the same
+    /// reason as <see cref="GetHistory"/>. The scoping is applied after the fetch
+    /// because the branch differs per repository, so a repository with many
+    /// feature-branch uploads may contribute fewer points than one without —
+    /// acceptable for a sparkline, and better than a line that mixes branches.
+    /// </para>
     /// </summary>
     [HttpGet("accounts/{login}/sparklines")]
     public async Task<ActionResult<Dictionary<string, double[]>>> GetSparklines(string login, CancellationToken cancellationToken)
@@ -143,7 +168,7 @@ public partial class BrowseController : ControllerBase
             .Where(r => r.OwnerLogin == login)
             .Take(1024)
             .ToListAsync(cancellationToken);
-        var visible = repos.Where(r => includePrivate || !r.IsPrivate).ToDictionary(r => r.Id!, r => r.FullName);
+        var visible = repos.Where(r => includePrivate || !r.IsPrivate).ToDictionary(r => r.Id!, r => r);
         if (visible.Count == 0) return Ok(new Dictionary<string, double[]>());
 
         var repoIds = visible.Keys.ToArray();
@@ -156,10 +181,12 @@ public partial class BrowseController : ControllerBase
 
         var result = commits
             .Where(c => c.Repository is not null && c.Coverage is { LinesCoverable: > 0 })
+            .Where(c => visible.TryGetValue(c.Repository!, out var repo)
+                        && (repo.DefaultBranch is null
+                            || string.Equals(c.Branch, repo.DefaultBranch, StringComparison.Ordinal)))
             .GroupBy(c => c.Repository!)
-            .Where(g => visible.ContainsKey(g.Key))
             .ToDictionary(
-                g => visible[g.Key],
+                g => visible[g.Key].FullName,
                 g => g.Take(20)
                       .Reverse()
                       .Select(c => Math.Round(c.Coverage!.LinesCovered * 100.0 / c.Coverage.LinesCoverable, 1))

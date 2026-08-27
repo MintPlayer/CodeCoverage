@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Settings for coverlet's VSTest data collector, used by the `--collect:"XPlat Code
-  Coverage"` steps in ci.yml and publish.yml. Passed with `--settings`; without it the
-  collector runs on bare defaults and measures generated code as if it were ours.
+  Settings for coverlet's VSTest data collector, used by the "XPlat Code Coverage"
+  collection steps in ci.yml. Without it the collector runs on bare defaults and
+  measures generated code as if it were ours.
 
   Kept at the repo root, matching every other MintPlayer repository, so the same
-  `--settings coverlet.runsettings` line is copy-pasteable between them.
+  settings argument is copy-pasteable between them.
+
+  Note for editors: an XML comment may not contain a double hyphen, so the command
+  line flags are spelled out in prose here rather than quoted.
 -->
 <RunSettings>
   <DataCollectionRunSettings>

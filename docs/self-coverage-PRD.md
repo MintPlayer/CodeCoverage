@@ -1,4 +1,4 @@
-# Self-coverage — measuring and reporting this repo's own coverage
+# Self-coverage, branch-scoped trends, and the accounts card
 
 **Status**: implemented on `coverage-self-reporting`
 **Branch**: `coverage-self-reporting`
@@ -90,6 +90,68 @@ Genuinely not being done, not deferred:
 - **A `v1` tag for the action.** No tags exist; consumers pin `@master` by design
   until the input surface settles. Unrelated to measuring ourselves.
 
+## Also on this branch
+
+Two things landed here that are not about self-coverage. Both are small, both are
+in files this branch already touches, and the repo's rule is one pull request —
+so they ride along rather than waiting.
+
+### Issue #17 — "Coverage over time" mixes branches
+
+`BrowseController.GetHistory` *can* filter by branch; nothing ever asks it to. The
+panel's only call site (`po-detail-page.component.ts:41`) passes no `[branch]`, the
+input defaults to `''`, and the server reads that as "every branch". Commits are
+then ordered by time alone, so a feature branch's points interleave with the
+default branch's and the line zig-zags between two unrelated populations. The badge
+beside that chart has always been default-branch-scoped
+(`BadgeController.LoadBranchCoverage`), which is the inconsistency users actually
+see.
+
+Fixed server-side, not in the template: the endpoint is the shared contract, and
+only the server knows `DefaultBranch` reliably. An explicit `branch` still wins;
+absent one, the repository's default branch is used.
+
+`DefaultBranch` is null for repositories provisioned by an OIDC upload — it is only
+ever written from a GitHub webhook payload — and filtering on null would render an
+empty chart. Those repositories fall back to every branch, which is what
+`BuildFinalizer` and `BaseResolver` already do in the same situation.
+
+`GetSparklines` had the identical defect and is fixed with it. It cannot reuse one
+branch name because it spans repositories, so the scoping is applied per repository
+after the fetch; a repository with many feature-branch uploads may therefore
+contribute fewer points, which is acceptable for a sparkline and better than a line
+that mixes branches.
+
+### The "Your accounts" card scrolls instead of wrapping
+
+Reported: on small screens the text wraps, and the badges leave their container.
+
+Worth recording, because this card has been changed for this exact class of problem
+twice already on `authorization-hardening` — **neither commit is an ancestor of this
+branch**, so the template here is the pre-fix one:
+
+- `62943e1` replaced the card with a Spark `spark-sub-query` grid. Its own commit
+  message records that this did not make it responsive, and it deleted the card and
+  the Resync button along the way.
+- `8fa21af` reverted that 37 minutes later and fixed the symptom with `flex-wrap`
+  plus `text-nowrap` on the badges.
+
+We are deliberately **not** re-applying `8fa21af` here: graceful wrapping is what
+the current report objects to. The card gets horizontal scrolling instead — the
+wrapper goes around the list only, so the header, spinner and install hint keep
+reflowing rather than sitting behind a scrollbar, and `flex-nowrap` + `text-nowrap`
+are what make the row exceed the container in the first place. One `::ng-deep` rule
+gives the inner `<ul class="list-group">` `min-width: max-content`; without it the
+rows overflow their own boxes and the borders stop at the container edge, which
+reads as broken rather than scrollable.
+
+The Spark-grid route stays closed until Spark#308 and Spark#309 publish. When they
+do, the target is a `bs-card` we own wrapping `spark-sub-query [showCard]="false"`.
+
+Same bug class, one line each: `<bs-table>` in `commit-files-panel` and
+`account.component` now pass `[isResponsive]="true"`. The library ships the
+`.table-responsive` wrapper and defaults it off; both call sites had left it off.
+
 ## Milestones
 
 ### M1 — .NET collection on the org standard
@@ -164,6 +226,17 @@ Genuinely not being done, not deferred:
   `./action`; both are correct, for different audiences, and should say so.
 - A short "How this repo measures itself" section covering the three flags and the
   rebasing requirement, so the next repo with a nested workspace finds it.
+
+### M6 — issue #17 and the accounts card
+
+- `GetHistory` resolves an effective branch (explicit → default → all) and filters
+  on the already-indexed `Branch` term.
+- `GetSparklines` scopes each repository to its own default branch.
+- Three tests in `BrowseControllerTests`: default-branch scoping, the null-default
+  fallback, and per-repository scoping for the sparklines.
+- The accounts list gets an `overflow-x-auto` wrapper, `flex-nowrap`/`text-nowrap`
+  rows, and a component stylesheet for the `min-width: max-content` rule.
+- Both `bs-table` call sites opt into `[isResponsive]`.
 
 ## Verification
 

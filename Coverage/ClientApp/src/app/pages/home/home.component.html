@@ -48,9 +48,17 @@
               @if (list.length === 0) {
                 <p class="text-muted mb-0">{{ 'app.noAccounts' | t }}</p>
               } @else {
+                <!--
+                  The scroll container wraps only the list, not the card body: the
+                  header, the spinner and the install hint below must keep reflowing
+                  normally rather than sitting behind a scrollbar. flex-nowrap and
+                  text-nowrap are what force the row to exceed the container in the
+                  first place — without them the row just wraps and never scrolls.
+                -->
+                <div class="overflow-x-auto accounts-scroll">
                 <bs-list-group>
                   @for (account of list; track account.login) {
-                    <bs-list-group-item class="d-flex align-items-center gap-2">
+                    <bs-list-group-item class="d-flex align-items-center gap-2 flex-nowrap text-nowrap">
                       @if (account.avatarUrl) {
                         <img [src]="account.avatarUrl" [alt]="account.login" width="24" height="24" class="rounded">
                       } @else {
@@ -64,13 +72,14 @@
                         }
                       </span>
                       @if (account.installed) {
-                        <bs-badge class="text-bg-success">{{ 'app.appInstalled' | t }}</bs-badge>
+                        <bs-badge class="text-bg-success text-nowrap">{{ 'app.appInstalled' | t }}</bs-badge>
                       } @else {
-                        <bs-badge class="text-bg-secondary">{{ 'app.appNotInstalled' | t }}</bs-badge>
+                        <bs-badge class="text-bg-secondary text-nowrap">{{ 'app.appNotInstalled' | t }}</bs-badge>
                       }
                     </bs-list-group-item>
                   }
                 </bs-list-group>
+                </div>
               }
             }
             <p class="text-muted small mt-3 mb-0">

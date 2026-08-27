@@ -1,0 +1,18 @@
+/*
+ * The accounts list scrolls horizontally instead of wrapping. Bootstrap's
+ * .overflow-x-auto on the wrapper is only half of it: the list inside is a block
+ * child of the scroll container, so it is still `width: auto` — container width —
+ * and its rows would overflow their own box rather than push the container's
+ * scroll width out. The row borders and backgrounds would then stop at the
+ * container edge while the text ran past them, which looks broken rather than
+ * scrollable.
+ *
+ * ::ng-deep because <ul class="list-group"> belongs to BsListGroupComponent's own
+ * view, not this template — only bs-list-group and bs-list-group-item are ours.
+ * The rule is scoped to .accounts-scroll so it cannot reach another list group.
+ */
+.accounts-scroll {
+  ::ng-deep .list-group {
+    min-width: max-content;
+  }
+}

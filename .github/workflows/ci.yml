@@ -106,10 +106,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Rebuild action and verify dist is current
+      - name: Unit tests with coverage
         working-directory: action
         run: |
           npm ci
+          npm run test:coverage
+
+      - name: Rebuild action and verify dist is current
+        working-directory: action
+        run: |
           npm run build
           if [ -n "$(git status --porcelain dist)" ]; then
             echo "::error::action/dist is stale — run 'npm run build' in action/ and commit the result."

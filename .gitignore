@@ -15,6 +15,7 @@ dist/
 out-tsc/
 # Test-coverage output only — never the Coverage/ project folder (git ignores case on Windows)
 ClientApp/coverage/
+action/coverage/
 
 # Environment
 .env

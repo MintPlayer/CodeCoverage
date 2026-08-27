@@ -53,6 +53,10 @@ jobs:
       # without it `dotnet test` silently rebuilds in Debug and measures that instead.
       # --collect writes coverage.cobertura.xml into a GUID-named subdirectory of
       # --results-directory, one per test project, hence the ** in the globs below.
+      #
+      # artifacts/coverage rather than coverage/: git is case-insensitive on Windows,
+      # so a root-level `coverage/` ignore rule would also hide the Coverage/ project
+      # folder from every local checkout.
       - name: Test with coverage
         env:
           RAVENDB_LICENSE: ${{ secrets.RAVENDB_LICENSE }}
@@ -75,16 +79,11 @@ jobs:
           echo "Found ${#reports[@]} coverage report(s):"
           printf '  %s\n' "${reports[@]}"
 
-      # Dogfood: upload our own coverage to a deployed Coverage instance,
-      # when one is configured for this repository.
-      - name: Upload coverage
-        if: ${{ vars.COVERAGE_URL != '' }}
-        uses: ./action
+      - uses: actions/upload-artifact@v4
         with:
-          url: ${{ vars.COVERAGE_URL }}
-          token: ${{ secrets.COVERAGE_TOKEN }}
-          flags: unit
-          finish: true
+          name: coverage-dotnet
+          path: artifacts/coverage
+          if-no-files-found: error
 
   angular-build:
     runs-on: ubuntu-latest
@@ -99,11 +98,17 @@ jobs:
           npm ci
           npx ng build
 
-      # @angular/build:unit-test with the vitest runner; coverage settings live in
-      # angular.json rather than a runner config file.
+      # @angular/build:unit-test with the vitest runner; the coverage settings live
+      # in angular.json rather than in a runner config file.
       - name: Unit tests with coverage
         working-directory: Coverage/ClientApp
         run: npx ng test
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-angular
+          path: Coverage/ClientApp/coverage/ClientApp/lcov.info
+          if-no-files-found: error
 
   action-dist-check:
     runs-on: ubuntu-latest
@@ -127,3 +132,95 @@ jobs:
             git diff --stat dist
             exit 1
           fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-action
+          path: action/coverage/lcov.info
+          if-no-files-found: error
+
+  # Dogfood: this repository's coverage goes to the instance this repository is.
+  #
+  # One job rather than an upload per producing job, because the three reports must
+  # be rebased against a single checkout before any of them is uploaded, and because
+  # `finish: true` has to ride on the last upload — the action rejects an upload
+  # carrying no files, so there is no finish-only invocation to put at the end.
+  #
+  # `uses: ./action`, deliberately, where every consuming repo pins
+  # MintPlayer/CodeCoverage/action@master: this uploads with the action *as this
+  # pull request changes it*, so a regression in the uploader fails here rather than
+  # in the next repository to pick it up.
+  coverage-upload:
+    needs: [test, angular-build, action-dist-check]
+    runs-on: ubuntu-latest
+    # Fork pull requests get no secrets, so the upload cannot authenticate. Skip it
+    # rather than fail a contributor's PR over a reporting step.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          path: reports
+
+      - name: Test the rebase tool
+        run: node --test "tools/*.test.mjs"
+
+      # Vitest reports paths relative to its own project root, so both workspaces
+      # emit `src/main.ts`. The server resolves report paths against `git ls-files`
+      # by longest suffix and drops what is ambiguous *without reporting it*, so
+      # uploading these unrebased would silently lose every same-named file. The
+      # tool fails the job if a rebased path names no tracked file.
+      - name: Rebase lcov paths onto the repository root
+        run: |
+          node tools/rebase-lcov-paths.mjs reports/coverage-angular/lcov.info Coverage/ClientApp
+          node tools/rebase-lcov-paths.mjs reports/coverage-action/lcov.info action
+
+      # Three sessions, one build. The server keys a build on
+      # (repository, commitSha, runId, runAttempt) and merges sessions into it with
+      # max semantics, reporting per-flag totals — so this yields a readable number
+      # per language as well as one headline. base-sha is what the patch and
+      # baseline comparisons are computed against on a pull request; it is empty on
+      # a push, which the action treats as absent.
+      - name: Upload .NET coverage
+        continue-on-error: true
+        uses: ./action
+        with:
+          url: https://coverage.mintplayer.com
+          token: ${{ secrets.COVERAGE_TOKEN }}
+          files: reports/coverage-dotnet/**/coverage.cobertura.xml
+          disable-search: true
+          flags: dotnet
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          fail-ci-if-error: false
+
+      - name: Upload Angular coverage
+        continue-on-error: true
+        uses: ./action
+        with:
+          url: https://coverage.mintplayer.com
+          token: ${{ secrets.COVERAGE_TOKEN }}
+          files: reports/coverage-angular/lcov.info
+          disable-search: true
+          flags: angular
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          fail-ci-if-error: false
+
+      # finish: true closes the build now instead of waiting out the server's
+      # ~2-minute debounce, so it rides on the last of the three uploads.
+      - name: Upload action coverage
+        continue-on-error: true
+        uses: ./action
+        with:
+          url: https://coverage.mintplayer.com
+          token: ${{ secrets.COVERAGE_TOKEN }}
+          files: reports/coverage-action/lcov.info
+          disable-search: true
+          flags: action
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          finish: true
+          fail-ci-if-error: false

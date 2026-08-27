@@ -32,8 +32,8 @@ coverage, which is correct and stays that way — see M1.)
 `.spec.ts`, no test runner in `devDependencies`, and no `test` target in
 `angular.json` (only `build` and `serve`). `action/` has 598 lines across five
 source files, one npm script (`build`), and no test runner either. `docs/PRD.md`
-already names Vitest as the intended stack; `.gitignore` already anticipates
-`ClientApp/coverage/`.
+already names Vitest as the intended stack; `.gitignore` appears to anticipate
+`ClientApp/coverage/`, though that rule turns out to be dead — see M1.
 
 **README** has no badges of any kind.
 
@@ -97,7 +97,7 @@ Genuinely not being done, not deferred:
 - Add `coverlet.runsettings` at the repo root: `Format=cobertura`,
   `IncludeTestAssembly=false`, `UseSourceLink=false`, `DeterministicReport=false`,
   `ExcludeByFile=**/*.g.cs,**/obj/**` (Spark generates model code).
-- `ci.yml` Test step gains `--settings coverlet.runsettings --results-directory coverage`.
+- `ci.yml` Test step gains `--settings coverlet.runsettings --results-directory artifacts/coverage`.
 - Add the "Assert tests actually ran" guard — `dotnet test` exits 0 and prints
   nothing when it finds no test project, so a silently empty run must fail loudly.
 - `publish.yml` deliberately gets **no** coverage collection and no upload. Both

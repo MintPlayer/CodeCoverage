@@ -1,6 +1,6 @@
 # Self-coverage — measuring and reporting this repo's own coverage
 
-**Status**: planned
+**Status**: implemented on `coverage-self-reporting`
 **Branch**: `coverage-self-reporting`
 
 Coverage analyses everyone else's repositories and has, since 2026-08-13, been in
@@ -110,8 +110,12 @@ Genuinely not being done, not deferred:
   does not — today the gate that guards a production deploy runs the embedded
   server in restricted mode while CI runs it licensed, so the two disagree about
   what passes.
-- `.gitignore`: `/coverage/` (the existing `coverage*` patterns match files, not a
-  results directory).
+- `.gitignore`: `/artifacts/`. Not a root-level `coverage/` — found the hard way:
+  git is case-insensitive on Windows, so that pattern also matches the `Coverage/`
+  **project** folder and hides the entire application from `git status`. The same
+  investigation showed the pre-existing `ClientApp/coverage/` rule was already dead:
+  a pattern containing a slash is anchored to the repo root, and the real path is
+  `Coverage/ClientApp/`. Both are now spelled in full from the root.
 
 ### M2 — `action/` tests and coverage
 
@@ -132,11 +136,17 @@ Genuinely not being done, not deferred:
   `coverage: true` and `coverageReporters: ["lcovonly", "text-summary"]`.
 - `test` npm script; seed specs over the non-trivial front-end logic.
 - CI: the `angular-build` job runs `npx ng test` after the build.
+- `coverageInclude` spans `src/**/*.ts` so untested files count against the total.
+  Measuring only what the specs import reported 64.6%; the honest figure is 7.2%.
 
 ### M4 — path rebasing and the unified upload
 
 - `tools/rebase-lcov-paths.mjs`: rewrites `SF:` entries to repo-root-relative
-  forward-slash paths, handling both absolute and root-relative inputs.
+  forward-slash paths, handling both absolute and root-relative inputs, and
+  **verifies every rebased path names a tracked file**, failing the job otherwise —
+  the silent-drop failure mode is exactly what this milestone exists to prevent, so
+  it must not be able to recur unnoticed. Tested on node's built-in runner, which
+  keeps a one-file tool from dragging in a third test framework.
 - Producing jobs publish their reports as workflow artifacts.
 - A `coverage-upload` job (`needs: [test, angular-build, action-dist-check]`)
   checks out, downloads all three, rebases the two lcov files, and invokes the

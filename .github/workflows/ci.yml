@@ -79,7 +79,11 @@ jobs:
           echo "Found ${#reports[@]} coverage report(s):"
           printf '  %s\n' "${reports[@]}"
 
+      # always(): a failing suite still produced a report for everything that did
+      # run, and losing that commit's coverage entirely is worse than posting a
+      # number that reflects a red build.
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: coverage-dotnet
           path: artifacts/coverage
@@ -104,7 +108,11 @@ jobs:
         working-directory: Coverage/ClientApp
         run: npx ng test
 
+      # always(): a failing suite still produced a report for everything that did
+      # run, and losing that commit's coverage entirely is worse than posting a
+      # number that reflects a red build.
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: coverage-angular
           path: Coverage/ClientApp/coverage/ClientApp/lcov.info
@@ -133,7 +141,11 @@ jobs:
             exit 1
           fi
 
+      # always(): a failing suite still produced a report for everything that did
+      # run, and losing that commit's coverage entirely is worse than posting a
+      # number that reflects a red build.
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: coverage-action
           path: action/coverage/lcov.info
@@ -153,16 +165,26 @@ jobs:
   coverage-upload:
     needs: [test, angular-build, action-dist-check]
     runs-on: ubuntu-latest
+    # always(): coverage is posted for every pull request and every push to master,
+    # including runs where a suite failed — `needs:` alone would skip this job and
+    # the commit would post nothing at all.
+    #
     # Fork pull requests get no secrets, so the upload cannot authenticate. Skip it
     # rather than fail a contributor's PR over a reporting step.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: >
+      always()
+      && (github.event_name != 'pull_request'
+          || github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
 
+      # continue-on-error: a job that failed before writing its report leaves no
+      # artifact, and the remaining reports should still be posted.
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           pattern: coverage-*
           path: reports
@@ -177,8 +199,16 @@ jobs:
       # tool fails the job if a rebased path names no tracked file.
       - name: Rebase lcov paths onto the repository root
         run: |
-          node tools/rebase-lcov-paths.mjs reports/coverage-angular/lcov.info Coverage/ClientApp
-          node tools/rebase-lcov-paths.mjs reports/coverage-action/lcov.info action
+          set -e
+          for report in "reports/coverage-angular/lcov.info:Coverage/ClientApp" "reports/coverage-action/lcov.info:action"; do
+            file=${report%%:*}
+            base=${report##*:}
+            if [ -f "$file" ]; then
+              node tools/rebase-lcov-paths.mjs "$file" "$base"
+            else
+              echo "::warning::$file is absent — its job did not get far enough to produce one. Its coverage is not in this build."
+            fi
+          done
 
       # Three sessions, one build. The server keys a build on
       # (repository, commitSha, runId, runAttempt) and merges sessions into it with
@@ -187,6 +217,7 @@ jobs:
       # baseline comparisons are computed against on a pull request; it is empty on
       # a push, which the action treats as absent.
       - name: Upload .NET coverage
+        if: hashFiles('reports/coverage-dotnet/**/coverage.cobertura.xml') != ''
         continue-on-error: true
         uses: ./action
         with:
@@ -199,6 +230,7 @@ jobs:
           fail-ci-if-error: false
 
       - name: Upload Angular coverage
+        if: hashFiles('reports/coverage-angular/lcov.info') != ''
         continue-on-error: true
         uses: ./action
         with:
@@ -211,8 +243,12 @@ jobs:
           fail-ci-if-error: false
 
       # finish: true closes the build now instead of waiting out the server's
-      # ~2-minute debounce, so it rides on the last of the three uploads.
+      # ~2-minute debounce, so it rides on the last of the three uploads. If this
+      # one is skipped because its report never arrived, the build finalizes on the
+      # debounce instead — later, but never lost: the server finalizes every build
+      # within 30 minutes regardless.
       - name: Upload action coverage
+        if: hashFiles('reports/coverage-action/lcov.info') != ''
         continue-on-error: true
         uses: ./action
         with:

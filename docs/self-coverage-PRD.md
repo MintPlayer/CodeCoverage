@@ -1,0 +1,157 @@
+# Self-coverage — measuring and reporting this repo's own coverage
+
+**Status**: planned
+**Branch**: `coverage-self-reporting`
+
+Coverage analyses everyone else's repositories and has, since 2026-08-13, been in
+production at `coverage.mintplayer.com`. Six MintPlayer repositories now upload to
+it. This repository does not — not really. It has half a .NET pipeline and nothing
+at all for its ~2 000 lines of TypeScript.
+
+This is the dogfooding gap. It matters beyond tidiness: the mixed-format, multi-flag,
+multi-session path through the server is exercised today only by
+`mintplayer-ng-bootstrap`. Running our own repo through it makes that path a
+first-class, continuously-tested surface rather than one customer's edge case.
+
+## Where we actually stand
+
+Investigated 2026-08-27 across this repo, the six consuming repos, and the two
+reference PRs (`MintPlayer.AspNetCore.Tools#28`, `MintPlayer.AI#45`).
+
+**.NET — collected, uploaded, but off the org standard.**
+`.github/workflows/ci.yml` runs `dotnet test … --collect:"XPlat Code Coverage"` and
+uploads via `uses: ./action`. `Coverage.Tests` already references
+`coverlet.collector 6.0.4`. What's missing against the pattern every other repo
+follows: no `coverlet.runsettings` (so no exclusions, no format control), no
+`--results-directory`, no "did a report actually get produced" guard, no
+`disable-search: true`, no fork-PR guard, no `fail-ci-if-error: false`, and no
+`base-sha` on pull requests. `publish.yml` runs `dotnet test` with **no coverage at
+all**, so master pushes — the runs that set the badge — measure nothing.
+
+**TypeScript — nothing.** `Coverage/ClientApp` has 34 `.ts` files, **zero**
+`.spec.ts`, no test runner in `devDependencies`, and no `test` target in
+`angular.json` (only `build` and `serve`). `action/` has 598 lines across five
+source files, one npm script (`build`), and no test runner either. `docs/PRD.md`
+already names Vitest as the intended stack; `.gitignore` already anticipates
+`ClientApp/coverage/`.
+
+**README** has no badges of any kind.
+
+## What we will build
+
+### Decisions, and why
+
+**Keep `uses: ./action`, do not switch to `MintPlayer/CodeCoverage/action@master`.**
+Every consumer pins `@master`. This repo should not: `./action` uploads with the
+action *as the pull request changes it*, so a regression in the uploader is caught
+by the PR that introduces it rather than by the next consumer to update. This is the
+one place where deviating from the org pattern is the point.
+
+**Hardcode `url: https://coverage.mintplayer.com`; drop the `vars.COVERAGE_URL`
+gate.** The instance is live and the URL doubles as the OIDC audience server-side,
+so it cannot be "normalised". The `vars` gate currently also serves as the
+fork-PR skip, which it does badly — repository variables *are* exposed to fork PRs
+while `secrets.COVERAGE_TOKEN` is not, so a fork PR today attempts an upload that
+cannot authenticate. Replaced by the explicit fork guard the other repos use.
+
+**Token auth, not OIDC.** `COVERAGE_TOKEN` is already provisioned org-wide and this
+repo's CI already uses it. OIDC would be a second thing to debug for no gain.
+
+**Three upload sessions, one build, distinguished by `flags`.** `dotnet`, `angular`,
+`action`. The server merges sessions under `(repository, commitSha, runId,
+runAttempt)` with max semantics and reports per-flag totals — so this gives three
+readable numbers *and* one headline. A single mixed upload (what `ng-bootstrap`
+does) would give one opaque number. The action rejects an upload with zero files, so
+there is no "finish-only" invocation: `finish: true` rides on the last of the three.
+
+**lcov paths must be rebased. This is not optional.** The server resolves report
+paths against `git ls-files` by longest suffix and *silently drops what is
+ambiguous* — `ng-bootstrap` lost 22.3% of its files to this before it was found.
+This repo has a verified collision on day one: `src/main.ts` exists in **both**
+`action/src/main.ts` and `Coverage/ClientApp/src/main.ts`. Vitest emits `SF:` paths
+relative to its own root, so both would arrive as `src/main.ts`, match two entries,
+and vanish — along with every other same-named file. A rebase step runs before
+upload.
+
+**Coverage measures product code, not the bundle.** `action/dist/index.js` is a
+2.4 MB committed `ncc` bundle; it is excluded, as are `node_modules`, spec files,
+and generated `.g.cs`.
+
+### Out of scope
+
+Genuinely not being done, not deferred:
+
+- **Coverage gating / branch protection.** Thresholds live server-side (service UI
+  or a repo-root `coverage.yml` read from the base ref), never in workflow YAML.
+  Configuring them is a service-side action, not a code change.
+- **Raising coverage.** This lands the measurement and a seed suite that proves the
+  pipeline end to end. Writing tests to a target number is separate work driven by
+  what the resulting report shows.
+- **A `v1` tag for the action.** No tags exist; consumers pin `@master` by design
+  until the input surface settles. Unrelated to measuring ourselves.
+
+## Milestones
+
+### M1 — .NET collection on the org standard
+
+- Add `coverlet.runsettings` at the repo root: `Format=cobertura`,
+  `IncludeTestAssembly=false`, `UseSourceLink=false`, `DeterministicReport=false`,
+  `ExcludeByFile=**/*.g.cs,**/obj/**` (Spark generates model code).
+- `ci.yml` Test step gains `--settings coverlet.runsettings --results-directory coverage`.
+- Add the "Assert tests actually ran" guard — `dotnet test` exits 0 and prints
+  nothing when it finds no test project, so a silently empty run must fail loudly.
+- `publish.yml`: same collection, plus an upload placed **before** the Docker build,
+  with `fail-ci-if-error: false` so a coverage outage never blocks a deploy.
+- `.gitignore`: `/coverage/` (the existing `coverage*` patterns match files, not a
+  results directory).
+
+### M2 — `action/` tests and coverage
+
+- devDeps `vitest` + `@vitest/coverage-v8`; `test` and `test:coverage` scripts.
+- `vitest.config.ts`: v8 provider, `lcovonly` + `text-summary`, output to
+  `action/coverage/`, excluding `dist/`.
+- Specs against the pure, testable seams — `files.ts` (glob resolution, the
+  explicit-then-fallback rule, ignore patterns), `context.ts` (PR head sha vs merge
+  sha, branch resolution), `credential.ts` (OIDC re-mint margin, invalidate), and
+  `status.ts` (state branching, 429 backoff, the single 401 retry).
+- CI: the `action-dist-check` job runs `npm test` before the dist check.
+
+### M3 — `ClientApp` tests and coverage
+
+- devDeps `vitest`, `jsdom`, `@vitest/coverage-v8`; `tsconfig.spec.json`.
+- `angular.json` gains an `architect.test` target on `@angular/build:unit-test`
+  (Angular 22's native builder, already present in `node_modules`) with
+  `coverage: true` and `coverageReporters: ["lcovonly", "text-summary"]`.
+- `test` npm script; seed specs over the non-trivial front-end logic.
+- CI: the `angular-build` job runs `npx ng test` after the build.
+
+### M4 — path rebasing and the unified upload
+
+- `tools/rebase-lcov-paths.mjs`: rewrites `SF:` entries to repo-root-relative
+  forward-slash paths, handling both absolute and root-relative inputs.
+- Producing jobs publish their reports as workflow artifacts.
+- A `coverage-upload` job (`needs: [test, angular-build, action-dist-check]`)
+  checks out, downloads all three, rebases the two lcov files, and invokes the
+  action three times — `flags: dotnet`, `flags: angular`, `flags: action` — with
+  `finish: true` on the last, `disable-search: true` throughout, `base-sha` on pull
+  requests, and the fork guard.
+
+### M5 — badges and documentation
+
+- README badges directly under `# Coverage`: the coverage badge
+  (`https://coverage.mintplayer.com/badge/MintPlayer/CodeCoverage.svg` →
+  `/r/MintPlayer/CodeCoverage`) alongside the CI status badge.
+- Reconcile the README's action reference with what CI actually does — the file
+  currently advertises `MintPlayer/CodeCoverage/action@master` while CI uses
+  `./action`; both are correct, for different audiences, and should say so.
+- A short "How this repo measures itself" section covering the three flags and the
+  rebasing requirement, so the next repo with a nested workspace finds it.
+
+## Verification
+
+Per the batching rule, suites run once at the end, not per milestone; intermediate
+milestones are verified by reading and type-checking. The closing sweep is
+`dotnet test` with the runsettings, `npm test` in `action/`, `npx ng test` in
+`ClientApp`, and the rebase script asserted against a fixture containing the
+`src/main.ts` collision. The pipeline itself is only truly verified once the PR runs
+— the badge turning from `unknown` to a number is the acceptance signal.

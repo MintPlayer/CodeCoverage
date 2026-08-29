@@ -11,7 +11,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="MintPlayer.Spark.SourceGenerators" Version="10.0.0-preview.67">
+		<PackageReference Include="MintPlayer.Spark.SourceGenerators" Version="10.0.0-preview.68">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>

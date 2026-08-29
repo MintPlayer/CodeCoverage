@@ -1,5 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, InputSignal, signal, effect } from '@angular/core';
-import type { EntityAttributeDefinition } from '@mintplayer/ng-spark/models';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal, effect } from '@angular/core';
 import type { SparkAttributeColumnRenderer, SparkAttributeDetailRenderer } from '@mintplayer/ng-spark/renderers';
 import { BsSparklineComponent } from '@mintplayer/ng-bootstrap/charts/sparkline';
 import { BrowseService } from '../services/browse.service';
@@ -32,9 +31,7 @@ export class CoverageSparklineRendererComponent implements SparkAttributeColumnR
   private readonly browse = inject(BrowseService);
 
   value = input<any>();
-  attribute = input<EntityAttributeDefinition | undefined>();
   options = input<Record<string, any> | undefined>();
-  formData: InputSignal<Record<string, any>> = input<Record<string, any>>({});
 
   readonly points = signal<number[] | null>(null);
 

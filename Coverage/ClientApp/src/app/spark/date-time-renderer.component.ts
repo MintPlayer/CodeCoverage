@@ -1,6 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, InputSignal, LOCALE_ID } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, LOCALE_ID } from '@angular/core';
 import { formatDate } from '@angular/common';
-import type { EntityAttributeDefinition } from '@mintplayer/ng-spark/models';
 import type { SparkAttributeColumnRenderer, SparkAttributeDetailRenderer } from '@mintplayer/ng-spark/renderers';
 
 /**
@@ -22,9 +21,7 @@ export class DateTimeRendererComponent implements SparkAttributeColumnRenderer, 
   private readonly locale = inject(LOCALE_ID);
 
   value = input<any>();
-  attribute = input<EntityAttributeDefinition | undefined>();
   options = input<Record<string, any> | undefined>();
-  formData: InputSignal<Record<string, any>> = input<Record<string, any>>({});
 
   readonly formatted = computed(() => {
     const value = this.value();

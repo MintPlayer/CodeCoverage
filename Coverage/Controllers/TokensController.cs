@@ -4,6 +4,7 @@ using Coverage.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using MintPlayer.Spark.Services;
 using MintPlayer.SourceGenerators.Attributes;
 using MintPlayer.Spark.Authorization.Identity;
 using Raven.Client.Documents;
@@ -19,7 +20,11 @@ namespace Coverage.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/tokens")]
-[Authorize]
+// Manage/UploadToken is granted to the authenticated role only, so this replaces
+// the bare [Authorize] rather than joining it. The per-account ownership checks
+// stay in the method bodies: a declared right answers "may this caller manage
+// upload tokens at all", never "does this caller own *this* account".
+[SparkAuthorize("Manage", "UploadToken")]
 public partial class TokensController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;

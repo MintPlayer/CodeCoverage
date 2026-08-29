@@ -79,6 +79,16 @@
       "en": "Reconnect GitHub",
       "fr": "Reconnecter GitHub",
       "nl": "GitHub opnieuw verbinden"
+    },
+    "resync": {
+      "en": "Resync",
+      "fr": "Resynchroniser",
+      "nl": "Hersynchroniseren"
+    },
+    "resyncTooltip": {
+      "en": "Re-query GitHub for your organizations and installations.",
+      "fr": "Reinterroger GitHub pour vos organisations et installations.",
+      "nl": "GitHub opnieuw bevragen voor je organisaties en installaties."
     }
   }
 }

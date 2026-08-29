@@ -128,11 +128,11 @@
         },
         "dataType": "boolean",
         "isRequired": true,
-        "isVisible": true,
+        "isVisible": false,
         "isReadOnly": false,
         "order": 8,
         "isArray": false,
-        "showedOn": "PersistentObject",
+        "showedOn": "Query, PersistentObject",
         "rules": []
       },
       {

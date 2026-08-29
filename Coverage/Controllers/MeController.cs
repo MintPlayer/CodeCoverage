@@ -1,6 +1,7 @@
 using Coverage.Entities;
 using Coverage.Services;
 using Microsoft.AspNetCore.Authorization;
+using MintPlayer.Spark.Services;
 using Microsoft.AspNetCore.Mvc;
 using MintPlayer.SourceGenerators.Attributes;
 using Raven.Client.Documents;
@@ -11,13 +12,18 @@ namespace Coverage.Controllers;
 
 [ApiController]
 [Route("api/me")]
+// Both, and [Authorize] is the load-bearing one. Read/Account is granted to the
+// anonymous role as well (public repo pages read account documents), so
+// [SparkAuthorize] alone would open "the accounts *I* administer" to callers who
+// have no identity at all. The right is declared anyway so that revoking
+// Read/Account from signed-in users closes this endpoint with it, rather than
+// leaving an inconsistency between the controller and the generic UI.
 [Authorize]
+[SparkAuthorize("Read", nameof(Account))]
 public partial class MeController : ControllerBase
 {
-    [Inject] private readonly IAsyncDocumentSession session;
     [Inject] private readonly IGitHubAccessService gitHubAccess;
-    [Inject] private readonly IConfiguration configuration;
-    [Inject] private readonly IWebHostEnvironment environment;
+    [Inject] private readonly IMyAccountsService myAccounts;
 
     /// <summary>
     /// The accounts (user + organizations) the signed-in user may see, joined
@@ -29,46 +35,19 @@ public partial class MeController : ControllerBase
     [HttpGet("accounts")]
     public async Task<ActionResult<AccountsResponse>> GetAccounts(CancellationToken cancellationToken)
     {
-        var appSlug = configuration[$"GitHub:{environment.EnvironmentName}:AppSlug"];
-        if (string.IsNullOrEmpty(appSlug))
-            appSlug = environment.IsDevelopment() ? "coveragedevelopment" : "coverageproduction";
-        var appUrl = $"https://github.com/apps/{appSlug}";
+        // The aggregation lives in MyAccountsService, shared with the
+        // Custom.MyAccounts Spark query behind the composed Home page. The wire
+        // shape stays this controller's own: AccountInfo's property order is what
+        // the SPA deserializes, and reauth still travels as a flag on a 200 —
+        // the auth interceptor hijacks any non-/spark/auth 401 into a full
+        // /login navigation.
+        var result = await myAccounts.GetAsync(cancellationToken);
 
-        var visibility = await gitHubAccess.GetVisibilityAsync(cancellationToken);
-        var owners = visibility.Owners;
-        // Reauth travels as a flag on a 200 — the SPA's auth interceptor
-        // hijacks any non-/spark/auth 401 into a full /login navigation.
-        var reauthRequired = visibility.TokenState == GitHubTokenState.ReauthRequired;
-        if (owners.Length == 0)
-            return Ok(new AccountsResponse(appUrl, [], reauthRequired));
-
-        var known = await session.Query<Account, Indexes.Accounts_Overview>()
-            .Where(a => a.Login.In(owners))
-            .ToListAsync(cancellationToken);
-
-        var repos = await session.Query<Repository, Indexes.Repositories_Overview>()
-            .Where(r => r.OwnerLogin.In(owners))
-            .Take(4096)
-            .ToListAsync(cancellationToken);
-        var reposByOwner = repos.ToLookup(r => r.OwnerLogin, StringComparer.OrdinalIgnoreCase);
-
-        var byLogin = known.ToDictionary(a => a.Login, StringComparer.OrdinalIgnoreCase);
-
-        var result = owners
-            .Select(owner =>
-            {
-                var ownerRepos = reposByOwner[owner].ToList();
-                var covered = ownerRepos.Sum(r => r.LatestCoverage?.LinesCovered ?? 0);
-                var coverable = ownerRepos.Sum(r => r.LatestCoverage?.LinesCoverable ?? 0);
-                var aggregate = coverable > 0 ? Math.Round(covered * 100.0 / coverable, 1) : (double?)null;
-                return byLogin.TryGetValue(owner, out var account)
-                    ? new AccountInfo(account.Login, account.Type, account.AvatarUrl, account.InstallationId is not null, ownerRepos.Count, aggregate)
-                    : new AccountInfo(owner, "User", null, false, ownerRepos.Count, aggregate);
-            })
-            .OrderBy(a => a.Login, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        return Ok(new AccountsResponse(appUrl, result, reauthRequired));
+        return Ok(new AccountsResponse(
+            result.GitHubAppUrl,
+            [.. result.Accounts.Select(a => new AccountInfo(
+                a.Login, a.Type, a.AvatarUrl, a.IsAppInstalled, a.RepoCount, a.AggregateCoverage))],
+            result.ReauthRequired));
     }
 
     /// <summary>

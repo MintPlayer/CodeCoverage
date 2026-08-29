@@ -105,9 +105,15 @@ sign-in button performs its own properly-stated OAuth challenge and doesn't need
 it. Optionally set the **Setup URL** to the app's home page so installs land
 back in the app.
 The App's *Client ID* / a generated *client secret* go into
-`GitHub:{Development|Production}:ClientId` / `:ClientSecret` below; sign-in is
-disabled (button throws "No authentication handler is registered for the scheme
-'GitHub'") until they're configured.
+`GitHub:{Development|Production}:ClientId` / `:ClientSecret` below. **These are
+required to boot.** GitHub is the only authentication provider this app
+registers, and Spark's local credentials are disabled, so a missing `ClientId`
+means nobody could sign in at all — startup throws a named error naming the key
+rather than serving an app whose sign-in button is broken. A fresh clone must
+configure user-secrets before its first `dotnet run`.
+
+The App also needs the **Email addresses: Read-only** account permission
+(`user:email`); without it, first-time sign-in cannot resolve a user's address.
 
 Configure secrets (never commit them):
 

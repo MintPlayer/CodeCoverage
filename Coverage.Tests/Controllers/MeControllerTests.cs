@@ -25,6 +25,10 @@ public class MeControllerTests : CoverageRavenTest
         services.AddSingleton<IGitHubAccessService>(new ScriptedAccessService(visibility));
         services.AddSingleton(GitHubAuthTestFakes.TestConfiguration());
         services.AddSingleton<IWebHostEnvironment>(new FakeWebHostEnvironment());
+        // The real aggregation, not a stub: it is shared with the Custom.MyAccounts
+        // Spark query, and these tests are about what that aggregation reports —
+        // stubbing it would leave the reauth flag asserted against nothing.
+        services.AddScoped<IMyAccountsService, MyAccountsService>();
         services.AddScoped<MeController>();
         return services.BuildServiceProvider().GetRequiredService<MeController>();
     }

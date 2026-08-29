@@ -1,5 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, input, InputSignal } from '@angular/core';
-import type { EntityAttributeDefinition } from '@mintplayer/ng-spark/models';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import type { SparkAttributeColumnRenderer, SparkAttributeDetailRenderer } from '@mintplayer/ng-spark/renderers';
 
 /**
@@ -20,9 +19,7 @@ import type { SparkAttributeColumnRenderer, SparkAttributeDetailRenderer } from 
 })
 export class CoverageDeltaRendererComponent implements SparkAttributeColumnRenderer, SparkAttributeDetailRenderer {
   value = input<any>();
-  attribute = input<EntityAttributeDefinition | undefined>();
   options = input<Record<string, any> | undefined>();
-  formData: InputSignal<Record<string, any>> = input<Record<string, any>>({});
 
   readonly delta = computed(() => {
     const value = Number(this.value());

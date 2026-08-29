@@ -5,6 +5,7 @@ using Coverage.Ingestion;
 using Coverage.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MintPlayer.Spark.Services;
 using Microsoft.AspNetCore.RateLimiting;
 using MintPlayer.SourceGenerators.Attributes;
 using MintPlayer.Spark.Messaging.Abstractions;
@@ -22,7 +23,14 @@ namespace Coverage.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/uploads")]
+// Both attributes, and they answer different questions. [Authorize] names the two
+// schemes that may authenticate here at all — a browser cookie must NOT reach
+// ingestion, and dropping that restriction is the one change here that would fail
+// open. [SparkAuthorize] then checks the right, so who may upload is an operator
+// decision rather than a redeploy. The union of AuthenticationSchemes across both
+// is still exactly these two: the second attribute names none.
 [Authorize(AuthenticationSchemes = $"{ApiTokenAuthenticationHandler.SchemeName},{GitHubOidc.SchemeName}")]
+[SparkAuthorize("Upload", "Coverage")]
 [EnableRateLimiting("uploads")]
 public partial class UploadsController : ControllerBase
 {

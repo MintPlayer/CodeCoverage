@@ -1,45 +1,63 @@
-import { Component, ChangeDetectionStrategy, inject, signal, effect, afterNextRender, PLATFORM_ID, DestroyRef } from '@angular/core';
-import { CommonModule, isPlatformBrowser } from '@angular/common';
-import { RouterModule } from '@angular/router';
-import { BsShellComponent, BsShellSidebarDirective, BsShellState } from '@mintplayer/ng-bootstrap/shell';
-import { BsNavbarTogglerComponent } from '@mintplayer/ng-bootstrap/navbar-toggler';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { KeyValuePipe } from '@angular/common';
+import { NavigationEnd, Router, RouterModule } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { filter, map, startWith } from 'rxjs';
+import { FormsModule } from '@angular/forms';
 import { BsAlertComponent, BsAlertCloseComponent } from '@mintplayer/ng-bootstrap/alert';
-import { Color } from '@mintplayer/ng-bootstrap';
-import type { ShellStateChangeEventDetail } from '@mintplayer/web-components/shell';
 import { BsSelectComponent, BsSelectOption } from '@mintplayer/ng-bootstrap/select';
-import { SparkLanguageService } from '@mintplayer/ng-spark/services';
+import { Color } from '@mintplayer/ng-bootstrap';
+import { SparkShellComponent, SparkShellTopbarEndDirective, SparkShellMainHeaderDirective } from '@mintplayer/ng-spark/shell';
+import { SparkLanguageService, SparkService } from '@mintplayer/ng-spark/services';
 import { ResolveTranslationPipe, TranslateKeyPipe } from '@mintplayer/ng-spark/pipes';
 import { SparkAuthService } from '@mintplayer/ng-spark-auth/core';
-import { FormsModule } from '@angular/forms';
-import { KeyValuePipe } from '@angular/common';
 import { GitHubLoginService } from '../services/github-login.service';
+import { HOME_ROUTE, HOME_URL } from '../spark/home-route';
 
+/**
+ * The application frame. All responsive behaviour — breakpoints, the overlay drawer,
+ * dismiss-on-navigate, the toggler↔drawer mirror — belongs to `<spark-shell>` and the
+ * `mp-shell` web component underneath it; this component owns only what is specific to
+ * Coverage: the GitHub sign-in block, the login-error alert and the Resync action.
+ *
+ * The sidebar menu is server-driven (`GET /spark/program-units`, already rights-filtered
+ * per caller), so there are no router links here. A new entry goes in `programUnits.json`.
+ */
 @Component({
   selector: 'app-shell',
-  imports: [CommonModule, RouterModule, BsShellComponent, BsShellSidebarDirective, BsNavbarTogglerComponent, BsAlertComponent, BsAlertCloseComponent, BsSelectComponent, BsSelectOption, ResolveTranslationPipe, TranslateKeyPipe, FormsModule, KeyValuePipe],
+  imports: [
+    RouterModule, FormsModule, KeyValuePipe,
+    SparkShellComponent, SparkShellTopbarEndDirective, SparkShellMainHeaderDirective,
+    BsAlertComponent, BsAlertCloseComponent, BsSelectComponent, BsSelectOption,
+    ResolveTranslationPipe, TranslateKeyPipe,
+  ],
   templateUrl: './shell.component.html',
   styleUrl: './shell.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ShellComponent {
-  private readonly platformId = inject(PLATFORM_ID);
-  private readonly destroyRef = inject(DestroyRef);
+  private readonly router = inject(Router);
+  private readonly spark = inject(SparkService);
+  private readonly gitHubLogin = inject(GitHubLoginService);
   readonly authService = inject(SparkAuthService);
   readonly lang = inject(SparkLanguageService);
 
-  private readonly gitHubLogin = inject(GitHubLoginService);
-
-  shellState = signal<BsShellState>('auto');
-  isSidebarVisible = signal<boolean>(false);
   loginError = signal<string | null>(null);
+  resyncing = signal(false);
   readonly dangerColor = Color.danger;
 
-  constructor() {
-    afterNextRender(() => {
-      this.setupResizeListener();
-      this.updateSidebarVisibility();
-    });
-  }
+  /**
+   * Resync acts on the accounts grid, which only the Home page renders — showing the button
+   * elsewhere would offer an action whose visible effect is on a page you are not looking at.
+   */
+  readonly onHome = toSignal(
+    this.router.events.pipe(
+      filter((e): e is NavigationEnd => e instanceof NavigationEnd),
+      map((e) => e.urlAfterRedirects.startsWith(HOME_URL)),
+      startWith(this.router.url.startsWith(HOME_URL)),
+    ),
+    { initialValue: false },
+  );
 
   // The flow itself (popup handshake, blocked → redirect fallback, error map)
   // lives in GitHubLoginService, shared with home's reconnect banner. Every
@@ -47,7 +65,7 @@ export class ShellComponent {
   // reads as "broken".
   async loginWithGitHub(): Promise<void> {
     this.loginError.set(null);
-    const result = await this.gitHubLogin.login('/home');
+    const result = await this.gitHubLogin.login(HOME_URL);
     if (!result.success) this.loginError.set(result.message ?? null);
   }
 
@@ -55,62 +73,28 @@ export class ShellComponent {
     await this.authService.logout();
   }
 
+  /**
+   * Executes the server-side Resync custom action. The grid updates itself: the action emits a
+   * `refreshQuery` client operation, which `provideSparkClientOperations()` dispatches — so this
+   * never touches the grid, and works the same from anywhere the action is invoked.
+   */
+  async resync(): Promise<void> {
+    if (this.resyncing()) return;
+    this.resyncing.set(true);
+    try {
+      // (type, action, parent, selectedItemIds, queryParent, queryId). Resync is
+      // parentless and selectionless; the query is named only so the server knows
+      // which grid the refresh applies to.
+      await this.spark.executeCustomAction(
+        HOME_ROUTE.accountsType, 'Resync', undefined, [], undefined, HOME_ROUTE.accountsQueryAlias);
+    } finally {
+      this.resyncing.set(false);
+    }
+  }
+
   // bs-alert-close only hides the alert (isVisible model); clear the error so
   // the @if removes it and a later failure starts from a fresh, visible alert.
   onLoginAlertVisible(visible: boolean): void {
     if (!visible) this.loginError.set(null);
-  }
-
-  toggleSidebar(open: boolean) {
-    this.shellState.set(open ? 'show' : 'hide');
-    this.updateSidebarVisibility();
-  }
-
-  // Keep the navbar-toggler in sync with the shell's actual open/closed state
-  // (the shell may toggle itself at the breakpoint in 'auto' mode). We only
-  // mirror the reflected visibility here — never force show/hide — so 'auto'
-  // responsive behaviour is preserved; explicit toggles go through the toggler.
-  onShellToggle(detail: ShellStateChangeEventDetail) {
-    this.isSidebarVisible.set(detail.open);
-  }
-
-  onMenuItemClick() {
-    if (this.shellState() !== 'auto') {
-      this.shellState.set('hide');
-      this.updateSidebarVisibility();
-    }
-  }
-
-  private setupResizeListener(): void {
-    if (!isPlatformBrowser(this.platformId)) {
-      return;
-    }
-
-    const onResize = () => this.updateSidebarVisibility();
-    window.addEventListener('resize', onResize);
-    this.destroyRef.onDestroy(() => window.removeEventListener('resize', onResize));
-  }
-
-  private updateSidebarVisibility(): void {
-    const state = this.shellState();
-    let isVisible: boolean;
-
-    if (state === 'show') {
-      isVisible = true;
-    } else if (state === 'hide') {
-      isVisible = false;
-    } else {
-      isVisible = this.isAboveBreakpoint();
-    }
-
-    this.isSidebarVisible.set(isVisible);
-  }
-
-  private isAboveBreakpoint(): boolean {
-    if (!isPlatformBrowser(this.platformId)) {
-      return false;
-    }
-    // Bootstrap 'md' breakpoint is 768px
-    return window.innerWidth >= 768;
   }
 }

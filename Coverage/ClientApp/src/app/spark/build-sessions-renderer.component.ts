@@ -1,5 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, input, InputSignal } from '@angular/core';
-import type { EntityAttributeDefinition, PersistentObject } from '@mintplayer/ng-spark/models';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import type { PersistentObject } from '@mintplayer/ng-spark/models';
 import type { SparkAttributeColumnRenderer, SparkAttributeDetailRenderer } from '@mintplayer/ng-spark/renderers';
 import { BsBadgeComponent } from '@mintplayer/ng-bootstrap/badge';
 
@@ -41,9 +41,7 @@ interface SessionView {
 })
 export class BuildSessionsRendererComponent implements SparkAttributeColumnRenderer, SparkAttributeDetailRenderer {
   value = input<any>();
-  attribute = input<EntityAttributeDefinition | undefined>();
   options = input<Record<string, any> | undefined>();
-  formData: InputSignal<Record<string, any>> = input<Record<string, any>>({});
 
   readonly sessions = computed<SessionView[]>(() => {
     const value = this.value();

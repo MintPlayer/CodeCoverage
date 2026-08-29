@@ -11,6 +11,7 @@ using MintPlayer.AspNetCore.SpaServices.Extensions;
 using MintPlayer.Spark;
 using MintPlayer.Spark.Abstractions.Authentication;
 using MintPlayer.Spark.Authorization.Extensions;
+using MintPlayer.Spark.Controllers;
 using MintPlayer.Spark.Extensions;
 using MintPlayer.Spark.Authorization.Identity;
 using MintPlayer.Spark.Messaging;
@@ -19,6 +20,13 @@ using MintPlayer.Spark.Webhooks.GitHub.Extensions;
 var builder = WebApplication.CreateBuilder(args);
 
 var envPrefix = builder.Environment.EnvironmentName;
+
+// The --spark-* commands are build steps, not run modes: they reflect over the
+// entity classes and security.json, open no database, and return before Build().
+// They must therefore keep working where no secrets exist — CI, and a fork's PR
+// run — which is why the credential check below exempts them rather than being
+// unconditional. Nothing they touch can reach an authentication handler.
+var isSparkBuildCommand = args.Any(a => a.StartsWith("--spark-", StringComparison.Ordinal));
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
@@ -41,43 +49,83 @@ builder.Services.AddSpark(builder.Configuration, spark =>
 {
     spark.UseContext<CoverageSparkContext>();
 
-    // security.json grants QueryRead on the four entity types to Everyone —
-    // including anonymous callers — and the Actions classes (Coverage/Actions)
-    // are the only gate behind that: row filters scope reads per viewer (public
-    // repos for anonymous, GitHub-granted owners for signed-in users) and redact
-    // BadgeToken/InstallationId for non-managers. Writes stay denied at the type
-    // level (no Edit/New/Delete right exists), so the generic UI is read-only.
+    // security.json grants QueryRead on the four entity types to BOTH well-known
+    // roles — 'anonymous' is not 'everyone', so a right both should have is two
+    // grants. The Actions classes (Coverage/Actions) are the only gate behind
+    // that: row filters scope reads per viewer (public repos for anonymous,
+    // GitHub-granted owners for signed-in users) and redact BadgeToken/
+    // InstallationId for non-managers. Writes stay denied at the type level
+    // (no Edit/New/Delete right exists), so the generic UI is read-only.
     // The /api controllers remain the primary read surface for the vanity pages.
-    spark.AddAuthorization();
     spark.AddActions();
+
+    // The six /api controllers mount through Spark rather than through a bare
+    // MapControllers(): they then run at the pipeline stage Spark chose, behind
+    // Spark's antiforgery gate, and [SparkAuthorize] checks the *same*
+    // security.json right the persistent-object endpoints check — so a controller
+    // and its generic-UI equivalent provably agree instead of agreeing by
+    // convention. builder.Services.AddControllers() above still applies: MVC's
+    // registration is idempotent and the JsonStringEnumConverter survives.
+    spark.AddControllers();
+    spark.UseControllers();
+
+    // WarnOnly first: the CI uploader and the badge endpoints are non-browser
+    // callers that carry no antiforgery token, and turning the gate on hard would
+    // break them silently at deploy rather than loudly here. The credential
+    // schemes (covt_, GitHubOidc) are non-ambient and so already exempt; this
+    // logs what a strict gate would have rejected, and the flag flips once the
+    // logs are clean. /connect is named for the same reason it is named in the
+    // rate limiter: the app has no Identity endpoints, but the omission should
+    // not become a surprise if one is ever added.
+    spark.AddAntiforgeryProtection(antiforgery =>
+    {
+        antiforgery.PathPrefixes = ["/spark", "/connect", "/api"];
+        antiforgery.WarnOnly = true;
+    });
 
     spark.AddAuthentication<SparkUser>(configureProviders: identity =>
     {
-        // Only register the provider when configured: the OAuth handler validates
-        // ClientId on first request and would 500 every request otherwise. Without
-        // credentials the app still boots — the sign-in button just won't work.
+        // Fail loud (D5). GitHub is the only way into this app: LocalCredentials
+        // defaults to Disabled since preview.58, so an unregistered provider means
+        // nobody can sign in at all. Spark's own guard already throws for that, but
+        // it can only say "register a provider" — naming the missing key here turns
+        // a fresh clone's first run into a one-line fix. The cost is deliberate:
+        // boot-without-credentials is gone, so fork PRs and clean clones must
+        // configure user-secrets before `dotnet run` (see README, local setup).
         var gitHubClientId = builder.Configuration[$"GitHub:{envPrefix}:ClientId"];
-        if (!string.IsNullOrEmpty(gitHubClientId))
+        if (string.IsNullOrEmpty(gitHubClientId))
         {
-            identity.AddGitHub(options =>
-            {
-                options.ClientId = gitHubClientId;
-                options.ClientSecret = builder.Configuration[$"GitHub:{envPrefix}:ClientSecret"] ?? string.Empty;
-                options.SaveTokens = true;
-                // GitHub can hit the callback with a code but no OAuth state —
-                // notably the App's "Request user authorization during
-                // installation" flow, which our server never initiated. Without
-                // this the handler throws and the user gets a 500 instead of
-                // the app; the real sign-in path is unaffected (it always has
-                // state). Sign-in itself stays available via the shell button.
-                options.Events.OnRemoteFailure = context =>
-                {
-                    context.Response.Redirect("/home");
-                    context.HandleResponse();
-                    return Task.CompletedTask;
-                };
-            });
+            // A build command never serves a request, so no provider is needed and
+            // none is registered. Spark's own unreachable-sign-in guard runs at
+            // endpoint mapping, which these commands return before reaching.
+            if (isSparkBuildCommand)
+                return;
+
+            throw new InvalidOperationException(
+                $"GitHub sign-in is not configured: 'GitHub:{envPrefix}:ClientId' is missing. "
+                + "It is the only authentication provider this app registers, so without it no "
+                + $"user could sign in. Set it (and 'GitHub:{envPrefix}:ClientSecret') via "
+                + "user-secrets for local development, or environment variables in production.");
         }
+
+        identity.AddGitHub(options =>
+        {
+            options.ClientId = gitHubClientId;
+            options.ClientSecret = builder.Configuration[$"GitHub:{envPrefix}:ClientSecret"] ?? string.Empty;
+            options.SaveTokens = true;
+            // GitHub can hit the callback with a code but no OAuth state —
+            // notably the App's "Request user authorization during
+            // installation" flow, which our server never initiated. Without
+            // this the handler throws and the user gets a 500 instead of
+            // the app; the real sign-in path is unaffected (it always has
+            // state). Sign-in itself stays available via the shell button.
+            options.Events.OnRemoteFailure = context =>
+            {
+                context.Response.Redirect("/home");
+                context.HandleResponse();
+                return Task.CompletedTask;
+            };
+        });
     });
     // Registered as a Spark credential scheme (non-ambient): the composite
     // default-authenticate scheme tries it, which both silences the
@@ -250,6 +298,14 @@ builder.Services.AddSpaStaticFilesImproved(configuration =>
 if (builder.SynchronizeSparkModelsIfRequested(args))
     return;
 
+// Same shape, over security.json instead: --spark-synchronize-security writes
+// App_Data/securityPosture.txt, --spark-verify-security exits 3 when the anonymous
+// surface moved. Computed from configuration alone, so CI gates it without a
+// RavenDB — the point being that widening security.json is a one-line diff that
+// reads no differently from narrowing it.
+if (builder.VerifySparkSecurityIfRequested(args))
+    return;
+
 var app = builder.Build();
 
 app.UseForwardedHeaders();
@@ -268,7 +324,9 @@ app.UseSpark();
 
 app.UseEndpoints(endpoints =>
 {
-    endpoints.MapControllers();
+    // No endpoints.MapControllers() here: spark.UseControllers() mounts them
+    // through MapSpark() instead (SPARK010). Mapping both would be idempotent
+    // on Spark's side but would put the controllers back at this stage.
     endpoints.MapSpark();
     endpoints.MapGet("/health", () => Results.Ok());
     // Readiness that can actually fail (#13 U1 / roadmap T0.4): 503 only when

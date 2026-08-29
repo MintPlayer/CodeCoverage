@@ -9,7 +9,7 @@ import { SparkAuthBarComponent } from '@mintplayer/ng-spark-auth/auth-bar';
 import { SparkAuthService } from '@mintplayer/ng-spark-auth/core';
 
 import type { SparkAuthConfig } from '@mintplayer/ng-spark-auth';
-import type { SparkAuthRouteConfig } from '@mintplayer/ng-spark-auth/models';
+import type { SparkAuthRoutesFeature } from '@mintplayer/ng-spark-auth/routes';
 
 /**
  * Provides Spark authentication services.
@@ -40,25 +40,18 @@ export function setupSparkAuthHttp() {
 }
 
 /**
- * Returns routes for authentication pages (login, register, forgot-password, etc.).
+ * Returns routes for authentication pages.
  *
- * Add to your `app.routes.ts`:
+ * Nothing is mounted unless a feature asks for it, so a bare call emits no pages:
  * ```typescript
- * import { setupSparkAuthRoutes } from './spark-auth.setup';
- *
- * export const routes: Routes = [
- *   {
- *     path: '',
- *     children: [
- *       ...setupSparkAuthRoutes(),
- *       // ... your other routes
- *     ]
- *   }
- * ];
+ * setupSparkAuthRoutes(withExternalLogin(githubProvider()))
  * ```
+ *
+ * This app calls `sparkAuthRoutes` directly in `app.routes.ts`; the wrapper is kept
+ * only as the generated customization seam.
  */
-export function setupSparkAuthRoutes(config?: SparkAuthRouteConfig) {
-  return sparkAuthRoutes(config);
+export function setupSparkAuthRoutes(...features: SparkAuthRoutesFeature[]) {
+  return sparkAuthRoutes(...features);
 }
 
 /** Re-export the auth guard for protecting routes. */
@@ -71,4 +64,4 @@ export { SparkAuthBarComponent };
 export { SparkAuthService };
 
 /** Re-export config types for customization. */
-export type { SparkAuthConfig, SparkAuthRouteConfig };
+export type { SparkAuthConfig, SparkAuthRoutesFeature };

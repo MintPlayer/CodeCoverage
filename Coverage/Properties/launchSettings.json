@@ -36,6 +36,22 @@
         "ASPNETCORE_ENVIRONMENT": "Development"
       },
       "dotnetRunMessages": true
+    },
+    "Synchronize security": {
+      "commandName": "Project",
+      "commandLineArgs": "--spark-synchronize-security",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "dotnetRunMessages": true
+    },
+    "Verify security": {
+      "commandName": "Project",
+      "commandLineArgs": "--spark-verify-security",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "dotnetRunMessages": true
     }
   }
 }

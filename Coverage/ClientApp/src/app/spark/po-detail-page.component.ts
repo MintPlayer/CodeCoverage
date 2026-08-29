@@ -10,8 +10,9 @@ import { RepoGatePanelComponent } from '../components/repo-gate-panel/repo-gate-
 import { RepoTrendPanelComponent } from '../components/repo-trend-panel/repo-trend-panel.component';
 import { RepoSetupPanelComponent } from '../components/repo-setup-panel/repo-setup-panel.component';
 import { CommitFilesExtrasComponent } from './commit-files-extras.component';
+import { HomeExtrasComponent } from './home-extras.component';
 import { resolveVanityRoute } from './vanity-routes';
-import { rowAttr } from './row-attr';
+import { valueFor } from '@mintplayer/ng-spark/models';
 
 /**
  * The app's poDetail route component (sparkRoutes({ poDetail }) override).
@@ -25,7 +26,7 @@ import { rowAttr } from './row-attr';
  */
 @Component({
   selector: 'app-po-detail-page',
-  imports: [SparkPoDetailComponent, BsSpinnerComponent, RepoBadgePanelComponent, RepoGatePanelComponent, RepoTrendPanelComponent, RepoSetupPanelComponent, CommitFilesExtrasComponent],
+  imports: [SparkPoDetailComponent, BsSpinnerComponent, RepoBadgePanelComponent, RepoGatePanelComponent, RepoTrendPanelComponent, RepoSetupPanelComponent, CommitFilesExtrasComponent, HomeExtrasComponent],
   template: `
     @if (mode() === 'generic') {
       <spark-po-detail [extraContentTemplate]="extras" />
@@ -43,6 +44,8 @@ import { rowAttr } from './row-attr';
         }
       } @else if (entityType.name === 'Commit') {
         <app-commit-files-extras [po]="po" />
+      } @else if (entityType.name === 'Home') {
+        <app-home-extras />
       }
     </ng-template>
   `,
@@ -83,7 +86,7 @@ export default class PoDetailPageComponent {
   }
 
   repoOf(po: PersistentObject): { owner: string; name: string } | null {
-    const fullName = rowAttr(po, 'FullName');
+    const fullName = valueFor(po, 'FullName')?.value;
     if (typeof fullName !== 'string') return null;
     const [owner, name] = fullName.split('/');
     return owner && name ? { owner, name } : null;

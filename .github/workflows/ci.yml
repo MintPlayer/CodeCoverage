@@ -30,6 +30,14 @@ jobs:
       - name: Verify Spark model is in sync
         run: dotnet run --project Coverage/Coverage.csproj --configuration Release --no-build --no-launch-profile -- --spark-verify-model
 
+      # security.json is a data file: widening the anonymous surface is a one-line
+      # diff that reads no differently from narrowing it, and the consequence is
+      # invisible until someone reaches the endpoint. This exits 3 when the surface
+      # moved without App_Data/securityPosture.txt moving with it, so "who can reach
+      # this without signing in" becomes something a reviewer sees change.
+      - name: Verify Spark anonymous surface is unchanged
+        run: dotnet run --project Coverage/Coverage.csproj --configuration Release --no-build --no-launch-profile -- --spark-verify-security
+
       # The embedded RavenDB the tests run against reads its licence from here.
       # Absent — which is the case for a pull request from a fork, since org
       # secrets are not exposed to those runs — the server starts in restricted

@@ -1,8 +1,7 @@
-import { ChangeDetectionStrategy, Component, computed, input, InputSignal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { RouterModule } from '@angular/router';
-import type { EntityAttributeDefinition, PersistentObject } from '@mintplayer/ng-spark/models';
 import type { SparkAttributeColumnRenderer, SparkAttributeDetailRenderer } from '@mintplayer/ng-spark/renderers';
-import { rowAttr } from './row-attr';
+import { valueFor } from '@mintplayer/ng-spark/models';
 
 /**
  * Spark attribute renderer "short-sha": a commit sha as its 7-char short form
@@ -26,9 +25,7 @@ import { rowAttr } from './row-attr';
 })
 export class ShortShaRendererComponent implements SparkAttributeColumnRenderer, SparkAttributeDetailRenderer {
   value = input<any>();
-  attribute = input<EntityAttributeDefinition | undefined>();
   options = input<Record<string, any> | undefined>();
-  formData: InputSignal<Record<string, any>> = input<Record<string, any>>({});
   item = input<any>();
 
   readonly shortSha = computed(() => {
@@ -40,13 +37,13 @@ export class ShortShaRendererComponent implements SparkAttributeColumnRenderer, 
   readonly tooltip = computed(() => {
     const titleAttribute = this.options()?.['titleAttribute'];
     if (typeof titleAttribute !== 'string') return null;
-    const title = rowAttr(this.item(), titleAttribute);
+    const title = valueFor(this.item(), titleAttribute)?.value;
     return typeof title === 'string' && title ? title : null;
   });
 
   readonly commitRoute = computed(() => {
     const sha = this.value();
-    const fullName = rowAttr(this.item(), 'FullName');
+    const fullName = valueFor(this.item(), 'FullName')?.value;
     if (typeof sha !== 'string' || typeof fullName !== 'string') return null;
     const [owner, name] = fullName.split('/');
     return owner && name ? ['/r', owner, name, 'c', sha] : null;

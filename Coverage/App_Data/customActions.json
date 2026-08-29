@@ -1,0 +1,14 @@
+{
+  "Resync": {
+    "displayName": {
+      "en": "Resync",
+      "fr": "Resynchroniser",
+      "nl": "Hersynchroniseren"
+    },
+    "icon": "ArrowRepeat",
+    "description": "Re-query GitHub for your organizations and installations. Offered on MyAccountRow only, because that is the sole type Resync/{Type} is granted on -- actions attach by right, not by declaration. selectionRule '=0' because it acts on the caller rather than on rows. showedOn is 'detail' so the accounts CARD does not draw a second button: this action is drawn by the app shell in the topbar, and MyAccountRow has Query without Read, so it has no detail page for 'detail' to draw on either. showedOn is presentation only -- ExecuteCustomAction authorizes on the right, so the topbar's executeCustomAction call is unaffected. NOTE: this file is a flat map of action name to definition, so a '_comment' key is not a comment, it is an action that fails to deserialize.",
+    "showedOn": "detail",
+    "selectionRule": "=0",
+    "refreshOnCompleted": true
+  }
+}

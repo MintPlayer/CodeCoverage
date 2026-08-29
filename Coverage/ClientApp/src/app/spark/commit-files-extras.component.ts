@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, effect, inject, input, signal } fro
 import { SparkService } from '@mintplayer/ng-spark/services';
 import type { PersistentObject } from '@mintplayer/ng-spark/models';
 import { CommitFilesPanelComponent } from '../components/commit-files-panel/commit-files-panel.component';
-import { rowAttr } from './row-attr';
+import { valueFor } from '@mintplayer/ng-spark/models';
 
 /**
  * Bridges a Commit PersistentObject to the shared Files panel: owner/name come
@@ -30,15 +30,15 @@ export class CommitFilesExtrasComponent {
   constructor() {
     effect(async () => {
       const po = this.po();
-      const sha = rowAttr(po, 'Sha');
-      const repoId = rowAttr(po, 'Repository');
+      const sha = valueFor(po, 'Sha')?.value;
+      const repoId = valueFor(po, 'Repository')?.value;
       if (typeof sha !== 'string' || !sha || typeof repoId !== 'string' || !repoId) {
         this.target.set(null);
         return;
       }
       try {
         const repo = await this.spark.get('Repository', repoId);
-        const fullName = rowAttr(repo, 'FullName');
+        const fullName = valueFor(repo, 'FullName')?.value;
         const [owner, name] = typeof fullName === 'string' ? fullName.split('/') : [];
         this.target.set(owner && name ? { owner, name, sha } : null);
       } catch {

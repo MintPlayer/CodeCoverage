@@ -1,6 +1,8 @@
 # PRD — Adopt Spark program units: a composed home page, a server-driven menu, and controllers under `security.json`
 
-**Status: 📋 PROPOSED · not yet started · revised 2026-08-29 · upgrade `10.0.0-preview.57` → `10.0.0-preview.67` (ten releases) and `@mintplayer/ng-spark` `22.1.0` → `22.8.0`**
+**Status: ✅ IMPLEMENTED 2026-08-29 · `10.0.0-preview.57` → `10.0.0-preview.67` (ten releases) and `@mintplayer/ng-spark` `22.1.0` → `22.8.0`**
+
+See [§9 As-built](#9-as-built) for what the plan got wrong and what it missed.
 
 Companion plan: [program-units-plan.md](program-units-plan.md).
 Predecessor: [adopt-spark-preview-57.md](adopt-spark-preview-57.md).
@@ -430,3 +432,93 @@ type by `ToString()`, so a row keyed by an `int` or a `Guid` narrows like one ke
    CI upload with a `covt_` token and with an OIDC JWT both still work, now via `Upload/Coverage`.
 7. `securityPosture.txt` is committed and its anonymous surface is reviewed line by line.
 8. All five spikes resolved and recorded in an as-built section here.
+
+---
+
+## 9. As-built
+
+Implemented 2026-08-29 on `adopt-spark-program-units`. All eight exit criteria met; `dotnet build`
+clean, 144/144 tests pass, both verify gates exit 0, and the composed page was driven in a browser.
+
+### 9.1 Where the plan was wrong
+
+**`rowRoute` is unreachable from the composed page.** §4.4 and M6 step 5 assumed the per-account link
+would come free from `spark-query-card`'s `rowRoute`. It cannot: the accounts grid is auto-rendered by
+`spark-po-detail`, which forwards template slots but **not** `rowRoute` — it is a function input, and
+there is no host tag to bind it on. The link is an `account-link` column renderer instead. **SP3 as
+written is not testable and was replaced** by verifying the renderer's `routerLink`.
+
+**`MeController` could not take `[SparkAuthorize("Read", nameof(Account))]` alone.** M4's table called
+this "an existing right, already granted" — true, but it is granted to the **anonymous** role as well
+(public repo pages read account documents). `SparkAuthorizeAttribute` derives from `AuthorizeAttribute`
+without `RequireAuthenticatedUser`, so the attribute alone would have opened "the accounts *I*
+administer" to callers with no identity. It keeps `[Authorize]` **and** declares the right.
+
+**Fail-loud credentials broke the CI gates.** D5's throw runs inside `AddSpark`, which is *before* the
+`--spark-verify-*` blocks return — so the model gate, which is supposed to need no secrets, threw on a
+runner that has none. `Program.cs` now exempts any `--spark-*` argument from the credential check;
+verified by running both gates with `--no-launch-profile` and no user-secrets.
+
+**A `_comment` key is fatal in `customActions.json`.** It is a flat `Dictionary<string,
+CustomActionDefinition>`, so a comment key is an *action* that fails to deserialize — a 500 on every
+`/spark/actions/*` request. Harmless in the model files, which deserialize into typed objects that
+ignore unknown properties. Documented inside the action's own `description`.
+
+**The empty-path redirect cannot be a child of the shell.** `{ path: '', redirectTo, pathMatch: 'full' }`
+beside the shell's other children never runs — the shell's own path is `''`, it consumes the empty URL,
+and `/` renders an empty outlet with no error at all. Hoisted above the shell route.
+
+### 9.2 What the plan missed
+
+**The language selector never reaches the server.** `SparkLanguageService` keeps the choice in
+`localStorage` only. The composed page has two *server-resolved* strings — the breadcrumb that becomes
+the `<h2>`, and the subtitle — which Spark resolves from `Accept-Language`, so the title came back in
+the browser's language and never followed the selector. Fixed in-app with an `Accept-Language`
+interceptor. ⚠️ It must read the module-level `currentLanguage` signal and **must not**
+`inject(SparkLanguageService)`: that service fetches `/culture` and `/translations` from its own
+constructor, so injecting it yields `NG0200` on every request and the whole UI renders raw keys.
+
+**`--spark-verify-model` does not gate hand-authored virtual model files.** Probed directly: editing an
+attribute label in `MyAccountRow.json` and re-running the gate still exits 0. There is no CLR class to
+be out of sync with, so a typo in a `clrType`-less model file ships past CI. `securityPosture.txt`
+gates the security half; the model half of a virtual type is ungated.
+
+**`--spark-synchronize-model` strips unknown keys from *generated* files.** So a `_comment` documenting
+why `Repository.IsPrivate` is marked `showedOn: "Query"` cannot live beside the attribute; it lives in
+`repo-name-renderer.component.ts` instead. Hand-authored virtual files keep their comments — the
+synchronizer does not touch them at all.
+
+**`Repository.IsPrivate` was the real M9 regression, and `titleAttribute` was not.** `IsPrivate` was
+stored as `showedOn: "PersistentObject"` — free under preview.65, where a row carried every attribute,
+and silently fatal under `.67`, where a row carries only the query surface. Now `"Query,
+PersistentObject"` with `isVisible: false`; verified in a browser (`ArromanchesBNB private`). The
+`short-sha` tooltip needed nothing: no attribute in this repo sets `rendererOptions.titleAttribute`.
+
+**Six dual-role renderers needed no split.** M9 anticipated splitting or widening them. In fact none of
+the eight renderers ever read `attribute` or `formData` — the inputs were declared and dead. Deleting
+the dead declarations makes registering one component in both slots correct rather than silently broken.
+
+**The install-App link cannot be a `url` program unit.** Its address is per-environment
+(`coveragedevelopment` vs `coverageproduction`, resolved from configuration at request time) and
+`programUnits.json` is static. It stays in the Angular extra content, where it is correct everywhere.
+
+### 9.3 Deviations worth knowing
+
+- **Resync is declared `showedOn: "detail"`.** The shell draws it in the topbar; `"query"` made the
+  accounts card auto-render a *second* button, i.e. exactly the card-header position the move retired.
+  `showedOn` is presentation only — `ExecuteCustomAction` authorizes on the right — and `MyAccountRow`
+  has no detail page, so `"detail"` draws it nowhere. `executeCustomAction`'s first argument is the
+  **type** (`MyAccountRow`), not the query alias; passing the alias 404s.
+- **`/home` is kept as a redirect**, not retired: it is the OAuth handler's failure redirect in
+  `Program.cs`, the post-sign-in return URL, and whatever is bookmarked. No `returnUrl` literals moved.
+- **The account and file pages keep their `bs-card-header`.** The breadcrumb-as-title win applies to
+  generic Spark pages; those two remain hand-written and are out of scope, as §4.5 said.
+
+### 9.4 Still outstanding
+
+- **F6 — the `user:email` account permission is NOT granted yet** on either GitHub App. Nothing in the
+  build can verify it; it must be ticked by hand in both App settings pages. First-time sign-in cannot
+  resolve a user's address without it.
+- **SP1 was not exercised**: `/query/repository-commits` renders, but the `.In()`-over-`EnumerableQuery`
+  composition in `CommitActions.GetRowFilterAsync` (§4.3) has not been driven with a filter applied.
+- **Antiforgery is `WarnOnly`.** Flip it once the logs show nothing a strict gate would reject.

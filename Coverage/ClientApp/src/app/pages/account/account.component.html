@@ -8,7 +8,7 @@
      row-secured server-side); coverage bar + trend come from the registered
      attribute renderers, not hand-written cells. -->
 @if (account(); as acc) {
-  <spark-sub-query queryId="account-repositories" [parentId]="acc.id" parentType="Account" />
+  <spark-query-card queryId="account-repositories" [parentId]="acc.id" parentType="Account" />
 } @else if (accountMissing()) {
   <bs-card class="mt-3 d-block">
     <p class="text-muted mb-0 p-3">No repositories with coverage data yet.</p>

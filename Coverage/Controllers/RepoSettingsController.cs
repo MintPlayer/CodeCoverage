@@ -3,6 +3,7 @@ using Coverage.Entities;
 using Coverage.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MintPlayer.Spark.Services;
 using MintPlayer.SourceGenerators.Attributes;
 using Raven.Client.Documents;
 using Raven.Client.Documents.Linq;
@@ -12,7 +13,9 @@ namespace Coverage.Controllers;
 
 [ApiController]
 [Route("api/repos/{owner}/{name}/settings")]
-[Authorize]
+// Authenticated-role-only right, replacing the bare [Authorize]. As with tokens,
+// the per-repository ownership checks stay in the method bodies.
+[SparkAuthorize("Manage", "RepoSettings")]
 public partial class RepoSettingsController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;

@@ -11,13 +11,13 @@ import { BsAlertComponent } from '@mintplayer/ng-bootstrap/alert';
 import { BsFormComponent, BsFormControlDirective } from '@mintplayer/ng-bootstrap/form';
 import { BsSelectComponent, BsSelectOption } from '@mintplayer/ng-bootstrap/select';
 import { Color } from '@mintplayer/ng-bootstrap';
-import { SparkSubQueryComponent } from '@mintplayer/ng-spark/po-detail';
+import { SparkQueryCardComponent } from '@mintplayer/ng-spark/grid';
 import { AccountRef, BrowseService, RepoInfo } from '../../services/browse.service';
 import { TokensService, TokenInfo, CreatedToken } from '../../services/tokens.service';
 
 @Component({
   selector: 'app-account',
-  imports: [CommonModule, DatePipe, RouterModule, FormsModule, BsCardComponent, BsCardHeaderComponent, BsTableComponent, BsBadgeComponent, BsSpinnerComponent, BsAlertComponent, BsFormComponent, BsFormControlDirective, BsSelectComponent, BsSelectOption, SparkSubQueryComponent],
+  imports: [CommonModule, DatePipe, RouterModule, FormsModule, BsCardComponent, BsCardHeaderComponent, BsTableComponent, BsBadgeComponent, BsSpinnerComponent, BsAlertComponent, BsFormComponent, BsFormControlDirective, BsSelectComponent, BsSelectOption, SparkQueryCardComponent],
   templateUrl: './account.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

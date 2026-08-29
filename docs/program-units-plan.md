@@ -7,6 +7,12 @@ verified by reading the code and building.
 
 Branch: `adopt-spark-program-units`.
 
+**✅ All milestones implemented 2026-08-29.** Build clean, 144/144 tests, both verify gates exit 0, and
+the composed page driven in a browser. Where the milestones below turned out to be wrong or incomplete,
+the correction is recorded in **[PRD §9 As-built](program-units-PRD.md#9-as-built)** rather than by
+rewriting the step — the plan is kept as it was written so the diff between intent and outcome stays
+readable. Two items remain open (PRD §9.4): the GitHub Apps' `user:email` permission, and SP1.
+
 Legend: 🟦 Coverage repo · 🟩 MintPlayer.Spark issue (no code, one issue)
 
 ---

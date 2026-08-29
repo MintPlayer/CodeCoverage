@@ -1,5 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, input, InputSignal } from '@angular/core';
-import type { EntityAttributeDefinition, PersistentObject } from '@mintplayer/ng-spark/models';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import type { PersistentObject } from '@mintplayer/ng-spark/models';
 import type { SparkAttributeDetailRenderer } from '@mintplayer/ng-spark/renderers';
 import { CoverageSummary } from '../services/browse.service';
 import { CoverageBarComponent } from '../components/coverage-bar/coverage-bar.component';
@@ -29,10 +29,7 @@ import { toCoverageSummary } from './coverage-summary';
 })
 export class CoverageSummaryDetailRendererComponent implements SparkAttributeDetailRenderer {
   value = input<any>();
-  attribute = input<EntityAttributeDefinition | undefined>();
   options = input<Record<string, any> | undefined>();
-  formData: InputSignal<Record<string, any>> = input<Record<string, any>>({});
-  item = input<any>();
 
   readonly summary = computed<CoverageSummary | null>(() => toCoverageSummary(this.value() as PersistentObject));
 }

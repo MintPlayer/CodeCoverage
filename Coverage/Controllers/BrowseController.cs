@@ -2,6 +2,7 @@ using Coverage.Entities;
 using Coverage.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using MintPlayer.Spark.Services;
 using MintPlayer.SourceGenerators.Attributes;
 using Raven.Client.Documents;
 using Raven.Client.Documents.Linq;
@@ -22,6 +23,13 @@ namespace Coverage.Controllers;
 // service against every other tenant, not just a load on us. Partitioned by IP:
 // these callers present no credential to key on.
 [EnableRateLimiting("browse")]
+// Previously carried no authorization attribute at all — reachable because
+// nothing said otherwise, which is indistinguishable from an oversight. Browse
+// is now a declared right held by both well-known roles, so the vanity pages
+// keep working for anonymous visitors and the posture report says so out loud.
+// Row-level scoping is unchanged and still lives in the method bodies: this
+// right answers "may you use this API", not "may you see this repository".
+[SparkAuthorize("Browse", "Coverage")]
 public partial class BrowseController : ControllerBase
 {
     [Inject] private readonly IAsyncDocumentSession session;

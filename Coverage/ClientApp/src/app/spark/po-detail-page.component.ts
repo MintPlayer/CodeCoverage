@@ -1,38 +1,43 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { SparkPoDetailComponent } from '@mintplayer/ng-spark/po-detail';
-import { SparkService } from '@mintplayer/ng-spark/services';
-import { BsSpinnerComponent } from '@mintplayer/ng-bootstrap/spinner';
 import type { PersistentObject } from '@mintplayer/ng-spark/models';
+import { valueFor } from '@mintplayer/ng-spark/models';
 import { RepoBadgePanelComponent } from '../components/repo-badge-panel/repo-badge-panel.component';
 import { RepoGatePanelComponent } from '../components/repo-gate-panel/repo-gate-panel.component';
 import { RepoTrendPanelComponent } from '../components/repo-trend-panel/repo-trend-panel.component';
 import { RepoSetupPanelComponent } from '../components/repo-setup-panel/repo-setup-panel.component';
+import { AccountTokensPanelComponent } from '../components/account-tokens-panel/account-tokens-panel.component';
 import { CommitFilesExtrasComponent } from './commit-files-extras.component';
 import { HomeExtrasComponent } from './home-extras.component';
-import { resolveVanityRoute } from './vanity-routes';
-import { valueFor } from '@mintplayer/ng-spark/models';
 
 /**
- * The app's poDetail route component (sparkRoutes({ poDetail }) override).
+ * The app's poDetail route component (`sparkRoutes({ poDetail })` override).
  *
- * Spark's grids and reference links can only emit `/po/{type}/{id}`. For the
- * entity types that own a purpose-built page (Repository, Commit, Account)
- * this forwards there, so a click from any generic grid lands on the real
- * product page. Everything else — and any object whose canonical route can't
- * be derived — renders the stock generic detail, enriched for Repository and
- * Commit through `extraContentTemplate`.
+ * Every entity type renders the stock generic detail page — the action bar, the `<h2>` Spark
+ * draws from the object's breadcrumb, the attribute cards and the declared sub-queries — plus
+ * the app-specific panels that cannot be expressed as attribute renderers, mounted through
+ * `extraContentTemplate`.
+ *
+ * Extras render **last**, after the attributes and after every query card. That is what makes
+ * this work as a page: on Account the order comes out title → attributes → repositories grid →
+ * upload tokens, which is the page a reader expects.
+ *
+ * ⚠️ It no longer forwards anything. Until preview.67 this component pre-fetched the whole
+ * PersistentObject on every navigation just to decide whether Account should redirect to a
+ * hand-written `/a/{login}` page — a wasted round-trip on every detail view of every type.
+ * The vanity URLs now point the other way, as guards in `vanity-redirects.ts`: `/a/{login}`,
+ * `/r/{owner}/{name}` and the commit URL resolve their document id and forward INTO `/po/...`.
+ * People hold the readable URL, so that is the one that redirects.
  */
 @Component({
   selector: 'app-po-detail-page',
-  imports: [SparkPoDetailComponent, BsSpinnerComponent, RepoBadgePanelComponent, RepoGatePanelComponent, RepoTrendPanelComponent, RepoSetupPanelComponent, CommitFilesExtrasComponent, HomeExtrasComponent],
+  imports: [
+    SparkPoDetailComponent,
+    RepoBadgePanelComponent, RepoGatePanelComponent, RepoTrendPanelComponent, RepoSetupPanelComponent,
+    AccountTokensPanelComponent, CommitFilesExtrasComponent, HomeExtrasComponent,
+  ],
   template: `
-    @if (mode() === 'generic') {
-      <spark-po-detail [extraContentTemplate]="extras" />
-    } @else {
-      <div class="text-center p-5"><bs-spinner /></div>
-    }
+    <spark-po-detail [extraContentTemplate]="extras" />
 
     <ng-template #extras let-po let-entityType="entityType">
       @if (entityType.name === 'Repository') {
@@ -46,49 +51,25 @@ import { valueFor } from '@mintplayer/ng-spark/models';
         <app-commit-files-extras [po]="po" />
       } @else if (entityType.name === 'Home') {
         <app-home-extras />
+      } @else if (entityType.name === 'Account') {
+        @if (loginOf(po); as login) {
+          <app-account-tokens-panel [login]="login" />
+        }
       }
     </ng-template>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export default class PoDetailPageComponent {
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly spark = inject(SparkService);
-
-  readonly mode = signal<'resolving' | 'generic'>('resolving');
-
-  constructor() {
-    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(async (params) => {
-      this.mode.set('resolving');
-      const type = params.get('type') ?? '';
-      const id = params.get('id') ?? '';
-      const vanity = await this.vanityRoute(type, id);
-      if (vanity) {
-        // replaceUrl: Back returns to the grid the user came from, not here.
-        void this.router.navigate(vanity, { replaceUrl: true });
-        return;
-      }
-      this.mode.set('generic');
-    });
-  }
-
-  private async vanityRoute(type: string, id: string) {
-    if (!type || !id) return null;
-    try {
-      const entityType = await this.spark.getEntityType(type);
-      if (!entityType) return null;
-      const po = await this.spark.get(type, id);
-      return await resolveVanityRoute(this.spark, entityType.name, po);
-    } catch {
-      return null;
-    }
-  }
-
   repoOf(po: PersistentObject): { owner: string; name: string } | null {
     const fullName = valueFor(po, 'FullName')?.value;
     if (typeof fullName !== 'string') return null;
     const [owner, name] = fullName.split('/');
     return owner && name ? { owner, name } : null;
+  }
+
+  loginOf(po: PersistentObject): string | null {
+    const login = valueFor(po, 'Login')?.value;
+    return typeof login === 'string' && login ? login : null;
   }
 }

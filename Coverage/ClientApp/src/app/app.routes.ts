@@ -2,7 +2,7 @@ import { Routes } from '@angular/router';
 import { sparkRoutes } from '@mintplayer/ng-spark/routes';
 import { sparkAuthRoutes, withExternalLogin, githubProvider } from '@mintplayer/ng-spark-auth/routes';
 import { ShellComponent } from './shell/shell.component';
-import { commitRedirectGuard, repositoryRedirectGuard } from './spark/vanity-redirects';
+import { accountRedirectGuard, commitRedirectGuard, repositoryRedirectGuard } from './spark/vanity-redirects';
 import { HOME_URL } from './spark/home-route';
 
 export const routes: Routes = [
@@ -29,10 +29,11 @@ export const routes: Routes = [
       // Disabled — so withLocalLogin()/withRegistration() would mount pages
       // posting to endpoints that aren't mapped.
       ...sparkAuthRoutes(withExternalLogin(githubProvider())),
-      { path: 'a/:login', loadComponent: () => import('./pages/account/account.component') },
-      // Repositories and commits ARE the generic Spark detail pages; these
-      // shareable URLs (README badge markdown links to /r/{owner}/{name})
-      // resolve the document id and forward there.
+      // Accounts, repositories and commits ARE the generic Spark detail pages;
+      // these shareable URLs (README badge markdown links to /r/{owner}/{name},
+      // and /a/{login} is what the accounts grid links to) resolve the document
+      // id and forward there.
+      { path: 'a/:login', canActivate: [accountRedirectGuard], children: [] },
       { path: 'r/:owner/:repo', canActivate: [repositoryRedirectGuard], children: [] },
       { path: 'r/:owner/:repo/c/:sha', canActivate: [commitRedirectGuard], children: [] },
       // The code viewer has no persistent object of its own, so it stays a page.

@@ -13,9 +13,11 @@
         "id": "f6c2f843-1be2-4af2-902f-1547077bff03",
         "name": "AvatarUrl",
         "label": {
-          "en": "Avatar Url"
+          "en": "Avatar",
+          "fr": "Avatar",
+          "nl": "Avatar"
         },
-        "dataType": "string",
+        "dataType": "image",
         "isRequired": false,
         "isVisible": true,
         "isReadOnly": false,
@@ -47,7 +49,7 @@
         },
         "dataType": "number",
         "isRequired": false,
-        "isVisible": true,
+        "isVisible": false,
         "isReadOnly": false,
         "order": 5,
         "isArray": false,
@@ -58,7 +60,9 @@
         "id": "ec42fca3-2c2c-4f8d-b022-a9db0aa8978d",
         "name": "Login",
         "label": {
-          "en": "Login"
+          "en": "Login",
+          "fr": "Identifiant",
+          "nl": "Login"
         },
         "dataType": "string",
         "isRequired": false,
@@ -73,7 +77,9 @@
         "id": "47ee693b-379e-469b-ba29-22a472796297",
         "name": "Type",
         "label": {
-          "en": "Type"
+          "en": "Type",
+          "fr": "Type",
+          "nl": "Type"
         },
         "dataType": "string",
         "isRequired": false,

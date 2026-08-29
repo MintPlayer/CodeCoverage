@@ -511,8 +511,9 @@ the dead declarations makes registering one component in both slots correct rath
   **type** (`MyAccountRow`), not the query alias; passing the alias 404s.
 - **`/home` is kept as a redirect**, not retired: it is the OAuth handler's failure redirect in
   `Program.cs`, the post-sign-in return URL, and whatever is bookmarked. No `returnUrl` literals moved.
-- **The account and file pages keep their `bs-card-header`.** The breadcrumb-as-title win applies to
-  generic Spark pages; those two remain hand-written and are out of scope, as §4.5 said.
+- **The file page keeps its `bs-card-header`.** It is a hand-rolled *breadcrumb trail*, not a title,
+  and the code viewer has no PersistentObject, so it stays hand-written as §4.5 said.
+- **The account page was converted after the fact — see §10.**
 
 ### 9.4 Still outstanding
 
@@ -522,3 +523,52 @@ the dead declarations makes registering one component in both slots correct rath
 - **SP1 was not exercised**: `/query/repository-commits` renders, but the `.In()`-over-`EnumerableQuery`
   composition in `CommitActions.GetRowFilterAsync` (§4.3) has not been driven with a filter applied.
 - **Antiforgery is `WarnOnly`.** Flip it once the logs show nothing a strict gate would reject.
+
+---
+
+## 10. The account page — converted to a generic detail page
+
+Follow-up to §9, decided after seeing `/a/{login}` still render a `bs-card-header` title.
+
+**There is no page-header component in `@mintplayer/ng-spark` 22.8.0.** Every exported selector in the
+package was enumerated; there is no `spark-page-header`, `spark-page-title` or `spark-breadcrumb`. The
+generic title is inline markup — `<h2>{{ currentItem.breadcrumb || currentItem.name }}</h2>` in
+`po-detail/src/spark-po-detail.component.html:38` — and Spark copies it by hand into `po-create`,
+`po-edit` and `query-list` rather than sharing it. The action bar is the same story: duplicated between
+`po-detail` and `query-list`, and its `.spark-actionbar` style is component-scoped SCSS that is not
+shipped in `dist/`, so a host page cannot reuse it. `<spark-shell>`'s `title` input feeds only the
+sidebar `<h5>`; `*sparkShellMainHeader` is app chrome above the router-outlet, not a per-page title.
+
+So "use the Spark feature" meant **being** a generic page rather than imitating one, and Account was
+already most of the way there: `Account.json` declared `breadcrumb: "{Login}"` and
+`queries: ["account-repositories"]`, and `Read/Account` was already granted to both roles because
+`QueryRead` expands to `Query` + `Read`. Nothing new was needed in `security.json`.
+
+What changed:
+
+- **`vanity-routes.ts` is deleted.** Account was its only entry, so `resolveVanityRoute` always returned
+  null. With it went `PoDetailPageComponent`'s resolving/spinner state and a **full PersistentObject
+  pre-fetch performed on every detail navigation of every type**, purely to decide whether Account
+  should redirect. The component is now its template plus two accessors.
+- **The redirect reversed direction**, matching what Repository and Commit already did:
+  `accountRedirectGuard` in `vanity-redirects.ts` resolves `/a/{login}` → `/po/account/{id}`. People hold
+  the readable URL, so that is the one that forwards. ⚠️ The address bar therefore now shows the
+  document id (`/po/account/Accounts%2F48772716`), as it already did for repositories and commits —
+  `/a/{login}` remains a working entry point, and both `account-link-renderer` and `file.component.html`
+  still build it by hand.
+- **The upload-tokens card became `AccountTokensPanelComponent`**, mounted through
+  `extraContentTemplate`. Extras render last, so the order is title → attributes → repositories →
+  tokens, which is the hand-written page's order with an attribute card inserted. Its own heading stays
+  a `bs-card-header`: it is a section inside a page, not the page's title.
+- **`Account.AvatarUrl` is `dataType: "image"`** so the attribute card shows the avatar rather than a raw
+  URL, and **`InstallationId` is `isVisible: false`** — an internal id the hand-written page never showed.
+  Both survive `--spark-synchronize-model`: `SparkStringPresentations.Preserves` explicitly keeps a
+  hand-set `image`/`url`/`MultiLineString` on a string property, and `isVisible` is an author choice.
+
+The hand-written page also fetched `/api/browse/accounts/{login}` on every visit solely to obtain
+`acc.id` for the grid's `parentId`; the PO route supplies it, so that round-trip is gone too.
+
+**Not done, and worth its own decision:** the duplicated title/action-bar markup is a genuine gap in
+Spark — `po-detail`, `po-create`, `po-edit` and `query-list` all hand-copy it, and no consumer can reuse
+it. A `spark-page-header` upstream would fix that for every app and would give the file page a real
+heading too. Filed as a possibility, not as work.

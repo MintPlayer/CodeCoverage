@@ -6,9 +6,9 @@
       "nl": "Hersynchroniseren"
     },
     "icon": "ArrowRepeat",
-    "description": "Re-query GitHub for your organizations and installations. Offered on MyAccountRow only, because that is the sole type Resync/{Type} is granted on -- actions attach by right, not by declaration. selectionRule '=0' because it acts on the caller rather than on rows. showedOn is 'detail' so the accounts CARD does not draw a second button: this action is drawn by the app shell in the topbar, and MyAccountRow has Query without Read, so it has no detail page for 'detail' to draw on either. showedOn is presentation only -- ExecuteCustomAction authorizes on the right, so the topbar's executeCustomAction call is unaffected. NOTE: this file is a flat map of action name to definition, so a '_comment' key is not a comment, it is an action that fails to deserialize.",
+    "description": "Re-query GitHub for your organizations and installations. Offered on Home only, because Resync/Home is the sole grant -- actions attach by RIGHT, not by declaration, and this file is evaluated against every type. showedOn 'detail' puts it in the Home page's own action bar, beside Back, which is where the accounts grid it refreshes actually is. selectionRule '=0' because it acts on the caller, not on rows: a parentless, selectionless action is legal. refreshOnCompleted is false because ResyncAction emits its own client operations -- it refreshes the accounts query AND patches the two count attributes, which a blanket refresh does not do; leaving both on simply ran the query twice. NOTE: this file is a flat map of action name to definition, so a '_comment' key is not a comment, it is an action that fails to deserialize.",
     "showedOn": "detail",
     "selectionRule": "=0",
-    "refreshOnCompleted": true
+    "refreshOnCompleted": false
   }
 }

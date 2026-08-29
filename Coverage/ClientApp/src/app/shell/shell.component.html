@@ -18,12 +18,6 @@
       }
     }
     @if (authService.user()?.isAuthenticated) {
-      @if (onHome()) {
-        <button class="btn btn-outline-light btn-sm" (click)="resync()" [disabled]="resyncing()"
-                [title]="'app.resyncTooltip' | t">
-          <i class="bi bi-arrow-repeat"></i> {{ 'app.resync' | t }}
-        </button>
-      }
       <span class="text-light">{{ authService.user()?.userName }}</span>
       <button class="btn btn-outline-light btn-sm" (click)="logout()">{{ 'auth.logout' | t }}</button>
     } @else {

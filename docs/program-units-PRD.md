@@ -504,11 +504,9 @@ the dead declarations makes registering one component in both slots correct rath
 
 ### 9.3 Deviations worth knowing
 
-- **Resync is declared `showedOn: "detail"`.** The shell draws it in the topbar; `"query"` made the
-  accounts card auto-render a *second* button, i.e. exactly the card-header position the move retired.
-  `showedOn` is presentation only — `ExecuteCustomAction` authorizes on the right — and `MyAccountRow`
-  has no detail page, so `"detail"` draws it nowhere. `executeCustomAction`'s first argument is the
-  **type** (`MyAccountRow`), not the query alias; passing the alias 404s.
+- **Resync moved again — see §11.** It was briefly a topbar button calling `executeCustomAction` by
+  hand; it is now a custom action on the Home persistent object, drawn by Spark in that page's own
+  action bar.
 - **`/home` is kept as a redirect**, not retired: it is the OAuth handler's failure redirect in
   `Program.cs`, the post-sign-in return URL, and whatever is bookmarked. No `returnUrl` literals moved.
 - **The file page keeps its `bs-card-header`.** It is a hand-rolled *breadcrumb trail*, not a title,
@@ -572,3 +570,34 @@ The hand-written page also fetched `/api/browse/accounts/{login}` on every visit
 Spark — `po-detail`, `po-create`, `po-edit` and `query-list` all hand-copy it, and no consumer can reuse
 it. A `spark-page-header` upstream would fix that for every app and would give the file page a real
 heading too. Filed as a possibility, not as work.
+
+---
+
+## 11. Resync — a custom action on Home, not app chrome
+
+§9.3 recorded Resync as a topbar button. That was wrong-shaped: the button lived in app chrome shown
+on every route, was hidden again by a route check (`onHome()`), and reached the server through a
+hand-written `executeCustomAction` call whose first argument had to be an object *type* — a detail
+easy to get wrong, and got wrong once (passing the query alias 404s).
+
+Home **is** a persistent object, so the action belongs on it. `Resync/MyAccountRow` became
+`Resync/Home` in `security.json`, and `showedOn: "detail"` now means something: Spark draws the button
+in the Home page's own action bar, beside Back, next to the grid it refreshes. The shell went back to
+being chrome — no `SparkService`, no `Router`, no route check, no action plumbing — and `HOME_ROUTE`
+lost the two entries that existed only to feed that call.
+
+Two things surfaced while wiring it:
+
+- **`refreshOnCompleted: true` and an explicit `RefreshQuery` both fire.** Leaving both on ran the
+  accounts query twice per click. `refreshOnCompleted` is now `false`; the action names what to
+  refresh.
+- **A blanket refresh does not re-read the persistent object.** The `Accounts`/`Repositories` counts
+  above the grid are Home attributes, and a resync that changes org membership would leave them
+  contradicting the rows underneath — the exact case the button exists for. `ResyncAction` now
+  re-reads `IMyAccountsService` after invalidating and emits `refreshAttribute` for both counts
+  alongside `refreshQuery`. Verified on the wire: the action's response carries all three operations
+  with real values.
+
+Also: `Account.AvatarUrl` is `showedOn: "Query"`. The built-in `image` type is sized for a grid cell
+(`max-height: 2.5em`) and unconstrained on a detail page, so the avatar rendered oversized there. It
+stays on the query surface, where the accounts grid draws it through the `account-avatar` renderer.
